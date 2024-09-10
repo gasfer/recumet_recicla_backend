@@ -1,5 +1,5 @@
 <h1 align="center">RECUMENT BACKEND</h1>
-<p align="center">Author <a href="https://www.linkedin.com/in/ronaldjllusco/">Ronald J. LLusco V.</a>.</p>
+<p align="center">Author <a href="https://www.linkedin.com/in/gaston-fern%C3%A1ndez-flores/">GASTON FERNANDEZ</a>.</p>
 
 
 ## ⚙️ Set Up
@@ -20,7 +20,7 @@
     git clone https://github.com/RonaldLlusco/backend_recumet.git
 ```
 ```bash
-    npm install
+    npm install --force
 ```
 ```bash
     npm install -g sequelize-cli
