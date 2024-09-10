@@ -1,0 +1,97 @@
+[
+  {
+    "full_names": "GASTON FERNANDEZ FLORES",
+    "number_document": "6491949",
+    "cellphone": "63909240",
+    "sex": "MASCULINO",
+    "photo": "NONE",
+    "position": "ADMINISTRADOR",
+    "email": "gasfer@recumetbolivia.com",
+    "password": "admin2024",
+    "role": "ADMINISTRADOR",
+    "status": true
+  },
+  {
+    "full_names": "YARA SHIRLEY GARFIAS",
+    "number_document": "69422892",
+    "cellphone": "69422892 ",
+    "sex": "FEMENINO",
+    "photo": "NONE",
+    "position": "ADMINISTRADOR",
+    "email": "ygarfias@recumetbolivia.com",
+    "password": "admin2024",
+    "role": "ADMINISTRADOR",
+    "status": true
+  },
+  {
+    "full_names": "DANIEL MERCADO FERNANDEZ",
+    "number_document": "69422902",
+    "cellphone": "69422892",
+    "sex": "MASCULINO",
+    "photo": "NONE",
+    "position": "ADMINISTRADOR",
+    "email": "dmercado@recumetbolivia.com",
+    "password": "admin2024",
+    "role": "ADMINISTRADOR",
+    "status": true
+  },
+  {
+    "full_names": "LAURA GRISELDA FLORES BASTO",
+    "number_document": "7959558",
+    "cellphone": "69422892",
+    "sex": "FEMENINO",
+    "photo": "NONE",
+    "position": "ENCARGADA DE LOGISTICA Y ASISTENTE DE GERENCIA",
+    "email": "lflores@recumetbolivia.com",
+    "password": "operador2024",
+    "role": "OPERADOR",
+    "status": true
+  },
+  {
+    "full_names": "DANIELA ANGELICA URIONA TORREZ",
+    "number_document": "5270383",
+    "cellphone": "69422892",
+    "sex": "FEMENINO",
+    "photo": "NONE",
+    "position": "ENCARGADA DE CAJAS Y RRHH",
+    "email": "duriona@recumetbolivia.com",
+    "password": "operador2024",
+    "role": "OPERADOR",
+    "status": true
+  }  ,
+  {
+    "full_names": "CARLOS EDUARDO FERREYRA GARFIAS",
+    "number_document": "69422902",
+    "cellphone": "69422892",
+    "sex": "MASCULINO",
+    "photo": "NONE",
+    "position": "JEFE COMERCIAL",
+    "email": "cferreyra@recumetbolivia.com ",
+    "password": "admin2024",
+    "role": "ADMINISTRADOR",
+    "status": true
+  },
+  {
+    "full_names": "WILLIAM PACHECO PILLCO",
+    "number_document": "8682991",
+    "cellphone": "69422892",
+    "sex": "MASCULINO",
+    "photo": "NONE",
+    "position": "BALANZA",
+    "email": "wluna@recumetbolivia.com",
+    "password": "operador2024",
+    "role": "OPERADOR",
+    "status": true
+  } ,  {
+    "full_names": "MIGUEL MAMANI VILLANUEVA",
+    "number_document": "8791765",
+    "cellphone": "69422892",
+    "sex": "MASCULINO",
+    "photo": "NONE",
+    "position": "JEFE DE PRODUCCION",
+    "email": "mmamani@recumetbolivia.com",
+    "password": "operador2024",
+    "role": "OPERADOR",
+    "status": true
+  }
+]

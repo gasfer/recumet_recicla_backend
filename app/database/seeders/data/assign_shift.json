@@ -1,0 +1,51 @@
+[
+    {
+        "number_day": 0,
+        "day": "DOMINGO",
+        "hour_start": "00:00:00",
+        "hour_end": "23:59:59",
+        "status": true
+    },
+    {
+        "number_day": 1,
+        "day": "LUNES",
+        "hour_start": "00:00:00",
+        "hour_end": "23:59:59",
+        "status": true
+    },
+    {
+        "number_day": 2,
+        "day": "MARTES",
+        "hour_start": "00:00:00",
+        "hour_end": "23:59:59",
+        "status": true
+    },
+    {
+        "number_day": 3,
+        "day": "MIERCOLES",
+        "hour_start": "00:00:00",
+        "hour_end": "23:59:59",
+        "status": true
+    },
+    {
+        "number_day": 4,
+        "day": "JUEVES",
+        "hour_start": "00:00:00",
+        "hour_end": "23:59:59",
+        "status": true
+    },
+    {
+        "number_day": 5,
+        "day": "VIERNES",
+        "hour_start": "00:00:00",
+        "hour_end": "23:59:59",
+        "status": true
+    },
+    {
+        "number_day": 6,
+        "day": "SABADO",
+        "hour_start": "00:00:00",
+        "hour_end": "23:59:59",
+        "status": true
+    }
+]

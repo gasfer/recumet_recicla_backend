@@ -1,0 +1,2196 @@
+{
+	"info": {
+		"_postman_id": "75bd5b11-b294-4db9-8f1c-216f89f0b79b",
+		"name": "RECUMET API",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "15741308",
+		"_collection_link": "https://cloudy-crescent-363084.postman.co/workspace/My-Workspace-ronald~f6508346-2e03-48f1-822e-d62162295985/collection/15741308-75bd5b11-b294-4db9-8f1c-216f89f0b79b?action=share&source=collection_link&creator=15741308"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwiaWF0IjoxNjg3ODc3OTQ3LCJleHAiOjE2ODc4ODE1NDd9.lfRzYmJks4EaF8MwOOgCOHeqbnb36F3td8T85W3dnSQ",
+								"type": "text",
+								"disabled": true
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"email\": \"rllusco@cochabamba.bo\",\r\n    \"password\": \"temporal.1\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/auth",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"auth"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "refresh token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkyODI4NzkyLCJleHAiOjE2OTI4MzIzOTJ9.P7Quq9qEqR_9i_LsG7gMgqTyG7tlkI9dfP7ypaopDgM",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/auth/refresh",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"refresh"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "User",
+			"item": [
+				{
+					"name": "Assigns",
+					"item": [
+						{
+							"name": "assignacion permissions",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjczMzYxLCJleHAiOjE2OTE2NzY5NjF9.y4bmV_6IBR5blktS-m6BgPL_oHq4cyTSp9DMF90kxrc",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"permissions\": [\r\n        {\r\n            \"id_user\": 2,\r\n            \"module\": \"COMPRAS\",\r\n            \"create\": true,\r\n            \"update\": false,\r\n            \"delete\": true,\r\n            \"reports\": true,\r\n            \"status\": true\r\n        },\r\n        {\r\n            \"id_user\":2,\r\n            \"module\": \"VENTAS\",\r\n            \"create\": false,\r\n            \"update\": false,\r\n            \"delete\": true,\r\n            \"reports\": true,\r\n            \"status\": true\r\n        },\r\n        {\r\n            \"id_user\": 2,\r\n            \"module\": \"CAJA\",\r\n            \"create\": false,\r\n            \"update\": false,\r\n            \"delete\": true,\r\n            \"reports\": true,\r\n            \"status\": true\r\n        }\r\n    ]\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/v1/user/assignPermissions",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"v1",
+										"user",
+										"assignPermissions"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "assignacion sucursales",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjc2OTg4LCJleHAiOjE2OTE2ODA1ODh9.IZQXz4G-lEZX-v8t9rhI0FA8hovfEq_xHaag4PES3UU",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\r\n    \"sucursales\": [\r\n        {\r\n            \"id_user\": 2,\r\n            \"id_sucursal\": 1,\r\n            \"status\": true\r\n        },\r\n        {\r\n            \"id_user\":2,\r\n            \"id_sucursal\": 2,\r\n            \"status\": true\r\n        }\r\n    ]\r\n}\r\n",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/v1/user/assignSucursales",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"v1",
+										"user",
+										"assignSucursales"
+									]
+								}
+							},
+							"response": []
+						},
+						{
+							"name": "assignacion shifts",
+							"request": {
+								"method": "PUT",
+								"header": [
+									{
+										"key": "Authorization",
+										"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjc2OTg4LCJleHAiOjE2OTE2ODA1ODh9.IZQXz4G-lEZX-v8t9rhI0FA8hovfEq_xHaag4PES3UU",
+										"type": "text"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "\r\n{\r\n    \"shifts\": [\r\n        {\r\n            \"id_user\": 1,\r\n            \"day\": \"LUNES\",\r\n            \"hour_start\": \"00:00:00\",\r\n            \"hour_end\": \"12:00:00\",\r\n            \"status\": true\r\n        },\r\n        {\r\n            \"id_user\": 1,\r\n            \"day\": \"MARTES\",\r\n            \"hour_start\": \"11:00:00\",\r\n            \"hour_end\": \"13:00:00\",\r\n            \"status\": true\r\n        }\r\n    ]\r\n}",
+									"options": {
+										"raw": {
+											"language": "json"
+										}
+									}
+								},
+								"url": {
+									"raw": "http://localhost:3000/api/v1/user/assignShift",
+									"protocol": "http",
+									"host": [
+										"localhost"
+									],
+									"port": "3000",
+									"path": [
+										"api",
+										"v1",
+										"user",
+										"assignShift"
+									]
+								}
+							},
+							"response": []
+						}
+					]
+				},
+				{
+					"name": "get and search all users",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk0MDEwODU2LCJleHAiOjE2OTQwMTQ0NTZ9.ZCy4Y9LxMLfQqWx-QH_V3IBO6OngS9c-CCZZL4-fxxs",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/user?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"user"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new user",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNTA5ODUxLCJleHAiOjE2OTE1MTM0NTF9.VVH8_ViZOS2pf1PNsWthqJK6bydhM_latsbasohzH_c",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"DANIEL QUIROGA MONTECINOS\",\r\n    \"number_document\": \"78965412\",\r\n    \"cellphone\": \"79746003\",\r\n    \"sex\": \"M\",\r\n    \"photo\": \"\",\r\n    \"position\": \"ADMINISTRADOR\",\r\n    \"email\": \"dquiroga@cochabamba.bo\",\r\n    \"password\": \"temporal.1\",\r\n    \"role\": \"ADMINISTRADOR\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/user",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"user"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update user",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNTA5ODUxLCJleHAiOjE2OTE1MTM0NTF9.VVH8_ViZOS2pf1PNsWthqJK6bydhM_latsbasohzH_c",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"DANIEL QUIROGA MONTESINOS\",\r\n    \"number_document\": \"78965412\",\r\n    \"cellphone\": \"79746003\",\r\n    \"sex\": \"M\",\r\n    \"photo\": \"\",\r\n    \"position\": \"ADMINISTRADOR\",\r\n    \"email\": \"dquiroga@cochabamba.bo\",\r\n    \"password\": \"temporal.1\",\r\n    \"role\": \"ADMINISTRADOR\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/user/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"user",
+								"2"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive user",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNTA5ODUxLCJleHAiOjE2OTE1MTM0NTF9.VVH8_ViZOS2pf1PNsWthqJK6bydhM_latsbasohzH_c",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/user/destroyAndActive/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"user",
+								"destroyAndActive",
+								"2"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Category",
+			"item": [
+				{
+					"name": "get and search all categories",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk0MTIxNDYyLCJleHAiOjE2OTQxMjUwNjJ9.Bir0p73qgBlr4XTn4A7cp_xNb6LAW5kYqgKB0DxNPVY",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/category?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"category"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new category",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk0MTIxNDYyLCJleHAiOjE2OTQxMjUwNjJ9.Bir0p73qgBlr4XTn4A7cp_xNb6LAW5kYqgKB0DxNPVY",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"galle6t54as\",\r\n    \"description\": \"cajas EN GENERAL\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/category",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"category"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update category",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNTg4Mjg1LCJleHAiOjE2OTE1OTE4ODV9.sc6OXOBmGkZdjPVJx-Fv7j1q-htD-c-uaQC0RJhprUo",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"GALLETAS\",\r\n    \"description\": \"cajas EN GENERAL\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/category/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"category",
+								"2"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive category",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNTg4Mjg1LCJleHAiOjE2OTE1OTE4ODV9.sc6OXOBmGkZdjPVJx-Fv7j1q-htD-c-uaQC0RJhprUo",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/category/destroyAndActive/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"category",
+								"destroyAndActive",
+								"2"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Unit",
+			"item": [
+				{
+					"name": "get and search all unit",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkyMzY1ODExLCJleHAiOjE2OTIzNjk0MTF9.5Zls69Di-Lb6imVM_wxPWYjDc3ROS5BVkQSFSdqEw2Q",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/unit?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"unit"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new unit",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkzOTI2MTY5LCJleHAiOjE2OTM5Mjk3Njl9.rL2pGLxmitk_WVRduf0SIEOTPU36J03fYgNkQ-CfQxo",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"libra\",\r\n    \"siglas\": \"lb\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/unit",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"unit"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update unit",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNTkxODk4LCJleHAiOjE2OTE1OTU0OTh9.eLKc-fxk6ZkLMwEu2ml7GDPjaOhE50tsJhJ7LVef1jw",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"libra\",\r\n    \"siglas\": \"lbr\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/unit/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"unit",
+								"2"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive unit",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNTkxODk4LCJleHAiOjE2OTE1OTU0OTh9.eLKc-fxk6ZkLMwEu2ml7GDPjaOhE50tsJhJ7LVef1jw",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/unit/destroyAndActive/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"unit",
+								"destroyAndActive",
+								"2"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Product",
+			"item": [
+				{
+					"name": "get and search all product",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MDUwNDkwLCJleHAiOjE2OTUwNTQwOTB9.fD9U01UVVguILTq48dS2PtobpDiI52TkFy_YJBal5hs",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/product?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"product"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new product",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MDY2OTc3LCJleHAiOjE2OTUwNzA1Nzd9.p5V7vO7tt5sqCJuLbh9CKxK0srFmyQvndw-4Da-61a8",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"cod\": \"1334325435\",\r\n    \"name\": \"GALLETAS WAFER\",\r\n    \"description\": \"test pepsi\",\r\n    \"costo\": 100,\r\n    \"inventariable\": true,\r\n    \"id_category\": 1,\r\n    \"id_unit\": 1,\r\n    \"precio_venta\": \"110\",\r\n    \"margen_utilidad\": \"10\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/product",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"product"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update product",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MDUwNDkwLCJleHAiOjE2OTUwNTQwOTB9.fD9U01UVVguILTq48dS2PtobpDiI52TkFy_YJBal5hs",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"cod\": \"2145453543543243\",\r\n    \"name\": \"PEPSI\",\r\n    \"description\": \"test pepsi 2\",\r\n    \"costo\": 0.2,\r\n    \"inventariable\": true,\r\n    \"id_category\": 1,\r\n    \"id_unit\": 1,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/product/16",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"product",
+								"16"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive product",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkzOTI2MTY5LCJleHAiOjE2OTM5Mjk3Njl9.rL2pGLxmitk_WVRduf0SIEOTPU36J03fYgNkQ-CfQxo",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/product/destroyAndActive/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"product",
+								"destroyAndActive",
+								"1"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Storages",
+			"item": [
+				{
+					"name": "get and search all storages",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk0MDEwODU2LCJleHAiOjE2OTQwMTQ0NTZ9.ZCy4Y9LxMLfQqWx-QH_V3IBO6OngS9c-CCZZL4-fxxs",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/storage?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"storage"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new storage",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkzOTIzNDA4LCJleHAiOjE2OTM5MjcwMDh9.clO_UDeVXzsktI0AqWGprcOvO_mNMISR6m1fsmlzUlE",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"almacen irpavi\",\r\n    \"id_sucursal\": 1,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/storage",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"storage"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update storage",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkzOTIzNDA4LCJleHAiOjE2OTM5MjcwMDh9.clO_UDeVXzsktI0AqWGprcOvO_mNMISR6m1fsmlzUlE",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"almacen irpavi2\",\r\n    \"id_sucursal\": 1,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/storage/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"storage",
+								"1"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive storage",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkzOTIzNDA4LCJleHAiOjE2OTM5MjcwMDh9.clO_UDeVXzsktI0AqWGprcOvO_mNMISR6m1fsmlzUlE",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/storage/destroyAndActive/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"storage",
+								"destroyAndActive",
+								"1"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Company",
+			"item": [
+				{
+					"name": "get and search all companies",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkzOTQyMzI5LCJleHAiOjE2OTM5NDU5Mjl9.roA9DBFh8ecPgcV2GeoCGqL7Y4ogPvQpiEFhTBfGASg",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/company?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"company"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update company",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjA5MjkwLCJleHAiOjE2OTE2MTI4OTB9.OWorNQrhOTe0Nd0Axv1ZrWpBwrnqKj0k7XPq_rzEMx4",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"RECUMET BOLIVIA  S.R.L.\",\r\n    \"nit\": \"1009851024\",\r\n    \"razon_social\": \"RECUMET\",\r\n    \"activity\": \"Recuperadora de metales ferrosos metales no ferrosos y Raees\",\r\n    \"email\": \"contacto@recumetbolivia.com\",\r\n    \"cellphone\": \"4547295\",\r\n    \"logo\": \"NONE\",\r\n    \"address\": \"Av. Villazon Km. 9\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/company/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"company",
+								"1"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Sucursal",
+			"item": [
+				{
+					"name": "get and search all sucursal",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk0MDA5ODg3LCJleHAiOjE2OTQwMTM0ODd9.zgDvbDq3FA0Zit1VMY5dWqbGbNKItIMP2GUfPNXjcGE",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/sucursal?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"sucursal"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new sucursal",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk0MDA1OTYzLCJleHAiOjE2OTQwMDk1NjN9.OCKlkmCEldxchJI70RMUUe19kVc7evILMl9ESmaLznU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"SUCURSAL 3\",\r\n    \"cellphone\": 0,\r\n    \"address\": \"AV. AMERICA\",\r\n    \"email\": \"lb\",\r\n\r\n    \"city\": \"CBBA\",\r\n    \"type\": \"RECUMENT\",\r\n    \r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/sucursal",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"sucursal"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update sucursal",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjEwNzQwLCJleHAiOjE2OTE2MTQzNDB9.oAPsgbOkehCrlD_NfO3t56F6drW0QdnzSbYRsJfz6gQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n   \"name\": \"SOCIEDAD-RECUMET/PRODMETAL1\",\r\n    \"email\": \"test@gmail.om\",\r\n    \"cellphone\": 0,\r\n    \"city\": \"CBBA\",\r\n    \"address\": \"AV. AMERICA\",\r\n    \"type\": \"RECUMENT\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/sucursal/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"sucursal",
+								"2"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive sucursal",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjEwNzQwLCJleHAiOjE2OTE2MTQzNDB9.oAPsgbOkehCrlD_NfO3t56F6drW0QdnzSbYRsJfz6gQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": false\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/sucursal/destroyAndActive/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"sucursal",
+								"destroyAndActive",
+								"2"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Client",
+			"item": [
+				{
+					"name": "get and search all client",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjE4MDUyLCJleHAiOjE2OTE2MjE2NTJ9.2oOCOmCzshHv5_kxixckU2lRIEX8M9ovOhHm92YKR90",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/client?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"client"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new client",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjE4MDUyLCJleHAiOjE2OTE2MjE2NTJ9.2oOCOmCzshHv5_kxixckU2lRIEX8M9ovOhHm92YKR90",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"ronald j llusco\",\r\n    \"number_document\": \"9371588\",\r\n    \"razon_social\": \"llusco\",\r\n    \"email\": \"lluscovillarpando@gmail.com\",\r\n    \"cellphone\": \"79746001\",\r\n    \"business_name\": \"UNIVERSIDAD\",\r\n    \"address\": \"av. america\",\r\n    \"type\": \"EXAMPLE\",\r\n    \"id_sucursal\": \"1\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/client",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"client"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update client",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjE4MDUyLCJleHAiOjE2OTE2MjE2NTJ9.2oOCOmCzshHv5_kxixckU2lRIEX8M9ovOhHm92YKR90",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"vilallarpando\",\r\n    \"number_document\": \"9371588\",\r\n    \"razon_social\": \"llusco\",\r\n    \"email\": \"lluscovillarpando@gmail.com\",\r\n    \"cellphone\": \"79746001\",\r\n    \"business_name\": \"UNIVERSIDAD\",\r\n    \"address\": \"av. america\",\r\n    \"type\": \"EXAMPLE\",\r\n    \"id_sucursal\": \"1\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/client/20",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"client",
+								"20"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive client",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjkxNjE4MDUyLCJleHAiOjE2OTE2MjE2NTJ9.2oOCOmCzshHv5_kxixckU2lRIEX8M9ovOhHm92YKR90",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": false\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/client/destroyAndActive/20",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"client",
+								"destroyAndActive",
+								"20"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "TrasportCompany",
+			"item": [
+				{
+					"name": "get and search all trasport companies",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MzMzOTgyLCJleHAiOjE2OTUzMzc1ODJ9.05w3iGtDjPyqc4pZtcneswekIA00maE6QsiA5ynAXbQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new trasport companies",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjE1MjEzLCJleHAiOjE2OTUyMTg4MTN9.YFfGSApOtLFMg0uHTL9dLiAZKthNzcitfARHvaQ3wxU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"TRASPORTADORA VEN12\",\r\n    \"nit\": \"1234545\",\r\n    \"city\": \"cbba\",\r\n    \"address\": \"america\",\r\n    \"cellphone\": \"79746003\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new chauffeur",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjE1MjEzLCJleHAiOjE2OTUyMTg4MTN9.YFfGSApOtLFMg0uHTL9dLiAZKthNzcitfARHvaQ3wxU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"DON DANIEL\",\r\n    \"number_document\": \"12345\",\r\n    \"id_trasport_company\": 1,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company/chauffeur",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company",
+								"chauffeur"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "delete chauffeur",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjE1MjEzLCJleHAiOjE2OTUyMTg4MTN9.YFfGSApOtLFMg0uHTL9dLiAZKthNzcitfARHvaQ3wxU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"TRASPORTADORA VEN12\",\r\n    \"number_document\": \"12345\",\r\n    \"id_trasport_company\": 1,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company/chauffeur/1",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company",
+								"chauffeur",
+								"1"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new cargotruck",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjE1MjEzLCJleHAiOjE2OTUyMTg4MTN9.YFfGSApOtLFMg0uHTL9dLiAZKthNzcitfARHvaQ3wxU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"placa\": \"12erd\",\r\n    \"id_trasport_company\": 1,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company/cargo_truck",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company",
+								"cargo_truck"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "delete cargotruck",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjE1MjEzLCJleHAiOjE2OTUyMTg4MTN9.YFfGSApOtLFMg0uHTL9dLiAZKthNzcitfARHvaQ3wxU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"TRASPORTADORA VEN12\",\r\n    \"number_document\": \"12345\",\r\n    \"id_trasport_company\": 1,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company/cargo_truck/3",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company",
+								"cargo_truck",
+								"3"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update trasport companies",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjE1MjEzLCJleHAiOjE2OTUyMTg4MTN9.YFfGSApOtLFMg0uHTL9dLiAZKthNzcitfARHvaQ3wxU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"TRASPORTADORA VEN12\",\r\n    \"nit\": \"12345456\",\r\n    \"city\": \"cbba\",\r\n    \"address\": \"america\",\r\n    \"cellphone\": \"79746003\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company/3",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company",
+								"3"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive trasport companies",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjE1MjEzLCJleHAiOjE2OTUyMTg4MTN9.YFfGSApOtLFMg0uHTL9dLiAZKthNzcitfARHvaQ3wxU",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/trasport_company/destroyAndActive/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"trasport_company",
+								"destroyAndActive",
+								"2"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Provider",
+			"item": [
+				{
+					"name": "get and search all provider",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MzMzOTgyLCJleHAiOjE2OTUzMzc1ODJ9.05w3iGtDjPyqc4pZtcneswekIA00maE6QsiA5ynAXbQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/provider?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"provider"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new provider",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MzMzOTgyLCJleHAiOjE2OTUzMzc1ODJ9.05w3iGtDjPyqc4pZtcneswekIA00maE6QsiA5ynAXbQ",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"RONALD TEST 2\",\r\n    \"number_document\": \"9371588\",\r\n    \"name_sector\": \"sector FIERROS\",\r\n    \"cellphone\": 79746003,\r\n    \"direction\" :\"av.america\",\r\n    \"type\":\"NATURAL\",\r\n    \r\n    \"mayorista\": true,\r\n    \"name_contact\": \"lucas\",\r\n    \"cellphone_contact\": 7854632,\r\n    \"id_category\": 1,\r\n    \"id_sucursal\": null,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/provider",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"provider"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update provider",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjI0ODcxLCJleHAiOjE2OTUyMjg0NzF9.or362V_JsKcNlTofg2dzeV3GH5_QM9XBzH7f1haW78k",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"full_names\": \"RONALD TEST 2\",\r\n    \"name_sector\": \"sector FIERROS\",\r\n    \"number_document\": \"9371588\",\r\n    \"cellphone\": 79746003,\r\n    \"direction\" :\"av.america\",\r\n    \"type\":\"NATURAL\",\r\n    \"mayorista\": true,\r\n    \"name_contact\": \"lucas\",\r\n    \"cellphone_contact\": 7854632,\r\n    \"id_category\": 1,\r\n    \"id_sucursal\": null,\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/provider/3",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"provider",
+								"3"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive provider",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjI0ODcxLCJleHAiOjE2OTUyMjg0NzF9.or362V_JsKcNlTofg2dzeV3GH5_QM9XBzH7f1haW78k",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/provider/destroyAndActive/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"provider",
+								"destroyAndActive",
+								"2"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "scala (balanza)",
+			"item": [
+				{
+					"name": "get and search all scalas",
+					"protocolProfileBehavior": {
+						"disableBodyPruning": true
+					},
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MzA3NTAzLCJleHAiOjE2OTUzMTExMDN9.EqsUce_A9UKni4gFIJQM2NFG5ErIaD78EPqQcoXHP1k",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": ""
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/scale?page=1&limit=10&status=true",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"scale"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "query",
+									"value": "LLUSCO",
+									"disabled": true
+								},
+								{
+									"key": "type",
+									"value": "employee",
+									"disabled": true
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "true"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "new scalas",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjQwMzI3LCJleHAiOjE2OTUyNDM5Mjd9.AwRwX1_fKFGaWrYmCiXO01ADKoOUEiCMaYCcejEDQ-I",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"name\": \"PESAJE\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/scale",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"scale"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "update scalas",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjQwMzI3LCJleHAiOjE2OTUyNDM5Mjd9.AwRwX1_fKFGaWrYmCiXO01ADKoOUEiCMaYCcejEDQ-I",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n   \"name\": \"PESAJE2\",\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/scale/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"scale",
+								"2"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "active or inactive scalas",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNjk1MjQwMzI3LCJleHAiOjE2OTUyNDM5Mjd9.AwRwX1_fKFGaWrYmCiXO01ADKoOUEiCMaYCcejEDQ-I",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"status\": true\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:3000/api/v1/scale/destroyAndActive/2",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "3000",
+							"path": [
+								"api",
+								"v1",
+								"scale",
+								"destroyAndActive",
+								"2"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
