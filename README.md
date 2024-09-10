@@ -17,7 +17,7 @@
 1.1. Clone the repo and install the dependencies and sequelize-cli.
 
 ```bash
-    git clone https://github.com/RonaldLlusco/backend_recumet.git
+    git clone https://github.com/gasfer/recumet_recicla_backend.git
 ```
 ```bash
     npm install --force
