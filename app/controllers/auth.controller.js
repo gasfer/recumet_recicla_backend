@@ -58,7 +58,7 @@ const login = async (req, res = response) => {
                     }],
             });
         }
-        if(!verifyAssignShift(user.assign_shift)){
+        if(!verifyAssignShift(user.assign_shift)  && user.role != 'ADMINISTRADOR'){
             history.id_user = user.id;
             history.type = 'HORARIO NO ASIGNADO';
             history.description = `SE INTENTO AUTENTICAR EL USUARIO ${user.full_names} SIN ÉXITO YA QUE NO PUEDE INGRESAR POR SUS TURNOS`;
