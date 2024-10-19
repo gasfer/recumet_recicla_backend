@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { nameExistProvider, idExistProvider, idExistCategory, idExistSector, nameExistSector } = require('./database');
+const { nameExistProvider, idExistProvider, idExistCategory, idExistSector, nameExistSector, idTypeProvider } = require('./database');
 
 const validationSchema =  {
     full_names: {
@@ -22,10 +22,11 @@ const validationSchema =  {
         },
         custom: { options: idExistSector },
     },
-    type: {
+    id_type_provider: {
         isEmpty: {
             negated: true, errorMessage: "La tipo es obligatorio",
         },
+        custom: { options: idTypeProvider },
     },
     mayorista: {
         isBoolean: {

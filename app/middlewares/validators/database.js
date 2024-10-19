@@ -21,7 +21,8 @@ const {
   AbonosAccountsPayable,
   AccountsReceivable,
   AbonosAccountsReceivable,
-  Transfers
+  Transfers,
+  TypesProvider
 } = require("../../database/config");
 
 // ========================= USER VALIDATE ============================
@@ -336,7 +337,13 @@ const idExistTransfer = async (id = "") => {
     throw new Error(`El traslado con id: ${id}, no existe`);
   };
 }
-
+//=========================== TYPES PROVIDER =============================
+const idTypeProvider= async (id = "") => {
+  const idExist = await TypesProvider.findByPk(id);
+  if (!idExist) {
+    throw new Error(`El tipo con id: ${id}, no existe`);
+  }
+};
 module.exports = {
   idExistUser,
   emailExistUser,
@@ -377,5 +384,6 @@ module.exports = {
   idExistAccountReceivable,
   idExistAbonoAccountReceivable,
   idExistTransfer,
-  idExistTransferPending
+  idExistTransferPending,
+  idTypeProvider
 };

@@ -1,16 +1,21 @@
 const { response, request } = require('express');
-const { Provider, Sector, sequelize, Input,DetailsInput } = require('../database/config');
+const { Provider, Sector, sequelize, TypesProvider,DetailsInput } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 
 const getProviderPaginate = async (req = request, res = response) => {
     try {
-        let {query, page, limit, type, status, orderNew} = req.query;
+        let {query, page, limit, type, status, orderNew , id_type_provider} = req.query;
         let isSearchPos = type === 'pos' ? true : false;   
         let optionsDb = {
             order: [orderNew],
-            where: { status },
-            include: [ { association: 'category'},{ association: 'sector'}]
+            where: { 
+                [Op.and]: [
+                    { status },
+                    id_type_provider ? {id_type_provider}: {}
+                ]
+            },
+            include: [ { association: 'category'},{ association: 'sector'}, { association: 'type'}]
         };
         if(isSearchPos) type = null;
         if(isSearchPos) optionsDb.where[Op.or] = [
@@ -185,6 +190,25 @@ const deleteSectorProvider = async (req = request, res = response ) => {
     }
 }
 
+
+
+const getAllTypesProvider = async (req = request, res = response) => {
+    try {
+        let typesProvider =  await TypesProvider.findAll({where:{status: true}});
+        return res.status(200).json({
+            ok: true,
+            typesProvider
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
+
 module.exports = {
     getProviderPaginate,
     newProvider,
@@ -193,5 +217,6 @@ module.exports = {
     getAllSectorProvider,
     newSectorProvider,
     deleteSectorProvider,
-    getProviderByProductPaginate
+    getProviderByProductPaginate,
+    getAllTypesProvider
 };
