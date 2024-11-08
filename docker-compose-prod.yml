@@ -1,0 +1,18 @@
+version: "3.7"
+services:
+  backend:
+    container_name: recumet-backend
+    build:
+      context: ./
+      dockerfile: Dockerfile
+    ports:
+      - 83:3000
+    restart: always
+    command: >
+      sh -c "npx sequelize-cli db:migrate && 
+             node app"
+    networks:
+      - recumet-network
+networks:
+  recumet-network:
+    driver: bridge
