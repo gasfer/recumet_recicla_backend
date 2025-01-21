@@ -8,8 +8,6 @@ const { Op } = require('sequelize');
 const getAllHistory = async (req = request, res = response) => {
     try {
         const {query, page, limit, type,id_sucursal,id_user,orderNew} = req.query;
-        console.log(id_sucursal);
-        console.log(id_user);
         const whereDate = whereDateForType('MONTH',moment(), moment(), '"History"."createdAt"');
         const optionsDb = {
             order: [orderNew], 

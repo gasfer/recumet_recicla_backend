@@ -336,7 +336,7 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
     {   text: 'TELÉFONO:',bold:true, style: 'text',
         absolutePosition: { x:97, y: 45 }
     },
-    {   text: `${accountsPayable.sucursal.cellphone}`, style: 'text',
+    {   text: `${accountsPayable?.sucursal?.cellphone ?? '-'}`, style: 'text',
         absolutePosition: { x:155, y: 45 }
     },
     {   text: 'EMAIL:', bold:true, style: 'text',

@@ -214,10 +214,20 @@ const idExistProvider = async (id = "") => {
 }
 const nameExistProvider = async (full_names = "",{req}) => {
   const { id } = req.params;
+  if(!full_names) return;
   const existDB = await Provider.findOne({ where: { full_names } });
   if(!existDB) return;
   if (existDB.id != id) {
     throw new Error(`El proveedor con nombre: ${full_names}, ya existe`);
+  }
+};
+const numberDocumentExistProvider = async (number_document = "",{req}) => {
+  const { id } = req.params;
+  if(!number_document) return;
+  const existDB = await Provider.findOne({ where: { number_document } });
+  if(!existDB) return;
+  if (existDB.id != id) {
+    throw new Error(`El proveedor con numero CI / NIT: ${number_document}, ya existe`);
   }
 };
 // ========================== SCALA COMPANY =============================
@@ -385,5 +395,6 @@ module.exports = {
   idExistAbonoAccountReceivable,
   idExistTransfer,
   idExistTransferPending,
-  idTypeProvider
+  idTypeProvider,
+  numberDocumentExistProvider
 };
