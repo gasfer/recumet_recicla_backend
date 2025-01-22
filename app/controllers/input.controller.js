@@ -21,7 +21,7 @@ const getInputsPaginate = async (req = request, res = response) => {
                     type_registry ? { type_registry } : {},
                     id_provider   ? { id_provider   } : {},
                     { status },
-                    { createdAt: whereDate }
+                    { date_voucher: whereDate }
                 ]
             },
             include: [ 
@@ -70,7 +70,7 @@ const newInput = async (req = request, res = response) => {
             detail.id_input = id_input;
             await DetailsInput.create(detail,{ transaction: t });
             //**ACTUALIZAR COSTO PRODUCTO */
-            await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});
+            //await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});
             //**KARDEX */        
             const old_kardex = await Kardex.findOne({ 
                 order: [['id', 'DESC']],

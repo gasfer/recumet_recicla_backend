@@ -13,26 +13,22 @@ const router = Router();
 
 router.get('/',[
     validarJWT,
-    validarIsAdmin
 ],getUsers );
 
 router.post('/', [
     validarJWT,
-    validarIsAdmin,
     toUpperCaseConvert,
     getValidateCreate
 ],newUser );
 
 router.put('/:id', [
     validarJWT,
-    validarIsAdmin,
     toUpperCaseConvert,
     getValidateUpdate
 ],updateUser );
 
 router.put('/destroyAndActive/:id', [
     validarJWT,
-    validarIsAdmin,
     validateDelete
 ],activeInactiveUser );
 
