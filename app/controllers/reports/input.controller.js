@@ -29,7 +29,7 @@ const generatePdfReports = async (req = request, res = response) => {
             total += Number(input.total);
             const tableData = [
                 {text:input?.cod, fontSize:9}, 
-                {text:moment(input?.createdAt).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
+                {text:moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:input?.type_registry, fontSize:9}, 
                 {text:input?.registry_number, fontSize:9}, 
                 {text:moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
@@ -149,7 +149,7 @@ const generateExcelReports = async (req = request, res = response) => {
     inputs.forEach(input => {
       const tableData = {
         CÓDIGO: input.cod,
-        FECHA_COMPRA: moment(input?.createdAt).format('DD/MM/YYYY HH:mm:ss'),
+        FECHA_COMPRA: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
         TIPO_DOCUMENTO: input.type_registry,
         NRO_DOCUMENTO: input.registry_number,
         FECHA_DOCUMENTO: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
@@ -207,7 +207,7 @@ const generateExcelReports = async (req = request, res = response) => {
 
 const returnDataInput = async (params) => {
     const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
     const optionsDb = {
         order: [orderNew],
         where: {
@@ -218,7 +218,7 @@ const returnDataInput = async (params) => {
                 type_registry ? { type_registry } : {},
                 id_provider   ? { id_provider   } : {},
                 { status },
-                { createdAt: whereDate }
+                { date_voucher: whereDate }
             ]
         },
         include: [ 
@@ -235,22 +235,22 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         const {filterBy, date1, date2} = req.query;
         const decimal = await getNumberDecimal();
         const detailsInput = await returnDataDetailsInput(req.query);
-        let dataPdf = dataDetailsPdfReturn(req.userAuth); //PDF 
+        let dataPdf = dataDetailsPdfReturn(req.userAuth,date1,date2); //PDF 
         let total = 0;
+        let index= 1;
         detailsInput.forEach(detail => {
-            total = Number(total) + Number(detail.dataValues.suma_total);
+            total = Number(total) + Number(detail.dataValues.suma_quantity);
             const tableData = [
+                {text:index, fontSize:9}, 
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
-                {text:Number(detail?.cost).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(detail?.dataValues.suma_quantity).toFixed(decimal), fontSize:9, alignment: 'right'}, 
-                {text:Number(detail?.dataValues.suma_total).toFixed(decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
+            index++;
         });
         dataPdf[5].table.body.push([
-            {colSpan: 2, text:`TOTAL: ${NumeroALetras(total)}`},
-            {text:''},
+            {colSpan: 2, text:`TOTAL`,fontSize:10},
             {text:''},
             {text:''},
             {text: `${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
@@ -259,7 +259,6 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         let docDefinition = {
             content: dataPdf,
-            pageOrientation: 'landscape',
             footer: function(currentPage, pageCount) { return [
                 {
                     text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
@@ -286,7 +285,7 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
     }
 }
 
-const dataDetailsPdfReturn = (auth) => [
+const dataDetailsPdfReturn = (auth,date1,date2) => [
     {
         image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
         width: 70,
@@ -298,21 +297,20 @@ const dataDetailsPdfReturn = (auth) => [
     {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
         absolutePosition: {  y: 27 }
     },
-    { text: 'REPORTE DE COMPRAS DETALLADAS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    { text: 'COMPRAS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
+    { text: 'Reporte FECHA:' +  date1 + ' ' + date2, alignment:'center',absolutePosition: {  y: 73 } },
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,'*',70,70,70],
+            widths: [70,60,'*',70],
             body: [
                 [
+                    {text:'N', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'PRODUCTO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'COSTO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CANTIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'IMPORTE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                 ]
             ]   ,
             layout: 'lightHorizontalLines'
@@ -329,18 +327,14 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
             detailsInput_data.push({
                 CÓDIGO: '',
                 PRODUCTO: '',
-                COSTO: '',
-                CANTIDAD: '',
-                IMPORTE: '',
+                CANTIDAD: ''
             });
         }
         detailsInput.forEach(detail => {
             const tableData = {
                 CÓDIGO: detail?.product.cod,
                 PRODUCTO: detail?.product.name,
-                COSTO: Number(detail?.cost).toFixed(decimal),
-                CANTIDAD:Number(detail?.dataValues.suma_quantity),
-                IMPORTE: Number(detail?.dataValues.suma_total).toFixed(decimal),
+                CANTIDAD:Number(detail?.dataValues.suma_quantity)
             }
             detailsInput_data.push(tableData);
         });
@@ -383,10 +377,9 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
 
 const returnDataDetailsInput = async (params) => {
     const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"input"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
     const optionsDb = {
         attributes: [
-            'cost',
             [sequelize.fn('SUM', sequelize.col('quantity')), 'suma_quantity'],
             [sequelize.fn('SUM', sequelize.col('DetailsInput.total')), 'suma_total'],
         ],
@@ -406,12 +399,12 @@ const returnDataDetailsInput = async (params) => {
                             type_registry ? { type_registry } : {},
                             id_provider   ? { id_provider   } : {},
                             status ? { status } : {},
-                            { createdAt: whereDate }
+                            { date_voucher: whereDate }
                         ]
                 }, 
             }
         ],
-        group: [ 'id_product','product.id','cost']
+        group: [ 'id_product','product.id']
     };
     return await DetailsInput.findAll(optionsDb);
 }
@@ -582,7 +575,7 @@ const dataPdfReturnInputVoucher = (input,sucursal,decimal) => [
     { text: 'COMPRA: ' + input.cod, style: 'fechaDoc',
       absolutePosition: {  y: 30 }
     },
-    { text: new Date(input.createdAt).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
+    { text: new Date(input.date_voucher).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
     { text: 'NOTA DE COMPRA', style: 'title',bold:true , fontSize:12},
     { text: 'DATOS PROVEEDOR:', style: 'datos_person', bold:true ,fontSize:10 },
     {

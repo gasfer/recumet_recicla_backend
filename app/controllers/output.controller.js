@@ -10,7 +10,7 @@ const { returnDataKardexOutput, returnDataKardexInput, returnDataAfterUpdateKard
 const getOutputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type,type_registry,type_output,id_client,type_pay, id_sucursal, id_storage, status, filterBy, date1, date2,orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."createdAt"');
+        const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."date_output"');
         const optionsDb = {
             order: [orderNew],
             where: {
@@ -22,7 +22,7 @@ const getOutputsPaginate = async (req = request, res = response) => {
                     type_registry ? { type_registry } : {},
                     id_client     ? { id_client   } : {},
                     { status },
-                    { createdAt: whereDate }
+                    { date_output: whereDate }
                 ]
             },
             include: [ 

@@ -10,7 +10,7 @@ const getInputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
                 id_provider, status, filterBy, date1, date2, orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."createdAt"');
+        const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
         const optionsDb = {
             order: [orderNew],
             where: {

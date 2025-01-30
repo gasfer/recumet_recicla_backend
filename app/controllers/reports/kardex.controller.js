@@ -630,7 +630,7 @@ try {
 }
 const returnDataInput = async (params) => {
     const {id_sucursal, id_storage, id_provider, id_product, filterBy, date1, date2, type_kardex,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."date"');
     const optionsDb = {
         order: [orderNew],
         where: {
@@ -640,7 +640,7 @@ const returnDataInput = async (params) => {
                 id_provider ? { id_provider } : {},
                 id_product  ? { id_product  } : {},
                 type_kardex  ? { type:type_kardex  } : {},
-                { createdAt: whereDate },
+                { date: whereDate },
                 { status: true },
             ]
         },
@@ -661,7 +661,7 @@ const returnDataInput = async (params) => {
 
 const returnDataInputKardexFisico = async (params) => {
     const {id_sucursal, id_storage, id_provider, id_product, filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."date"');
     const optionsDb = {
         //order: [orderNew],
         attributes: [
@@ -677,7 +677,7 @@ const returnDataInputKardexFisico = async (params) => {
                 id_storage  ? { id_storage  } : {},
                 id_provider ? { id_provider } : {},
                 id_product  ? { id_product  } : {},
-                { createdAt: whereDate },
+                { date: whereDate },
                 { status: true },
             ]
         },

@@ -29,7 +29,7 @@ const generatePdfReports = async (req = request, res = response) => {
             total += Number(output.total);
             const tableData = [
                 {text:output?.cod, fontSize:9}, 
-                {text:moment(output?.createdAt).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
+                {text:moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:output?.type_registry, fontSize:9}, 
                 {text:output?.number_registry, fontSize:9}, 
                 {text:output?.client?.full_names, fontSize:8}, 
@@ -149,7 +149,7 @@ const generateExcelReports = async (req = request, res = response) => {
     outputs.forEach(output => {
       const tableData = {
         CÓDIGO: output.cod,
-        FECHA_VENTA: moment(output?.createdAt).format('DD/MM/YYYY HH:mm:ss'),
+        FECHA_VENTA: moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'),
         TIPO_DOCUMENTO: output.type_registry,
         NRO_DOCUMENTO: output.registry_number,
         FECHA_DOCUMENTO: moment(output?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
@@ -209,7 +209,7 @@ const generateExcelReports = async (req = request, res = response) => {
 
 const returnDataOutput = async (params) => {
     const {type_pay, type_registry, id_client,id_sucursal,id_storage, status, filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."date_output"');
     const optionsDb = {
         order: [orderNew],
         where: {
@@ -220,7 +220,7 @@ const returnDataOutput = async (params) => {
                 type_registry ? { type_registry } : {},
                 id_client   ? { id_client   } : {},
                 { status },
-                { createdAt: whereDate }
+                { date_output: whereDate }
             ]
         },
         include: [ 
@@ -387,7 +387,7 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
 
 const returnDataDetailsOutput = async (params) => {
     const {type_pay, type_registry, id_client,id_sucursal,id_storage, status, filterBy, date1, date2} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"output"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
     const optionsDb = {
         attributes: [
             'price',
@@ -410,7 +410,7 @@ const returnDataDetailsOutput = async (params) => {
                             type_registry ? { type_registry } : {},
                             id_client   ? { id_client   } : {},
                             status ? { status } : {},
-                            { createdAt: whereDate }
+                            { date_output: whereDate }
                         ]
                 }, 
             }
@@ -589,7 +589,7 @@ const dataPdfReturnOutputVoucher = (output,sucursal,decimal) => [
     { text: 'VENTA: ' + output.cod, style: 'fechaDoc',
       absolutePosition: {  y: 30 }
     },
-    { text: new Date(output.createdAt).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
+    { text: new Date(output.date_output).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
     { text: output.voucher === 'MENOR' ? 'NOTA DE VENTA' : 'NOTA DE DESPACHO', style: 'title',bold:true , fontSize:12},
     { text: 'DATOS CLIENTE:', style: 'datos_person', bold:true ,fontSize:9 },
     {

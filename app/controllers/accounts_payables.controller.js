@@ -8,7 +8,7 @@ const { Op } = require('sequelize');
 const getAccountsPayablePaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type,status_account, id_provider, id_sucursal,type_registry, filterBy, date1, date2,orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"AccountsPayable"."createdAt"');
+        const whereDate = whereDateForType(filterBy,date1, date2, '"AccountsPayable"."date_credit"');
         const optionsDb = {
             order: [orderNew],
             where: {
@@ -17,7 +17,7 @@ const getAccountsPayablePaginate = async (req = request, res = response) => {
                     id_sucursal   ? { id_sucursal   } : {},
                     status_account ? { status_account   } : {},
                     { status: true },
-                    { createdAt: whereDate }
+                    { date_credit: whereDate }
                 ]
             },
             include: [ 

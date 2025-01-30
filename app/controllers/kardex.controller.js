@@ -7,7 +7,7 @@ const { whereDateForType } = require('../helpers/where_range');
 const getKardexPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, id_sucursal, id_storage, id_provider, id_product, filterBy, date1, date2, type_kardex,orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."createdAt"');
+        const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."date"');
         const optionsDb = {
             order: [orderNew],
             where: {
@@ -17,7 +17,7 @@ const getKardexPaginate = async (req = request, res = response) => {
                     id_provider ? { id_provider } : {},
                     id_product  ? { id_product  } : {},
                     type_kardex  ? { type:type_kardex  } : {},
-                    { createdAt: whereDate },
+                    { date: whereDate },
                     { status: true },
                 ]
             },
@@ -50,7 +50,7 @@ const getKardexPaginate = async (req = request, res = response) => {
 const getKardexFisicoPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, id_sucursal, id_storage, id_provider, id_product, filterBy, date1, date2,orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."createdAt"');
+        const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."date"');
         const optionsDb = {
             order: [orderNew],
             attributes: [
@@ -66,7 +66,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
                     id_storage  ? { id_storage  } : {},
                     id_provider ? { id_provider } : {},
                     id_product  ? { id_product  } : {},
-                    { createdAt: whereDate },
+                    { date: whereDate },
                     { status: true },
                 ]
             },
