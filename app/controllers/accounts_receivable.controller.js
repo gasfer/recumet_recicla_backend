@@ -9,7 +9,7 @@ const { validaOpenCajaSmall } = require('../middlewares/validators/caja_small');
 const getAccountsReceivablePaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, status_account,id_client, id_sucursal, type_registry,filterBy, date1, date2,orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"AccountsReceivable"."date_credit"');
+        const whereDate = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
         const optionsDb = {
             order: [orderNew],
             where: {
@@ -18,7 +18,6 @@ const getAccountsReceivablePaginate = async (req = request, res = response) => {
                     id_sucursal    ? { id_sucursal    } : {},
                     status_account ? { status_account } : {},
                     { status: true },
-                    { date_credit: whereDate }
                 ]
             },
             include: [
@@ -27,6 +26,7 @@ const getAccountsReceivablePaginate = async (req = request, res = response) => {
                 { association: 'output', 
                     where: { [Op.and]: [
                         type_registry ? { type_registry } : {},
+                        { date_output: whereDate }
                     ]},
                     include:[  
                         { association: 'scale', attributes: ['name']},

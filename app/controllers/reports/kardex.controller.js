@@ -17,6 +17,7 @@ const generatePdfReports = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2} = req.query;
         const kardexes = await returnDataInput(req.query);
+        const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
         kardexes.forEach(kardex => {
             const tableData = [
@@ -25,10 +26,10 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:kardex?.detalle, fontSize:8}, 
                 {text:kardex?.product.name, fontSize:8}, 
                 {text:kardex?.product.unit.siglas, fontSize:8}, 
-                {text:kardex?.quantity_inicial, fontSize:8}, 
-                {text:kardex?.quantity_input, fontSize:8}, 
-                {text:kardex?.quantity_output, fontSize:8}, 
-                {text:kardex?.quantity_saldo, fontSize:8, },  
+                {text:Number(kardex?.quantity_inicial).toFixed(decimal), fontSize:8}, 
+                {text:Number(kardex?.quantity_input).toFixed(decimal), fontSize:8}, 
+                {text:Number(kardex?.quantity_output).toFixed(decimal), fontSize:8}, 
+                {text:Number(kardex?.quantity_saldo).toFixed(decimal), fontSize:8, },  
                 {text:kardex?.sucursal.name, fontSize:8,}, 
                 {text:kardex?.storage.name, fontSize:8,},
             ];
@@ -68,6 +69,7 @@ const generatePdfReports = async (req = request, res = response) => {
 const generatePdfReportsKardexFisico = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2} = req.query;
+        const decimal = await getNumberDecimal();
         const kardexes = await returnDataInputKardexFisico(req.query);
         let dataPdf = dataPdfReturnKardexFisicoVerticalOnlyReciclen(req.userAuth,kardexes); //PDF 
         kardexes.forEach(kardex => {
@@ -76,9 +78,9 @@ const generatePdfReportsKardexFisico = async (req = request, res = response) => 
                 {text:kardex?.product.name, fontSize:8}, 
                 {text:kardex?.product.unit.siglas, fontSize:8}, 
                 // {text:kardex?.quantity_inicial, fontSize:8}, 
-                {text:kardex?.quantity_input, fontSize:8}, 
-                {text:kardex?.quantity_output, fontSize:8}, 
-                {text:kardex?.quantity_saldo, fontSize:8, },  
+                {text:Number(kardex?.quantity_input).toFixed(decimal), fontSize:8}, 
+                {text:Number(kardex?.quantity_output).toFixed(decimal), fontSize:8}, 
+                {text:Number(kardex?.quantity_saldo).toFixed(decimal), fontSize:8, },  
                 // {text:kardex?.sucursal.name, fontSize:7,}, 
                 {text:kardex?.storage.name, fontSize:8,},
             ];
@@ -146,9 +148,9 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
                         { text: kardex?.detalle, alignment: 'right', fontSize:7 }
                     ]
                 },
-                {text:kardex?.quantity_input, fontSize:8 ,fillColor: '#DFF0D8'}, 
-                {text:kardex?.quantity_output, fontSize:8,fillColor: '#F2DEDE'}, 
-                {text:kardex?.quantity_saldo, fontSize:8,fillColor: '#D9EDF7'}, 
+                {text:Number(kardex?.quantity_input).toFixed(decimal), fontSize:8 ,fillColor: '#DFF0D8'}, 
+                {text:Number(kardex?.quantity_output).toFixed(decimal), fontSize:8,fillColor: '#F2DEDE'}, 
+                {text:Number(kardex?.quantity_saldo).toFixed(decimal), fontSize:8,fillColor: '#D9EDF7'}, 
                 {text:Number(kardex?.cost_u_inicial).toFixed(decimal), fontSize:8}, 
                 {text:Number(kardex?.cost_u_input).toFixed(decimal), fontSize:8,  fillColor: '#DFF0D8'},  
                 {text:Number(kardex?.cost_u_output).toFixed(decimal), fontSize:8,fillColor: '#F2DEDE'}, 
@@ -399,16 +401,16 @@ const generateExcelReports = async (req = request, res = response) => {
                 DETALLE: kardex.detalle,
                 PRODUCTO: kardex.product.name,
                 UND: kardex.product.unit.siglas,
-                CANT_SALDO_INICIAL: Number(kardex.quantity_inicial),
+                CANT_SALDO_INICIAL: Number(kardex.quantity_inicial).toFixed(decimal),
                 COSTO_U_INICIAL: Number(kardex.cost_u_inicial).toFixed(decimal),
                 COSTO_TOTAL_INICIAL: Number(kardex.cost_total_inicial).toFixed(decimal),
-                CANT_ENTRADA: Number(kardex.quantity_input),
+                CANT_ENTRADA: Number(kardex.quantity_input).toFixed(decimal),
                 COSTO_U_ENTRADA: Number(kardex.cost_u_input).toFixed(decimal),
                 COSTO_TOTAL_ENTRADA: Number(kardex.cost_total_input).toFixed(decimal),
-                CANT_SALIDA: Number(kardex.quantity_output),
+                CANT_SALIDA: Number(kardex.quantity_output).toFixed(decimal),
                 COSTO_U_SALIDA: Number(kardex.cost_u_output).toFixed(decimal),
                 COSTO_TOTAL_SALIDA: Number(kardex.cost_total_output).toFixed(decimal),
-                CANT_SALDO: Number(kardex.quantity_saldo),
+                CANT_SALDO: Number(kardex.quantity_saldo).toFixed(decimal),
                 COST_U_SALDO: Number(kardex.cost_u_saldo).toFixed(decimal),
                 COSTO_TOTAL_SALDO: Number(kardex.cost_total_saldo).toFixed(decimal),
                 SUCURSAL: kardex.sucursal.name,
@@ -493,10 +495,10 @@ const generateExcelReportsKardexFisico = async (req = request, res = response) =
                   Código: kardex.product.cod,
                   Detalle: kardex.product.name,
                   Unidad: kardex.product.unit.siglas,
-                  "Inv. Inicial": Number(kardex.quantity_inicial),
-                  Entrada: Number(kardex.quantity_input),
-                  Salida: Number(kardex.quantity_output),
-                  Saldo: Number(kardex.quantity_saldo),
+                  "Inv. Inicial": Number(kardex.quantity_inicial).toFixed(decimal),
+                  Entrada: Number(kardex.quantity_input).toFixed(decimal),
+                  Salida: Number(kardex.quantity_output).toFixed(decimal),
+                  Saldo: Number(kardex.quantity_saldo).toFixed(decimal),
                   Sucursal: kardex.sucursal.name,
                   Almacén: kardex.storage.name,
               }
@@ -574,9 +576,9 @@ try {
                 'N°' :kardex?.document,
                 DETALLE:  kardex?.detallePrimary,
                 SUB_DETALLE: kardex?.detalle,
-                ENTRADA_FISICO: kardex?.quantity_input,
-                SALIDA_FISICO: kardex?.quantity_output,
-                SALDO_FISICO: kardex?.quantity_saldo,
+                ENTRADA_FISICO: Number(kardex?.quantity_input).toFixed(decimal),
+                SALIDA_FISICO: Number(kardex?.quantity_output).toFixed(decimal),
+                SALDO_FISICO: Number(kardex?.quantity_saldo).toFixed(decimal),
                 'P.U.': Number(kardex?.cost_u_inicial ?? 0).toFixed(decimal),
                 ENTRADA_VALORADO: Number(kardex?.cost_u_input ?? 0).toFixed(decimal),
                 SALIDA_VALORADO: Number(kardex?.cost_u_output ?? 0).toFixed(decimal),

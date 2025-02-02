@@ -8,24 +8,25 @@ const { Op } = require('sequelize');
 const getAccountsPayablePaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type,status_account, id_provider, id_sucursal,type_registry, filterBy, date1, date2,orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"AccountsPayable"."date_credit"');
+        const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
+        const where = {
+            [Op.and]: [
+                id_provider    ? { id_provider   } : {},
+                id_sucursal   ? { id_sucursal   } : {},
+                status_account ? { status_account   } : {},
+                { status: true },  
+            ]
+        }
         const optionsDb = {
             order: [orderNew],
-            where: {
-                [Op.and]: [
-                    id_provider    ? { id_provider   } : {},
-                    id_sucursal   ? { id_sucursal   } : {},
-                    status_account ? { status_account   } : {},
-                    { status: true },
-                    { date_credit: whereDate }
-                ]
-            },
+            where,
             include: [ 
                 { association: 'sucursal',attributes: ['name'] },
                 { association: 'provider', attributes: ['full_names']},
                 { association: 'input',
                     where: { [Op.and]: [
                         type_registry ? { type_registry } : {},
+                        { date_voucher: whereDate }
                     ]} ,
                     include:[  
                         { association: 'scale', attributes: ['name']},
@@ -38,6 +39,20 @@ const getAccountsPayablePaginate = async (req = request, res = response) => {
             ]
         };
         let accountsPayable = await paginate(AccountsPayable, page, limit, type, query, optionsDb);
+        const optionsSum = {
+            where,  
+            include: [{
+                attributes: [],
+                association: 'input',
+                where: { [Op.and]: [
+                    type_registry ? { type_registry } : {},
+                    { date_voucher: whereDate }
+                ]}
+            }],
+        };
+        const total_abonados = await AccountsPayable.sum('AccountsPayable.monto_abonado', optionsSum);
+        const total_restante = await AccountsPayable.sum('AccountsPayable.monto_restante', optionsSum);
+        const total_account = await AccountsPayable.sum('AccountsPayable.total',optionsSum );
         for (const accountPayable of accountsPayable.data) {
             accountPayable.dataValues.abonosAccountsPayable =  await AbonosAccountsPayable.findAll({
                 where: { status: true, id_account_payable: accountPayable.id},
@@ -46,6 +61,11 @@ const getAccountsPayablePaginate = async (req = request, res = response) => {
                 ]
             });
         } 
+        accountsPayable.totals = {
+            total_abonados,
+            total_restante,
+            total_account
+        }
         return res.status(200).json({
             ok: true,
             accountsPayable

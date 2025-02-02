@@ -188,7 +188,7 @@ const generateExcelReports = async (req = request, res = response) => {
 
 const returnDataAccountReceivable = async (params) => {
     const {status_account, id_client, id_sucursal,type_registry,filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"AccountsReceivable"."date_credit"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
     const optionsDb = {
         order: [orderNew],
         where: {
@@ -197,7 +197,6 @@ const returnDataAccountReceivable = async (params) => {
                 id_sucursal   ? { id_sucursal   } : {},
                 status_account ? { status_account   } : {},
                 { status: true },
-                { date_credit: whereDate }
             ]
         },
         include: [ 
@@ -206,6 +205,7 @@ const returnDataAccountReceivable = async (params) => {
             { association: 'output',
                 where: { [Op.and]: [
                     type_registry ? { type_registry } : {},
+                    { date_output: whereDate }
                 ]} ,
                 include:[  
                     { association: 'scale', attributes: ['name']},

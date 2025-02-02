@@ -26,12 +26,13 @@ const generatePdfReports = async (req = request, res = response) => {
         accounts_payables.forEach(account_payable => {
             const tableData = [
                 {text:account_payable?.input.cod, fontSize:8}, 
+                {text:account_payable?.provider?.full_names, fontSize:8}, 
+                {text:moment(account_payable?.input.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
                 {text:account_payable?.input?.type_registry, fontSize:8}, 
-                {text:moment(account_payable?.date_credit).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
+                {text:account_payable?.input?.registry_number, fontSize:8}, 
                 {text:Number(account_payable?.monto_abonado).toFixed(decimal), fontSize:8}, 
                 {text:Number(account_payable?.monto_restante).toFixed(decimal), fontSize:8}, 
                 {text:Number(account_payable?.total).toFixed(decimal), fontSize:8}, 
-                {text:account_payable?.provider?.full_names, fontSize:8}, 
                 {text:account_payable?.sucursal?.name, fontSize:8}, 
             ];
             total_abonados+=Number(account_payable?.monto_abonado);
@@ -40,13 +41,14 @@ const generatePdfReports = async (req = request, res = response) => {
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            { colSpan: 3,text:'' },
+            { colSpan: 5,text:'' },
+            {},
+            {},
             {},
             {},
             {text: Number(total_abonados).toFixed(decimal),fontSize:9},
             {text: Number(total_restante).toFixed(decimal),fontSize:9},
             {text: Number(total_account).toFixed(decimal),fontSize:9},
-            { colSpan: 2,text:''},
             {},
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
@@ -99,16 +101,17 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [50,80,80,55,55,55,'*',70],
+            widths: [50,'*',80,80,55,55,55,55,70],
             body: [
                 [
-                    {text:'COMPRA', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TIPO DE REGISTRO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA CREDITO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO ABONADO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO RESTANTE', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TOTAL', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'COMPRA', fontSize:8 ,fillColor: '#eeeeee', bold:true},
                     {text:'PROVEEDOR', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'FECHA REGISTRO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TIPO DE REGISTRO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'NUMERO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'A CUENTA', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'SALDO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TOTAL', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'SUCURSAL', fontSize:8,fillColor: '#eeeeee', bold:true}, 
                 ]
             ],
@@ -120,28 +123,31 @@ const dataPdfReturn = (auth) => [
 const generateExcelReports = async (req = request, res = response) => {
   try {
         const accounts_payables = await returnDataAccountPayable(req.query);
+        const decimal = await getNumberDecimal();
         let accounts_payables_data = [];
         if(accounts_payables.length == 0) {
             accounts_payables_data.push({
                 COMPRA : '',
-                TIPO_DE_REGISTRO : '',
-                FECHA_CREDITO : '',
-                MONTO_ABONADO : '',
-                MONTO_RESTANTE : '',
-                TOTAL : '',
                 PROVEEDOR : '',
+                FECHA_REGISTRO : '',
+                TIPO_DE_REGISTRO : '',
+                NUMERO : '',
+                A_CUENTA : '',
+                SALDO : '',
+                TOTAL : '',
                 SUCURSAL : '', 
             });
         }
         accounts_payables.forEach(account_payable => {
             const tableData = {
                 COMPRA : account_payable?.input.cod,
-                TIPO_DE_REGISTRO : account_payable?.input?.type_registry,
-                FECHA_CREDITO : moment(account_payable?.date_credit).format('DD/MM/YYYY HH:mm:ss'),
-                MONTO_ABONADO :  Number(account_payable?.monto_abonado),
-                MONTO_RESTANTE : Number(account_payable?.monto_restante),
-                TOTAL :          Number(account_payable?.total),
                 PROVEEDOR : account_payable?.provider?.full_names,
+                FECHA_REGISTRO : moment(account_payable?.input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
+                TIPO_DE_REGISTRO : account_payable?.input?.type_registry,
+                NUMERO : account_payable?.input?.registry_number,
+                A_CUENTA :  Number(account_payable?.monto_abonado).toFixed(decimal),
+                SALDO : Number(account_payable?.monto_restante).toFixed(decimal),
+                TOTAL :   Number(account_payable?.total).toFixed(decimal),
                 SUCURSAL : account_payable?.sucursal?.name, 
             }
             accounts_payables_data.push(tableData);
@@ -188,7 +194,7 @@ const generateExcelReports = async (req = request, res = response) => {
 
 const returnDataAccountPayable = async (params) => {
     const {status_account, id_provider, id_sucursal,type_registry,filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"AccountsPayable"."date_credit"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
     const optionsDb = {
         order: [orderNew],
         where: {
@@ -197,7 +203,6 @@ const returnDataAccountPayable = async (params) => {
                 id_sucursal   ? { id_sucursal   } : {},
                 status_account ? { status_account   } : {},
                 { status: true },
-                { date_credit: whereDate }
             ]
         },
         include: [ 
@@ -206,6 +211,7 @@ const returnDataAccountPayable = async (params) => {
             { association: 'input',
                 where: { [Op.and]: [
                     type_registry ? { type_registry } : {},
+                    { date_voucher: whereDate }
                 ]} ,
                 include:[  
                     { association: 'scale', attributes: ['name']},
