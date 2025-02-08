@@ -20,7 +20,7 @@ const generatePdfReports = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2} = req.query;
         const accounts_receivables = await returnDataAccountReceivable(req.query);
-        let dataPdf = dataPdfReturn(req.userAuth); //PDF 
+        let dataPdf = dataPdfReturn(req.userAuth,accounts_receivables[0]?.sucursal?.name ?? '-'); //PDF 
         const decimal = await getNumberDecimal();
         let total_abonados = 0, total_restante=0,total_account = 0;
         accounts_receivables.forEach(account_receivable => {
@@ -32,7 +32,6 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:Number(account_receivable?.monto_restante).toFixed(decimal), fontSize:8}, 
                 {text:Number(account_receivable?.total).toFixed(decimal), fontSize:8}, 
                 {text:account_receivable?.client?.full_names, fontSize:8}, 
-                {text:account_receivable?.sucursal?.name, fontSize:8}, 
             ];
             total_abonados+=Number(account_receivable?.monto_abonado);
             total_restante+=Number(account_receivable?.monto_restante);
@@ -46,7 +45,6 @@ const generatePdfReports = async (req = request, res = response) => {
             {text: Number(total_abonados).toFixed(decimal),fontSize:9},
             {text: Number(total_restante).toFixed(decimal),fontSize:9},
             {text: Number(total_account).toFixed(decimal),fontSize:9},
-            { colSpan: 2,text:''},
             {},
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
@@ -80,7 +78,7 @@ const generatePdfReports = async (req = request, res = response) => {
     }
 }
 
-const dataPdfReturn = (auth) => [
+const dataPdfReturn = (auth,sucursal) => [
     {
         image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
         width: 70,
@@ -99,7 +97,7 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [50,80,80,55,55,55,'*',70],
+            widths: [50,80,80,55,55,55,'*'],
             body: [
                 [
                     {text:'VENTA', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
@@ -109,7 +107,6 @@ const dataPdfReturn = (auth) => [
                     {text:'MONTO RESTANTE', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TOTAL', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CLIENTE', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'SUCURSAL', fontSize:8,fillColor: '#eeeeee', bold:true}, 
                 ]
             ],
             layout: 'lightHorizontalLines'

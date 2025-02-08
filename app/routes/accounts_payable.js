@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable } = require('../controllers/accounts_payables.controller');
-const { getValidateCreate, validateDelete } = require('../middlewares/validators/accounts_payable');
+const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable, getAccountAllProvider, payAccountMultiple } = require('../controllers/accounts_payables.controller');
+const { getValidateCreate, validateDelete, getValidateGetForProvider } = require('../middlewares/validators/accounts_payable');
 const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVoucher, printAccountPayableVoucher } = require('../controllers/reports/accounts_payables.controller');
 
 const router = Router();
@@ -11,6 +11,16 @@ const router = Router();
 router.get('/',[
     validarJWT,
 ],getAccountsPayablePaginate );
+
+router.get('/forProvider',[
+    validarJWT,
+    getValidateGetForProvider
+],getAccountAllProvider );
+
+router.post('/payMultiProvider',[
+    validarJWT,
+    getValidateGetForProvider
+],payAccountMultiple );
 
 router.post('/new-abono', [
     validarJWT,

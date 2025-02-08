@@ -16,7 +16,11 @@ module.exports = (sequelize, DataTypes) => {
     total_abonado: DataTypes.DECIMAL,
     restante_credito: DataTypes.DECIMAL,
     id_user: DataTypes.INTEGER,
-    status: DataTypes.BOOLEAN
+    status: DataTypes.BOOLEAN,
+    comments: DataTypes.TEXT,
+    type_payment: DataTypes.STRING,
+    account_input: DataTypes.STRING,
+    id_bank: DataTypes.INTEGER,
   }, {
     sequelize,
     modelName: 'AbonosAccountsReceivable',

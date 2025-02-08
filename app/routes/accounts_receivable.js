@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getAccountsReceivablePaginate, newAbonoAccountReceivable, deleteAbonoAccountReceivable } = require('../controllers/accounts_receivable.controller');
-const { getValidateCreate, validateDelete } = require('../middlewares/validators/accounts_receivable');
+const { getAccountsReceivablePaginate, newAbonoAccountReceivable, deleteAbonoAccountReceivable, getAccountAllClient, payAccountMultiple } = require('../controllers/accounts_receivable.controller');
+const { getValidateCreate, validateDelete, getValidateGetForClient } = require('../middlewares/validators/accounts_receivable');
 const { generatePdfReports, generateExcelReports, printAbonoAccountReceivableVoucher, printAccountReceivableVoucher } = require('../controllers/reports/accounts_receivable.controller');
 
 const router = Router();
@@ -11,6 +11,16 @@ const router = Router();
 router.get('/',[
     validarJWT,
 ],getAccountsReceivablePaginate );
+
+router.get('/forClient',[
+    validarJWT,
+    getValidateGetForClient
+],getAccountAllClient );
+
+router.post('/payMultiClient',[
+    validarJWT,
+    getValidateGetForClient
+],payAccountMultiple );
 
 router.post('/new-abono', [
     validarJWT,

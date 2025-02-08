@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistAccountReceivable, idExistAbonoAccountReceivable } = require('./database');
+const { idExistAccountReceivable, idExistAbonoAccountReceivable, idExistClient } = require('./database');
 
 const validationSchema =  {
     id_account_receivable: {
@@ -21,8 +21,23 @@ const validationSchema =  {
     },
 };
 
+const validationClient =  {
+    id_client: {
+        isEmpty: {
+            negated: true, errorMessage: "El cliente es obligatorio",
+        },
+        custom: { options: idExistClient }
+    },
+};
+
+
 const getValidateCreate = [
     checkSchema(validationSchema),
+    validatedResponse
+];
+
+const getValidateGetForClient = [
+    checkSchema(validationClient),
     validatedResponse
 ];
 
@@ -36,6 +51,7 @@ const validateDelete = [
 
 module.exports = {
     getValidateCreate,
-    validateDelete
+    validateDelete,
+    getValidateGetForClient
 }
 
