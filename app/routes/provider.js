@@ -3,6 +3,7 @@ const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider } = require('../controllers/provider.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete, getValidateCreateSector, validateDeleteSector } = require('../middlewares/validators/provider');
+const { generateExcelProviders } = require('../controllers/reports/providers.controller');
 
 const router = Router();
 
@@ -51,5 +52,9 @@ router.get('/types', [
     validarJWT,
 ],getAllTypesProvider );
 
+//reports
+router.get('/excel',[
+    validarJWT,
+], generateExcelProviders );
 
 module.exports = router;

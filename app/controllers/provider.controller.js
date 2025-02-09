@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { Provider, Sector, sequelize, TypesProvider,DetailsInput } = require('../database/config');
+const { Provider, Sector, sequelize, TypesProvider,DetailsInput, ViewProviderTotals } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 
@@ -23,7 +23,7 @@ const getProviderPaginate = async (req = request, res = response) => {
             { number_document: { [Op.iLike]: `%${query}%`}},
             { name_contact: { [Op.iLike]: `%${query}%`}},
         ];
-        let providers = await paginate(Provider, page, limit, type, query, optionsDb); 
+        let providers = await paginate(ViewProviderTotals, page, limit, type, query, optionsDb); 
         return res.status(200).json({
             ok: true,
             providers
