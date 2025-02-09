@@ -11,19 +11,32 @@ const getInputsPaginate = async (req = request, res = response) => {
         const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
                 id_provider, status, filterBy, date1, date2, orderNew} = req.query;
         const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
+        const whereDateSum = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
+        const where = {
+            [Op.and]: [
+                id_sucursal   ? { id_sucursal   } : {},
+                id_storage    ? { id_storage    } : {},
+                type_pay      ? { type:type_pay } : {},
+                type_registry ? { type_registry } : {},
+                id_provider   ? { id_provider   } : {},
+                { status },
+                { date_voucher: whereDate }
+            ]
+        };
+        const whereSum = {
+            [Op.and]: [
+                id_sucursal   ? { id_sucursal   } : {},
+                id_storage    ? { id_storage    } : {},
+                type_pay      ? { type:type_pay } : {},
+                type_registry ? { type_registry } : {},
+                id_provider   ? { id_provider   } : {},
+                { status },
+                { date_voucher: whereDateSum }
+            ]
+        };
         const optionsDb = {
             order: [orderNew],
-            where: {
-                [Op.and]: [
-                    id_sucursal   ? { id_sucursal   } : {},
-                    id_storage    ? { id_storage    } : {},
-                    type_pay      ? { type:type_pay } : {},
-                    type_registry ? { type_registry } : {},
-                    id_provider   ? { id_provider   } : {},
-                    { status },
-                    { date_voucher: whereDate }
-                ]
-            },
+            where,
             include: [ 
                 { association: 'provider' },
                 { association: 'sucursal',attributes: ['name'] },
@@ -39,9 +52,27 @@ const getInputsPaginate = async (req = request, res = response) => {
             ]
         };
         let inputs = await paginate(Input, page, limit, type, query, optionsDb); 
+        for (const input of inputs.data) {
+            input.dataValues.total_quantity = input.detailsInput.reduce((acc, item) => acc + Number(item.quantity), 0);
+        }
+        const totalInput = await Input.sum('total', {where});
+        
+        const totalQuantity = await DetailsInput.sum('quantity', {
+            include: [
+                {
+                    attributes: [],
+                    association: 'input',
+                    where: whereSum
+                }
+            ]
+        });
+        inputs.totals = {
+            totalInput,
+            totalQuantity
+        }
         return res.status(200).json({
             ok: true,
-            inputs
+            inputs,
         });
     } catch (error) {
         console.log(error);

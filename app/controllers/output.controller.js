@@ -11,20 +11,34 @@ const getOutputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type,type_registry,type_output,id_client,type_pay, id_sucursal, id_storage, status, filterBy, date1, date2,orderNew} = req.query;
         const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."date_output"');
+        const whereDateSum = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
+        const where = {
+            [Op.and]: [
+                id_sucursal   ? { id_sucursal } : {},
+                id_storage    ? { id_storage  } : {},
+                type_pay      ? { type_output:type_pay } : {},
+                type_output   ? { voucher:type_output } : {},
+                type_registry ? { type_registry } : {},
+                id_client     ? { id_client   } : {},
+                { status },
+                { date_output: whereDate }
+            ]
+        }
+        const whereSum = {
+            [Op.and]: [
+                id_sucursal   ? { id_sucursal } : {},
+                id_storage    ? { id_storage  } : {},
+                type_pay      ? { type_output:type_pay } : {},
+                type_output   ? { voucher:type_output } : {},
+                type_registry ? { type_registry } : {},
+                id_client     ? { id_client   } : {},
+                { status },
+                { date_output: whereDateSum }
+            ]
+        }
         const optionsDb = {
             order: [orderNew],
-            where: {
-                [Op.and]: [
-                    id_sucursal   ? { id_sucursal } : {},
-                    id_storage    ? { id_storage  } : {},
-                    type_pay      ? { type_output:type_pay } : {},
-                    type_output   ? { voucher:type_output } : {},
-                    type_registry ? { type_registry } : {},
-                    id_client     ? { id_client   } : {},
-                    { status },
-                    { date_output: whereDate }
-                ]
-            },
+            where,
             include: [ 
                 { association: 'client' },
                 { association: 'sucursal',attributes: ['name'] },
@@ -44,6 +58,23 @@ const getOutputsPaginate = async (req = request, res = response) => {
             ]
         };
         let outputs = await paginate(Output, page, limit, type, query, optionsDb); 
+        for (const output of outputs.data) {
+            output.dataValues.total_quantity = output.detailsOutput.reduce((acc, item) => acc + Number(item.quantity), 0);
+        }
+        const totalOutput = await Output.sum('total', {where});
+        const totalQuantity = await DetailsOutput.sum('quantity', {
+            include: [
+                {
+                    attributes: [],
+                    association: 'output',
+                    where: whereSum
+                }
+            ]
+        });
+        outputs.totals = {
+            totalOutput,
+            totalQuantity
+        }
         return res.status(200).json({
             ok: true,
             outputs

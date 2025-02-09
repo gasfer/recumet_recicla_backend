@@ -2,7 +2,7 @@ const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const expressfileUpload = require('express-fileupload');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getProductPaginate, newProduct, updateProduct, activeInactiveProduct, newPriceProduct, deletePriceProduct, uploadFileProduct, getOneProductSucursal, productAssignatSucursals, getProductCostsSucursal, updateProductsCostos } = require('../controllers/product.controller');
+const { getProductPaginate, newProduct, updateProduct, activeInactiveProduct, newPriceProduct, deletePriceProduct, uploadFileProduct, getOneProductSucursal, productAssignatSucursals, getProductCostsSucursal, updateProductsCostos, getOneProduct } = require('../controllers/product.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete, getValidateCreatePrice, validateDeletePrice } = require('../middlewares/validators/product');
 const { filesExist, validateUploadIdProduct, filesValidateSize } = require('../middlewares/validators/validar-files');
 const { validatedResponse } = require('../middlewares/validated-response');
@@ -14,6 +14,10 @@ router.use(expressfileUpload());
 router.get('/',[
     validarJWT,
 ],getProductPaginate );
+
+router.get('/product',[
+    validarJWT,
+],getOneProduct );
 
 router.get('/sucursals',[
     validarJWT,

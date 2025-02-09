@@ -25,8 +25,10 @@ const generatePdfReports = async (req = request, res = response) => {
         const outputs = await returnDataOutput(req.query);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
         let total = 0;
+        let total_quantity = 0;
         outputs.forEach(output => {
             total += Number(output.total);
+            total_quantity += Number(output.total_quantity);
             const tableData = [
                 {text:output?.cod, fontSize:9}, 
                 {text:moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
@@ -36,14 +38,13 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:output?.user?.full_names, fontSize:8}, 
                 {text:output?.comments, fontSize:9}, 
                 {text:output?.type_output, fontSize:9}, 
-                {text:Number(output?.sub_total).toFixed(decimal), fontSize:9, alignment: 'right'},  
-                {text:Number(output.discount).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+                {text:Number(output?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(output.total).toFixed(decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            {colSpan: 8, text:`TOTAL: ${NumeroALetras(total)}`},
+            {colSpan: 8, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10,},
             {text:''},
             {text:''},
             {text:''},
@@ -51,8 +52,7 @@ const generatePdfReports = async (req = request, res = response) => {
             {text:''},
             {text:''},
             {text:''},
-            {text:''},
-            {text:''},
+            {text:`Kg. ${Number(total_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'},
             {text: `Bs. ${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
@@ -105,7 +105,7 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,70,50,55,'*',80,'*',45,60,55,60],
+            widths: [60,70,50,55,'*',80,'*',45,60,60],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
@@ -116,8 +116,7 @@ const dataPdfReturn = (auth) => [
                     {text:'POR USUARIO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'COMENTARIOS', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'SUBTOTAL', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DESCUENTO',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CANT. KG',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                 ]
             ]   ,
@@ -129,6 +128,7 @@ const dataPdfReturn = (auth) => [
 const generateExcelReports = async (req = request, res = response) => {
   try {
     const outputs = await returnDataOutput(req.query);
+    const decimal = await getNumberDecimal();
     let output_data = [];
     if (outputs.length == 0) {
       output_data.push({
@@ -136,33 +136,45 @@ const generateExcelReports = async (req = request, res = response) => {
         FECHA_VENTA: '',
         TIPO_DOCUMENTO: '',
         NRO_DOCUMENTO: '',
-        FECHA_DOCUMENTO: '',
         CLIENTE: '',
         USUARIO: '',
         COMENTARIOS: '',
         TIPO: '',
-        SUBTOTAL: '',
-        DESCUENTO: '',
+        TOTAL_KG: '',
         TOTAL: '',
       });
     }
+    let total = 0;
+    let total_quantity = 0;
     outputs.forEach(output => {
+      total +=Number(output.total);
+      total_quantity +=Number(output.total_quantity);
       const tableData = {
         CÓDIGO: output.cod,
         FECHA_VENTA: moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'),
         TIPO_DOCUMENTO: output.type_registry,
-        NRO_DOCUMENTO: output.registry_number,
-        FECHA_DOCUMENTO: moment(output?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
+        NRO_DOCUMENTO: output.number_registry,
         CLIENTE: output?.client?.full_names ?? '',
         USUARIO: output.user.full_names,
         COMENTARIOS: output.comments,
         TIPO: output.type_output,
-        SUBTOTAL: Number(output.sub_total),
-        DESCUENTO: Number(output.discount),
-        TOTAL: Number(output.total),
+        TOTAL_KG: Number(output.total_quantity).toFixed(decimal),
+        TOTAL: Number(output.total).toFixed(decimal),
       }
       output_data.push(tableData);
     });
+    output_data.push({
+        CÓDIGO: '',
+        FECHA_VENTA: '',
+        TIPO_DOCUMENTO: '',
+        NRO_DOCUMENTO: '',
+        CLIENTE: '',
+        USUARIO: '',
+        COMENTARIOS: '',
+        TIPO: '',
+        TOTAL_KG:  Number(total_quantity).toFixed(decimal),
+        TOTAL: Number(total).toFixed(decimal),
+      });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(`Ventas totales`);
     // Agregar encabezados
@@ -179,11 +191,11 @@ const generateExcelReports = async (req = request, res = response) => {
     worksheet.getColumn('A').width = 15; 
     worksheet.getColumn('B').width = 20; 
     worksheet.getColumn('C').width = 25; 
-    worksheet.getColumn('D').width = 25; 
+    worksheet.getColumn('D').width = 20; 
     worksheet.getColumn('E').width = 20; 
     worksheet.getColumn('F').width = 50; 
     worksheet.getColumn('G').width = 50; 
-    worksheet.getColumn('H').width = 50; 
+    worksheet.getColumn('H').width = 20; 
     worksheet.getColumn('I').width = 15; 
     worksheet.getColumn('J').width = 15; 
     worksheet.getColumn('K').width = 15; 
@@ -230,9 +242,15 @@ const returnDataOutput = async (params) => {
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
             { association: 'bank'},
+            { association: 'detailsOutput', attributes: {include: ['quantity']} },
+
         ]
     };
-    return await Output.findAll(optionsDb);
+    const outputs = await Output.findAll(optionsDb);
+    for (const output of outputs) {
+        output.total_quantity = output.detailsOutput.reduce((acc, item) => acc + Number(item.quantity), 0);
+    }
+    return outputs;
 }
 
 const generatePdfDetailsReports = async (req = request, res = response) => {

@@ -25,34 +25,32 @@ const generatePdfReports = async (req = request, res = response) => {
         const inputs = await returnDataInput(req.query);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
         let total = 0;
+        let total_quantity = 0;
         inputs.forEach(input => {
             total += Number(input.total);
+            total_quantity += Number(input.total_quantity);
             const tableData = [
                 {text:input?.cod, fontSize:9}, 
                 {text:moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:input?.type_registry, fontSize:9}, 
                 {text:input?.registry_number, fontSize:9}, 
-                {text:moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:input?.provider?.full_names, fontSize:9}, 
                 {text:input?.comments, fontSize:9}, 
                 {text:input?.type, fontSize:9}, 
-                {text:Number(input?.sumas).toFixed(decimal), fontSize:9, alignment: 'right'},  
-                {text:Number(input.discount).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+                {text:Number(input?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(input.total).toFixed(decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            {colSpan: 8, text:`TOTAL: ${NumeroALetras(total)}`},
+            {colSpan: 7, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10, },
             {text:''},
             {text:''},
             {text:''},
             {text:''},
             {text:''},
             {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
+            {text:`Kg. ${Number(total_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'},
             {text: `Bs. ${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
@@ -105,19 +103,17 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,70,50,55,55,70,'*',45,60,55,60],
+            widths: [60,70,50,55,90,'*',45,60,60],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'FECHA COMPRA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'NRO. DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'PROVEEDOR', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'COMENTARIOS', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'SUBTOTAL', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DESCUENTO',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CANT. KG', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                 ]
             ]   ,
@@ -137,31 +133,42 @@ const generateExcelReports = async (req = request, res = response) => {
         FECHA_COMPRA: '',
         TIPO_DOCUMENTO: '',
         NRO_DOCUMENTO: '',
-        FECHA_DOCUMENTO: '',
         PROVEEDOR: '',
         COMENTARIOS: '',
         TIPO: '',
-        SUBTOTAL: '',
-        DESCUENTO: '',
+        CANT_KG: '',
         TOTAL: '',
       });
     }
+    let total = 0;
+    let total_quantity = 0;
     inputs.forEach(input => {
+      total+=Number(input.total);
+      total_quantity+=Number(input.total_quantity);
       const tableData = {
         CÓDIGO: input.cod,
         FECHA_COMPRA: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
         TIPO_DOCUMENTO: input.type_registry,
         NRO_DOCUMENTO: input.registry_number,
-        FECHA_DOCUMENTO: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
         PROVEEDOR: input.provider.full_names,
         COMENTARIOS: input.comments,
         TIPO: input.type,
-        SUBTOTAL: Number(input.sumas).toFixed(decimal),
-        DESCUENTO: Number(input.discount).toFixed(decimal),
+        CANT_KG: Number(input.total_quantity).toFixed(decimal),
         TOTAL: Number(input.total).toFixed(decimal),
       }
       input_data.push(tableData);
     });
+    input_data.push({
+        CÓDIGO: '',
+        FECHA_COMPRA: '',
+        TIPO_DOCUMENTO: '',
+        NRO_DOCUMENTO: '',
+        PROVEEDOR: '',
+        COMENTARIOS: '',
+        TIPO: '',
+        CANT_KG: Number(total_quantity).toFixed(decimal),
+        TOTAL: Number(total).toFixed(decimal),
+      });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(`Compras totales`);
     // Agregar encabezados
@@ -225,9 +232,14 @@ const returnDataInput = async (params) => {
             { association: 'provider', attributes: ['full_names','number_document','name_contact']},
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
+            { association: 'detailsInput', attributes: {include: ['quantity']} },
         ]
     };
-    return await Input.findAll(optionsDb);
+    const inputs = await Input.findAll(optionsDb);
+    for (const input of inputs) {
+        input.total_quantity = input.detailsInput.reduce((acc, item) => acc + Number(item.quantity), 0);
+    }
+    return inputs;
 }
 
 const generatePdfDetailsReports = async (req = request, res = response) => {
@@ -330,13 +342,20 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
                 CANTIDAD: ''
             });
         }
+        let total = 0;
         detailsInput.forEach(detail => {
+            total+=Number(detail?.dataValues.suma_quantity);
             const tableData = {
                 CÓDIGO: detail?.product.cod,
                 PRODUCTO: detail?.product.name,
-                CANTIDAD:Number(detail?.dataValues.suma_quantity)
+                CANTIDAD:Number(detail?.dataValues.suma_quantity).toFixed(decimal)
             }
             detailsInput_data.push(tableData);
+        });
+        detailsInput_data.push({
+            CÓDIGO: '',
+            PRODUCTO: '',
+            CANTIDAD: Number(total).toFixed(decimal)
         });
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet(`Compras detalladas`);

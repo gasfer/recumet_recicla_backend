@@ -79,6 +79,24 @@ const getProductPaginate = async (req = request, res = response) => {
     }
 }
 
+
+const getOneProduct = async(req = request, res = response) => {
+    try {
+        let { id_product } = req.query;
+        const product = await Product.findByPk(id_product);
+        return res.status(200).json({
+            ok: true,
+            product
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
 const getOneProductSucursal = async(req = request, res = response) => {
     try {
         let { id_product } = req.query;
@@ -357,5 +375,6 @@ module.exports = {
     getOneProductSucursal,
     productAssignatSucursals,
     getProductCostsSucursal,
-    updateProductsCostos
+    updateProductsCostos,
+    getOneProduct
 };
