@@ -291,6 +291,7 @@ const updateOutput = async (req = request, res = response) => {
                 transaction: t
             });
             const data_new = returnDataKardexOutput(`VENTA ${output_data.voucher} #${output_old.cod}`,output_data.id_client,detail.price,null,registry_number,old_kardex,detail,id_output, id_sucursal, id_storage );
+            data_new.date = output_old.createdAt; //PONER EN KARDEX LA MISMA FECHA DE VENTA, POR QUE ES UPDATE
             await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },

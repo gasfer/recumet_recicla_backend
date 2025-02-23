@@ -247,6 +247,7 @@ const updateInput = async (req = request, res = response) => {
                 transaction: t
             });
             const data_new = returnDataKardexInput(`COMPRA #${input_old.cod}`,null,null,registry_number, old_kardex,detail,id_input, id_provider, id_sucursal, id_storage);
+            data_new.date = input_old.createdAt; //PONER EN KARDEX LA MISMA FECHA DE COMPRA, POR QUE ES UPDATE
             await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 order: [['id', 'DESC']],
