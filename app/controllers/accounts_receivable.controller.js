@@ -304,7 +304,7 @@ const payAccountMultiple = async (req = request, res = response) => {
             });
         }
 
-        let ids_account_receivable = [];
+        let ids_account_receivables = [];
         let ids_abonos_receivables = [];
         let codes_output = [];
         //  pagar las cuentas por pagar
@@ -329,14 +329,14 @@ const payAccountMultiple = async (req = request, res = response) => {
                     errors: [{ msg: abonosAccountsReceivable.msg }],
                 });
             }
-            ids_account_receivable.push(abonosAccountsReceivable.abonosAccountsReceivable.id_account_receivable);
+            ids_account_receivables.push(abonosAccountsReceivable.abonosAccountsReceivable.id_account_receivable);
             ids_abonos_receivables.push(abonosAccountsReceivable.abonosAccountsReceivable.id);
             codes_output.push(account.output.cod);
         }
         let id_abono_accounts_receivable = null;
-        if(ids_account_receivable.length > 0) { //A las cuentas que se realizo abono
+        if(ids_account_receivables.length > 0) { //A las cuentas que se realizo abono
             const abonosAccountsReceivableMultiple = await AbonosAccountsReceivableMultiple.create({
-                ids_account_receivable, ids_abonos_receivables, date_abono, monto_abono, id_user: req.userAuth.id, status: true,
+                ids_account_receivables, ids_abonos_receivables, date_abono, monto_abono, id_user: req.userAuth.id, status: true,
                 type_payment,comments,account_input,id_bank,id_sucursal,id_client, status: true,codes_output
             },{ transaction: t });
             id_abono_accounts_receivable = abonosAccountsReceivableMultiple.id;

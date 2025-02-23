@@ -6,6 +6,7 @@ module.exports = (sequelize, DataTypes) => {
   class AbonosAccountsPayableMultiple extends Model {
     static associate(models) {
       AbonosAccountsPayableMultiple.belongsTo(models.User,{as: 'user', foreignKey:'id_user'});
+      AbonosAccountsPayableMultiple.belongsTo(models.Provider,{as: 'provider', foreignKey:'id_provider'});
       AbonosAccountsPayableMultiple.belongsTo(models.Sucursal,{as: 'sucursal', foreignKey:'id_sucursal'});
     }
   }

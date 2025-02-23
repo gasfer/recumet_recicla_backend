@@ -4,6 +4,7 @@ const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable, getAccountAllProvider, payAccountMultiple, getAbonosAllPayablePaginate } = require('../controllers/accounts_payables.controller');
 const { getValidateCreate, validateDelete, getValidateGetForProvider, getValidateGetForProviderGet } = require('../middlewares/validators/accounts_payable');
 const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVoucher, printAccountPayableVoucher, generatePdfReportsAbonosAll, generateExcelReportsAbonosAll } = require('../controllers/reports/accounts_payables.controller');
+const { printAbonoMultipleAccountPayableVoucher } = require('../controllers/reports/accounts_payable/printBoletaAbonoMultiple');
 
 const router = Router();
 
@@ -57,6 +58,10 @@ router.get('/excel/abonos',[
 router.get('/pdf/voucher-abono/:id_abono_account_payable',[
     validarJWT,
 ], printAbonoAccountPayableVoucher );
+
+router.get('/pdf/voucher-abono-multiple/:id_abono_account_payable_multiple',[
+    validarJWT,
+], printAbonoMultipleAccountPayableVoucher );
 
 router.get('/pdf/voucher-account-payable/:id_account_payable',[
     validarJWT,
