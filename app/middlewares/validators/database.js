@@ -22,7 +22,9 @@ const {
   AccountsReceivable,
   AbonosAccountsReceivable,
   Transfers,
-  TypesProvider
+  TypesProvider,
+  AbonosAccountsPayableMultiple,
+  AbonosAccountsReceivableMultiple
 } = require("../../database/config");
 
 // ========================= USER VALIDATE ============================
@@ -320,6 +322,13 @@ const idExistAbonoAccountPayable = async (id = "") => {
     throw new Error(`El abono con id: ${id}, no existe o esta inactiva`);
   };
 }
+
+const idExistAbonoAccountPayableMultiple = async (id = "") => {
+  const idExist = await AbonosAccountsPayableMultiple.findOne({where: {id,status:true}});
+  if (!idExist) {
+    throw new Error(`El abono multiple con id: ${id}, no existe o esta inactiva`);
+  };
+}
 //=========================== ACCOUNTS RECEIVABLE =============================
 const idExistAccountReceivable = async (id = "") => {
   const idExist = await AccountsReceivable.findOne({where: {id,status:true}});
@@ -329,6 +338,12 @@ const idExistAccountReceivable = async (id = "") => {
 }
 const idExistAbonoAccountReceivable = async (id = "") => {
   const idExist = await AbonosAccountsReceivable.findOne({where: {id,status:true}});
+  if (!idExist) {
+    throw new Error(`El abono con id: ${id}, no existe o esta inactiva`);
+  };
+}
+const idExistAbonoAccountReceivableMultiple = async (id = "") => {
+  const idExist = await AbonosAccountsReceivableMultiple.findOne({where: {id,status:true}});
   if (!idExist) {
     throw new Error(`El abono con id: ${id}, no existe o esta inactiva`);
   };
@@ -396,5 +411,7 @@ module.exports = {
   idExistTransfer,
   idExistTransferPending,
   idTypeProvider,
-  numberDocumentExistProvider
+  numberDocumentExistProvider,
+  idExistAbonoAccountPayableMultiple,
+  idExistAbonoAccountReceivableMultiple
 };

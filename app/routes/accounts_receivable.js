@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getAccountsReceivablePaginate, newAbonoAccountReceivable, deleteAbonoAccountReceivable, getAccountAllClient, payAccountMultiple, getAbonosAllReceivablesPaginate } = require('../controllers/accounts_receivable.controller');
-const { getValidateCreate, validateDelete, getValidateGetForClient, getValidateGetForClientGet } = require('../middlewares/validators/accounts_receivable');
+const { getAccountsReceivablePaginate, newAbonoAccountReceivable, deleteAbonoAccountReceivable, getAccountAllClient, payAccountMultiple, getAbonosAllReceivablesPaginate, deleteAbonoMultipleAccountReceivable } = require('../controllers/accounts_receivable.controller');
+const { getValidateCreate, validateDelete, getValidateGetForClient, getValidateGetForClientGet, validateDeleteMultiple } = require('../middlewares/validators/accounts_receivable');
 const { generatePdfReports, generateExcelReports, printAbonoAccountReceivableVoucher, printAccountReceivableVoucher, generatePdfReportsAbonosAll, generateExcelReportsAbonosAll } = require('../controllers/reports/accounts_receivable.controller');
 const { printAbonoMultipleAccountReceivableVoucher } = require('../controllers/reports/account_receivable/printBoletaAbonoMultiple');
 
@@ -37,6 +37,12 @@ router.delete('/destroy-abono/:id_abono', [
     validarJWT,
     validateDelete
 ],deleteAbonoAccountReceivable );
+
+router.delete('/destroy-abono-multiple/:id_abono_multiple', [
+    validarJWT,
+    validateDeleteMultiple
+],deleteAbonoMultipleAccountReceivable );
+
 
 //reports
 router.get('/pdf',[

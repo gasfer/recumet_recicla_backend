@@ -575,9 +575,9 @@ const dataPdfReturnAbonoAccountReceivableVoucher = (abono_account_receivable,acc
             { text: `P/${accountsReceivable.output.type_registry} NRO:`, bold:true ,style: 'text',width: 80, },
             { text: `${accountsReceivable.output.number_registry}`, style: 'text',  },
             { text: `A CUENTA:`, bold:true, style: 'text',width: 58,  },
-            { text: `${Number(abono_account_receivable.total_abonado).toFixed(decimal)}`,  style: 'text',  },
+            { text: `${Number(accountsReceivable.monto_abonado).toFixed(decimal)}`,  style: 'text',  },
             { text: `SALDO:`, bold:true, style: 'text',width: 70,  },
-            { text: `${Number(abono_account_receivable.restante_credito).toFixed(decimal)}`,  style: 'text',  },
+            { text: `${Number(accountsReceivable.monto_restante).toFixed(decimal)}`,  style: 'text',  },
         ]
     },
     {

@@ -580,9 +580,9 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
             { text: `P/${accountsPayable.input.type_registry} NRO:`, bold:true ,style: 'text',width: 80, },
             { text: `${accountsPayable.input.registry_number}`, style: 'text',  },
             { text: `A CUENTA:`, bold:true, style: 'text',width: 58,  },
-            { text: `${Number(abono_account_payable.total_abonado).toFixed(decimal)}`,  style: 'text',  },
+            { text: `${Number(accountsPayable.monto_abonado).toFixed(decimal)}`,  style: 'text',  },
             { text: `SALDO:`, bold:true, style: 'text',width: 70,  },
-            { text: `${Number(abono_account_payable.restante_credito).toFixed(decimal)}`,  style: 'text',  },
+            { text: `${Number(accountsPayable.monto_restante).toFixed(decimal)}`,  style: 'text',  },
         ]
     },
     {

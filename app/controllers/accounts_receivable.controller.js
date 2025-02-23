@@ -165,20 +165,12 @@ const deleteAbonoAccountReceivable = async (req = request, res = response) => {
     try {
         const { id_abono } = req.params;
         const abonoAccountsReceivable = await AbonosAccountsReceivable.findByPk(id_abono,{ transaction: t });
-        //validar solo puede anular el ultimo abono
-        const maxIdAbono = await AbonosAccountsReceivable.max('id',{ where: {id_account_receivable:abonoAccountsReceivable.id_account_receivable,status:true},transaction: t});
-        if(id_abono != maxIdAbono){
-            await t.rollback();
-            return res.status(422).json({
-                ok: false,
-                errors: [{ msg: `Por favor, tenga en cuenta que solo puede anular el último abono realizado.`}],
-            });
-        }
-        //cambio de estado del abono
+        await AbonosAccountsReceivable.update({total_abonado:null,restante_credito:null},{ where: {id_account_receivable:abonoAccountsReceivable.id_account_receivable},transaction: t })
+
         await abonoAccountsReceivable.update({status:false},{ transaction: t });
         const abono_anulado = Number(abonoAccountsReceivable.monto_abono);
         //Cuenta por pagar montos modificados y estado
-        const accountsReceivable = await AccountsReceivable.findByPk(abonoAccountsReceivable.id_account_receivable,{ transaction: t });
+        const accountsReceivable = await AccountsReceivable.findByPk(abonoAccountsReceivable.id_account_receivable,{ include: [{association:'output', attributes:['cod']}],transaction: t });
         accountsReceivable.status_account = 'PENDIENTE';
         const newMontoAbonado = Number(accountsReceivable.monto_abonado) - abono_anulado
         accountsReceivable.monto_abonado = newMontoAbonado;
@@ -189,6 +181,29 @@ const deleteAbonoAccountReceivable = async (req = request, res = response) => {
             where: { description: `POR ABONO CREDITO #${accountsReceivable.cod} ABONO #${abonoAccountsReceivable.id}`},
             transaction: t
         });
+         /*Buscar si se hizo en pago multiple*/
+         const abonosMultiple = await AbonosAccountsReceivableMultiple.findOne({where: {
+            [Op.and]: [
+                { ids_abonos_receivables: {[Op.contains]: [id_abono]}}
+            ]
+        },transaction: t})
+        if(abonosMultiple) {
+            let ids_abonos_receivables  = abonosMultiple.ids_abonos_receivables;
+            let ids_account_receivables = abonosMultiple.ids_account_receivables;
+            let codes_output             = abonosMultiple.codes_output;
+            ids_abonos_receivables  = ids_abonos_receivables.filter(id => id !== Number(id_abono));
+            ids_account_receivables = ids_account_receivables.filter(id => id !== Number(accountsReceivable.id));
+            codes_output            = codes_output.filter(code => code !== accountsReceivable.output.cod);
+            abonosMultiple.ids_abonos_receivables  = ids_abonos_receivables;
+            abonosMultiple.ids_account_receivables = ids_account_receivables;
+            abonosMultiple.codes_output            = codes_output;
+            abonosMultiple.monto_abono             = Number(abonosMultiple.monto_abono) - Number(abono_anulado);
+            if (ids_abonos_receivables.length === 0) {
+                await abonosMultiple.destroy({ transaction: t });
+            } else {
+                await abonosMultiple.save({ transaction: t });
+            }
+        }
         /* Ingreso historico */
         await History.create({
             id_user: req.userAuth.id,
@@ -200,6 +215,55 @@ const deleteAbonoAccountReceivable = async (req = request, res = response) => {
             id_reference: abonoAccountsReceivable.id,
             status: true
         }, { transaction: t }); 
+        await t.commit();
+        return res.status(201).json({
+            ok: true,
+            msg:'Abono eliminado exitosamente'
+        });   
+    } catch (error) {
+        await t.rollback();
+        console.log('ERROR DELETE ABONO: ' + error);
+        return res.status(500).json({
+          ok: false,
+          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
+
+const deleteAbonoMultipleAccountReceivable = async (req = request, res = response) => {
+    const t = await sequelize.transaction();
+    try {
+        const { id_abono_multiple } = req.params;
+        const abonosAccountsReceivableMultiple = await AbonosAccountsReceivableMultiple.findByPk(id_abono_multiple,{ transaction: t });
+        const abonosFromPayMultiple =  await AbonosAccountsReceivable.findAll({ where: {id: {[Op.in]: abonosAccountsReceivableMultiple.ids_abonos_receivables }}},{ transaction: t });
+        for (const abono_old of abonosFromPayMultiple) {
+            //dar de baja abono
+            await AbonosAccountsReceivable.update({status:false},{ where: {id:abono_old.id},transaction: t });
+            const abono_anulado = Number(abono_old.monto_abono);
+            //Cuenta por pagar montos modificados y estado
+            const accountsReceivable = await AccountsReceivable.findByPk(abono_old.id_account_receivable,{ transaction: t });
+            accountsReceivable.status_account = 'PENDIENTE';
+            const newMontoAbonado = Number(accountsReceivable.monto_abonado) - abono_anulado
+            accountsReceivable.monto_abonado = newMontoAbonado;
+            accountsReceivable.monto_restante = Number(accountsReceivable.total) - newMontoAbonado;
+            await accountsReceivable.save({transaction: t});
+            await DetailsCajaSmall.update({ status: false }, {
+                where: { description: `POR ABONO CREDITO #${accountsReceivable.cod} ABONO #${abono_old.id}`},
+                transaction: t
+            });
+            await History.create({
+                id_user: req.userAuth.id,
+                description: `ANULO ABONO ${accountsReceivable.description}`,
+                type: 'ANULO ABONO',
+                module: 'ACCOUNTS_RECEIVABLE',
+                action: 'DELETE',
+                id_sucursal: accountsReceivable.id_sucursal,
+                id_reference: abono_old.id,
+                status: true
+            }, { transaction: t }); 
+        }
+        await abonosAccountsReceivableMultiple.destroy({ transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,
@@ -422,5 +486,6 @@ module.exports = {
     deleteAbonoAccountReceivable,
     getAccountAllClient,
     payAccountMultiple,
-    getAbonosAllReceivablesPaginate
+    getAbonosAllReceivablesPaginate,
+    deleteAbonoMultipleAccountReceivable
 };

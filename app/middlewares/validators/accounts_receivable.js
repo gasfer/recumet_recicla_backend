@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistAccountReceivable, idExistAbonoAccountReceivable, idExistClient, idExistSucursal } = require('./database');
+const { idExistAccountReceivable, idExistAbonoAccountReceivable, idExistClient, idExistSucursal, idExistAbonoAccountReceivableMultiple } = require('./database');
 
 const validationSchema =  {
     id_account_receivable: {
@@ -69,11 +69,19 @@ const validateDelete = [
     validatedResponse
 ]
 
+const validateDeleteMultiple = [
+    checkSchema({
+        id_abono_multiple: { custom: { options: idExistAbonoAccountReceivableMultiple} },
+    }),
+    validatedResponse
+]
+
 
 module.exports = {
     getValidateCreate,
     validateDelete,
     getValidateGetForClient,
-    getValidateGetForClientGet
+    getValidateGetForClientGet,
+    validateDeleteMultiple
 }
 
