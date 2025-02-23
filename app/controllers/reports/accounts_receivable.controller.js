@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { AccountsReceivable, AbonosAccountsReceivable } = require('../../database/config');
+const { AccountsReceivable, AbonosAccountsReceivable,viewAbonosAccountReceivablesAll } = require('../../database/config');
 const PdfPrinter = require('pdfmake');
 const fonts = require('../../helpers/generator-pdf/fonts');
 const styles = require('../../helpers/generator-pdf/styles');
@@ -212,6 +212,194 @@ const returnDataAccountReceivable = async (params) => {
         ]
     };
     return await AccountsReceivable.findAll(optionsDb);
+}
+
+
+const generatePdfReportsAbonosAll = async (req = request, res = response) => {
+    try {
+        const { filterBy, date1, date2} = req.query;
+        const accounts_receivables_abonos_all = await returnDataAccountReceivableAbonos(req.query);
+        let dataPdf = dataPdfReturnAbonosAll(req.userAuth,accounts_receivables_abonos_all[0]?.sucursal?.name ?? '-'); //PDF 
+        const decimal = await getNumberDecimal();
+        let total_abonados = 0;
+        accounts_receivables_abonos_all.forEach(account_receivable_abono => {
+            const tableData = [
+                {text:moment(account_receivable_abono?.date_abono).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
+                {text:account_receivable_abono?.codes_output?.join(' \n '), fontSize:8}, 
+                {text:account_receivable_abono?.client?.full_names, fontSize:8}, 
+                {text:account_receivable_abono?.type_payment, fontSize:8}, 
+                {text:Number(account_receivable_abono?.monto_abono).toFixed(decimal), fontSize:8}, 
+                {text:account_receivable_abono?.comments, fontSize:8}, 
+            ];
+            total_abonados+=Number(account_receivable_abono?.monto_abono);
+            dataPdf[5].table.body.push(tableData);
+        });
+        dataPdf[5].table.body.push([
+            { colSpan: 4,text:'' },
+            {},
+            {},
+            {},
+            {text: Number(total_abonados).toFixed(decimal),fontSize:9},
+            {},
+        ]);
+        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
+        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
+        let docDefinition = {
+            content: dataPdf,
+            pageOrientation: 'landscape',
+            footer: function(currentPage, pageCount) { return [
+                {
+                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
+                    fontSize: 8,alignment: 'center', margin:[10,10,10,10]
+                }
+            ] },
+            styles: styles,
+        };
+        const printer = new PdfPrinter(fonts);
+        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
+        let chunks = [];
+        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
+        pdfDoc.on("end", () => {
+            const result = Buffer.concat(chunks);
+            res.setHeader('Content-Type', 'application/pdf;');
+            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
+            return res.send(result);
+        });
+        pdfDoc.end();
+    } catch (error) {
+        console.log(error);
+        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
+        return res.sendFile(pathImage);
+    }
+}
+
+const generateExcelReportsAbonosAll = async (req = request, res = response) => {
+    try {
+          const accounts_receivable_abonos = await returnDataAccountReceivableAbonos(req.query);
+          const decimal = await getNumberDecimal();
+          let accounts_receivable_data = [];
+          if(accounts_receivable_abonos.length == 0) {
+            accounts_receivable_data.push({
+                FECHA: '',
+                VENTAS: '',
+                CLIENTE: '',
+                TIPO: '',
+                PAGO: '',
+                CONCEPTO: '',
+              });
+          }
+          accounts_receivable_abonos.forEach(account_payable => {
+              const tableData = {
+                FECHA : moment(account_payable?.date_abono).format('DD/MM/YYYY HH:mm:ss'),
+                VENTAS : account_payable?.codes_output?.join(' \n '),
+                CLIENTE : account_payable.client?.full_names,
+                TIPO : account_payable?.type_payment,
+                PAGO : Number(account_payable?.monto_abono).toFixed(decimal),
+                CONCEPTO :  account_payable.comments,
+              }
+              accounts_receivable_data.push(tableData);
+          });
+          const workbook = new ExcelJS.Workbook();
+          const worksheet = workbook.addWorksheet(`Cuentas por pagar`);
+          // Agregar encabezados
+          const headers = Object.keys(accounts_receivable_data[0]);
+          worksheet.addRow(headers);
+          // Agregar datos
+          accounts_receivable_data.forEach(data => {
+              const row = [];
+              headers.forEach(header => {
+                  row.push(data[header]);
+              });
+              worksheet.addRow(row);
+          });
+          worksheet.getColumn('B').alignment = { wrapText: true };
+          worksheet.getColumn('A').width = 10; 
+          worksheet.getColumn('B').width = 20; 
+          worksheet.getColumn('C').width = 30; 
+          worksheet.getColumn('D').width = 20; 
+          worksheet.getColumn('E').width = 20; 
+          worksheet.getColumn('F').width = 20; 
+          worksheet.getColumn('G').width = 40; 
+          worksheet.getColumn('H').width = 30; 
+          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+          res.setHeader('Content-Disposition', `attachment; filename=cuentas-por-cobrar.xlsx`);
+          workbook.xlsx.write(res)
+          .then(() => {
+              res.end();
+          })
+          .catch(err => {
+              console.error('Error generar Excel:', err);
+              res.status(500).json({ error: 'Error al crear excel' });
+          })
+      } catch (error) {
+          console.log(error);
+          return res.status(500).json({
+              ok: false,
+              errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+          });
+      };
+  }
+
+const dataPdfReturnAbonosAll = (auth,sucursal) => [
+    {
+        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
+        width: 70,
+        absolutePosition: { x:25, y: 15 }
+    },
+    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
+        absolutePosition: { y: 16 },
+    },
+    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
+        absolutePosition: {  y: 27 }
+    },
+    { text: 'PAGOS REALIZADOS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
+    { text: 'Reporte generados con los parámetros establecidos, SUCURSAL: '+sucursal, alignment:'center',absolutePosition: {  y: 73 } },
+    {
+        style: 'tableReport',
+        absolutePosition: { x:20, y: 95 },
+        table: {
+            headerRows: 1,
+            widths: [50,80,200,80,80,'*'],
+            body: [
+                [
+                    {text:'FECHA', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'VENTAS', fontSize:8 ,fillColor: '#eeeeee', bold:true},
+                    {text:'CLIENTE', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TIPO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'PAGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CONCEPTO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                ]
+            ],
+            layout: 'lightHorizontalLines'
+        }
+    }
+];
+
+const returnDataAccountReceivableAbonos = async (params) => {
+    const {id_provider,query, id_sucursal, filterBy, date1, date2,orderNew} = params;
+    let {type} = params;
+    const whereDate = whereDateForType(filterBy,date1, date2, '"viewAbonosAccountReceivablesAll"."date_abono"');
+    const where = {
+        [Op.and]: [
+            id_sucursal   ? { id_sucursal   } : {},
+            id_provider   ? { id_provider   } : {},
+            { date_abono: whereDate },
+            type == 'codes_output' ?   {codes_output: {
+                [Op.contains]: [query]
+              } }: {}
+        ]
+    }
+    if( type == 'codes_output') type = null;
+    const optionsDb = {
+        order: [orderNew],
+        where,
+        include: [ 
+            { association: 'sucursal',attributes: ['name'] },
+            { association: 'user',attributes: ['full_names'] },
+            { association: 'client',attributes: ['full_names'] },
+        ]
+    };
+    return await viewAbonosAccountReceivablesAll.findAll(optionsDb);
 }
 
 
@@ -654,5 +842,7 @@ module.exports = {
     generatePdfReports,
     generateExcelReports,
     printAbonoAccountReceivableVoucher,
-    printAccountReceivableVoucher
+    printAccountReceivableVoucher,
+    generatePdfReportsAbonosAll,
+    generateExcelReportsAbonosAll
 }

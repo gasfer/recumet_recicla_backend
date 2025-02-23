@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { AccountsPayable , AbonosAccountsPayable ,sequelize, History} = require('../database/config');
+const { AccountsPayable , AbonosAccountsPayable ,sequelize, History, AbonosAccountsPayableMultiple, ViewAbonosAccountPayableAll} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { whereDateForType } = require('../helpers/where_range');
 const { Op } = require('sequelize');
@@ -79,6 +79,50 @@ const getAccountsPayablePaginate = async (req = request, res = response) => {
     }
 }
 
+const getAbonosAllPayablePaginate = async (req = request, res = response) => {
+    try {
+        const {query, page, limit, id_provider, id_sucursal, filterBy, date1, date2, orderNew} = req.query;
+        let {type} = req.query;
+        const whereDate = whereDateForType(filterBy,date1, date2, '"ViewAbonosAccountPayableAll"."date_abono"');
+        const where = {
+            [Op.and]: [
+                id_sucursal   ? { id_sucursal   } : {},
+                id_provider   ? { id_provider   } : {},
+                { date_abono: whereDate },
+                type == 'codes_input' ?   {codes_input: {
+                    [Op.contains]: [query]
+                  } }: {}
+            ]
+        }
+        if( type == 'codes_input') type = null;
+        const optionsDb = {
+            order: [orderNew],
+            where,
+            include: [ 
+                { association: 'sucursal',attributes: ['name'] },
+                { association: 'user',attributes: ['full_names'] },
+                { association: 'provider',attributes: ['full_names'] },
+            ]
+        };
+        
+        let accountsPayableAll = await paginate(ViewAbonosAccountPayableAll, page, limit, type, query, optionsDb);
+        const total_abonados = await ViewAbonosAccountPayableAll.sum('ViewAbonosAccountPayableAll.monto_abono', {where});
+        accountsPayableAll.totals = {
+            total_abonados,
+        }
+        return res.status(200).json({
+            ok: true,
+            accountsPayableAll
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
 const newAbonoAccountPayable = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
@@ -86,7 +130,7 @@ const newAbonoAccountPayable = async (req = request, res = response ) => {
         body.status = true;
         const { id_account_payable } = body;
         const accountsPayable = await AccountsPayable.findByPk(id_account_payable,{ transaction: t });
-        const abonosAccountsPayable = await payAbonoAccount(accountsPayable,body,req.userAuth.id,t);
+        const abonosAccountsPayable = await payAbonoAccount(accountsPayable,body,req.userAuth.id,false,t);
         if(abonosAccountsPayable.ok){
             await t.commit();
             return res.status(201).json({
@@ -215,7 +259,7 @@ const getAccountAllProvider = async (req = request, res = response) => {
 const payAccountMultiple = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
-        const { id_provider, monto_abono, date_abono} = req.body;
+        const { id_provider, monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_sucursal} = req.body;
         if (!monto_abono || isNaN(monto_abono) || !date_abono) {
             return res.status(422).json({
                 ok: false,
@@ -229,7 +273,13 @@ const payAccountMultiple = async (req = request, res = response) => {
                { status_account: 'PENDIENTE'}
             ]
         }
-        const accountsPayable = await AccountsPayable.findAll({order: [['id', 'ASC']], where ,transaction: t});
+        const accountsPayable = await AccountsPayable.findAll({order: [['id', 'ASC']], 
+            where ,
+            include:[  
+                { association: 'input', attributes: ['cod']},
+            ],
+            transaction: t}
+        );
         const total_restante = await AccountsPayable.sum('AccountsPayable.monto_restante', {where, transaction: t});
         let remainingAmount = parseFloat(monto_abono);  // El monto por pagar
         // Si no hay cuentas por pagar
@@ -249,6 +299,9 @@ const payAccountMultiple = async (req = request, res = response) => {
             });
         }
 
+        let ids_account_payables = [];
+        let ids_abonos_payables = [];
+        let codes_input = [];
         //  pagar las cuentas por pagar
         for (let account of accountsPayable) {
             if (remainingAmount <= 0) break;
@@ -263,7 +316,7 @@ const payAccountMultiple = async (req = request, res = response) => {
             }
             const body = req.body; //{monto_abono, date_abono, type_payment, comments, account_output, id_bank} = body;
             body.monto_abono =  newAbono;
-            const abonosAccountsPayable = await payAbonoAccount(account,body,req.userAuth.id,t);
+            const abonosAccountsPayable = await payAbonoAccount(account,body,req.userAuth.id,true,t);
             if(!abonosAccountsPayable.ok) {
                 await t.rollback();
                 return res.status(422).json({
@@ -271,11 +324,23 @@ const payAccountMultiple = async (req = request, res = response) => {
                     errors: [{ msg: abonosAccountsPayable.msg }],
                 });
             }
+            ids_account_payables.push(abonosAccountsPayable.abonosAccountsPayable.id_account_payable);
+            ids_abonos_payables.push(abonosAccountsPayable.abonosAccountsPayable.id);
+            codes_input.push(account.input.cod);
+        }
+        let id_abono_accounts_payable = null;
+        if(ids_account_payables.length > 0) { //A las cuentas que se realizo abono
+            const abonosAccountsPayableMultiple = await AbonosAccountsPayableMultiple.create({
+                ids_account_payables, ids_abonos_payables, date_abono, monto_abono, id_user: req.userAuth.id, status: true,
+                type_payment,comments,account_output,id_bank,id_sucursal,id_provider, status: true,codes_input
+            },{ transaction: t });
+            id_abono_accounts_payable = abonosAccountsPayableMultiple.id;
         }
         await t.commit();
         return res.status(200).json({
             ok: true,
-            msg: 'Cuentas pagadas'
+            msg: 'Cuentas pagadas',
+            id_abono_accounts_payable
         });
     } catch (error) {
         await t.rollback();
@@ -288,7 +353,7 @@ const payAccountMultiple = async (req = request, res = response) => {
 }
 
 
-const payAbonoAccount = async (account,body,userAuthId,t) => {
+const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
     try {
         const  {monto_abono, date_abono, type_payment, comments, account_output, id_bank} = body;
         let total_account_monto = Number(account.monto_abonado) + Number(monto_abono);
@@ -306,7 +371,7 @@ const payAbonoAccount = async (account,body,userAuthId,t) => {
 
         const abonosAccountsPayable = await AbonosAccountsPayable.create({
             id_account_payable:account.id, date_abono, monto_abono, total_abonado: total_account_monto,
-            restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_output,id_bank
+            restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_output,id_bank,from_pay_multiple
         },{ transaction: t });
         /* Ingreso historico */
         await History.create({
@@ -331,5 +396,6 @@ module.exports = {
     newAbonoAccountPayable,
     deleteAbonoAccountPayable,
     getAccountAllProvider,
-    payAccountMultiple
+    payAccountMultiple,
+    getAbonosAllPayablePaginate
 };

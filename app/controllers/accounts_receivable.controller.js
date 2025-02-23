@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { AccountsReceivable , AbonosAccountsReceivable ,sequelize, History,DetailsCajaSmall,CajaSmall} = require('../database/config');
+const { AccountsReceivable , AbonosAccountsReceivable, viewAbonosAccountReceivablesAll, AbonosAccountsReceivableMultiple,sequelize, History,DetailsCajaSmall,CajaSmall} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { whereDateForType } = require('../helpers/where_range');
 const { Op } = require('sequelize');
@@ -80,6 +80,49 @@ const getAccountsReceivablePaginate = async (req = request, res = response) => {
     }
 }
 
+const getAbonosAllReceivablesPaginate = async (req = request, res = response) => {
+    try {
+        const {query, page, limit, id_client, id_sucursal, filterBy, date1, date2, orderNew} = req.query;
+        let {type}= req.query;
+        const whereDate = whereDateForType(filterBy,date1, date2, '"viewAbonosAccountReceivablesAll"."date_abono"');
+        const where = {
+            [Op.and]: [
+                id_sucursal     ? { id_sucursal   } : {},
+                id_client       ? { id_client   } : {},
+                { date_abono: whereDate },
+                type == 'codes_output' ?   {codes_output: {
+                    [Op.contains]: [query]
+                  } }: {}
+            ]
+        }
+        if( type == 'codes_output') type = null;
+        const optionsDb = {
+            order: [orderNew],
+            where,
+            include: [ 
+                { association: 'sucursal',attributes: ['name'] },
+                { association: 'user',attributes: ['full_names'] },
+                { association: 'client',attributes: ['full_names'] },
+            ]
+        };
+        let accountsReceivablesAll = await paginate(viewAbonosAccountReceivablesAll, page, limit, type, query, optionsDb);
+        const total_abonados = await viewAbonosAccountReceivablesAll.sum('viewAbonosAccountReceivablesAll.monto_abono', {where});
+        accountsReceivablesAll.totals = {
+            total_abonados,
+        }
+        return res.status(200).json({
+            ok: true,
+            accountsReceivablesAll
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
 const newAbonoAccountReceivable = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
@@ -91,7 +134,7 @@ const newAbonoAccountReceivable = async (req = request, res = response ) => {
                 {association:'output', attributes:['id','cod']}
             ]
          });
-        const abonosAccountsReceivable = await payAbonoAccount(accountsReceivable,body,req.userAuth.id,t);
+        const abonosAccountsReceivable = await payAbonoAccount(accountsReceivable,body,req.userAuth.id,false,t);
         if(abonosAccountsReceivable.ok){
             await t.commit();
             return res.status(201).json({
@@ -223,7 +266,7 @@ const getAccountAllClient = async (req = request, res = response) => {
 const payAccountMultiple = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
-        const { id_client, monto_abono, date_abono} = req.body;
+        const { id_client, monto_abono, date_abono, type_payment,comments,account_input,id_bank,id_sucursal} = req.body;
         if (!monto_abono || isNaN(monto_abono) || !date_abono) {
             return res.status(422).json({
                 ok: false,
@@ -261,6 +304,9 @@ const payAccountMultiple = async (req = request, res = response) => {
             });
         }
 
+        let ids_account_receivable = [];
+        let ids_abonos_receivables = [];
+        let codes_output = [];
         //  pagar las cuentas por pagar
         for (let account of accountsReceivable) {
             if (remainingAmount <= 0) break;
@@ -275,7 +321,7 @@ const payAccountMultiple = async (req = request, res = response) => {
             }
             const body = req.body; //{monto_abono, date_abono, type_payment, comments, account_input, id_bank} = body;
             body.monto_abono =  newAbono;
-            const abonosAccountsReceivable = await payAbonoAccount(account,body,req.userAuth.id,t);
+            const abonosAccountsReceivable = await payAbonoAccount(account,body,req.userAuth.id,true,t);
             if(!abonosAccountsReceivable.ok) {
                 await t.rollback();
                 return res.status(422).json({
@@ -283,12 +329,23 @@ const payAccountMultiple = async (req = request, res = response) => {
                     errors: [{ msg: abonosAccountsReceivable.msg }],
                 });
             }
+            ids_account_receivable.push(abonosAccountsReceivable.abonosAccountsReceivable.id_account_receivable);
+            ids_abonos_receivables.push(abonosAccountsReceivable.abonosAccountsReceivable.id);
+            codes_output.push(account.output.cod);
         }
-        
+        let id_abono_accounts_receivable = null;
+        if(ids_account_receivable.length > 0) { //A las cuentas que se realizo abono
+            const abonosAccountsReceivableMultiple = await AbonosAccountsReceivableMultiple.create({
+                ids_account_receivable, ids_abonos_receivables, date_abono, monto_abono, id_user: req.userAuth.id, status: true,
+                type_payment,comments,account_input,id_bank,id_sucursal,id_client, status: true,codes_output
+            },{ transaction: t });
+            id_abono_accounts_receivable = abonosAccountsReceivableMultiple.id;
+        }
         await t.commit();
         return res.status(200).json({
             ok: true,
-            msg: 'Cuentas pagadas'
+            msg: 'Cuentas pagadas',
+            id_abono_accounts_receivable
         });
     } catch (error) {
         await t.rollback();
@@ -300,7 +357,7 @@ const payAccountMultiple = async (req = request, res = response) => {
     }
 }
 
-const payAbonoAccount = async (account,body,userAuthId,t) => {
+const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
     try {
         const  {monto_abono, date_abono, type_payment, comments, account_input, id_bank} = body;
         let total_account_monto = Number(account.monto_abonado) + Number(monto_abono);
@@ -318,7 +375,7 @@ const payAbonoAccount = async (account,body,userAuthId,t) => {
 
         const abonosAccountsReceivable = await AbonosAccountsReceivable.create({
             id_account_receivable:account.id, date_abono, monto_abono, total_abonado: total_account_monto,
-            restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_input,id_bank
+            restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_input,id_bank,from_pay_multiple
         },{ transaction: t });
         //**Ingreso CAJA abono */
         const caja_small = await validaOpenCajaSmall(account.id_sucursal,userAuthId);
@@ -364,5 +421,6 @@ module.exports = {
     newAbonoAccountReceivable,
     deleteAbonoAccountReceivable,
     getAccountAllClient,
-    payAccountMultiple
+    payAccountMultiple,
+    getAbonosAllReceivablesPaginate
 };

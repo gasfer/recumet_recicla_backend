@@ -1,9 +1,9 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getAccountsReceivablePaginate, newAbonoAccountReceivable, deleteAbonoAccountReceivable, getAccountAllClient, payAccountMultiple } = require('../controllers/accounts_receivable.controller');
-const { getValidateCreate, validateDelete, getValidateGetForClient } = require('../middlewares/validators/accounts_receivable');
-const { generatePdfReports, generateExcelReports, printAbonoAccountReceivableVoucher, printAccountReceivableVoucher } = require('../controllers/reports/accounts_receivable.controller');
+const { getAccountsReceivablePaginate, newAbonoAccountReceivable, deleteAbonoAccountReceivable, getAccountAllClient, payAccountMultiple, getAbonosAllReceivablesPaginate } = require('../controllers/accounts_receivable.controller');
+const { getValidateCreate, validateDelete, getValidateGetForClient, getValidateGetForClientGet } = require('../middlewares/validators/accounts_receivable');
+const { generatePdfReports, generateExcelReports, printAbonoAccountReceivableVoucher, printAccountReceivableVoucher, generatePdfReportsAbonosAll, generateExcelReportsAbonosAll } = require('../controllers/reports/accounts_receivable.controller');
 
 const router = Router();
 
@@ -14,8 +14,12 @@ router.get('/',[
 
 router.get('/forClient',[
     validarJWT,
-    getValidateGetForClient
+    getValidateGetForClientGet
 ],getAccountAllClient );
+
+router.get('/abonos/all',[
+    validarJWT,
+],getAbonosAllReceivablesPaginate );
 
 router.post('/payMultiClient',[
     validarJWT,
@@ -41,6 +45,14 @@ router.get('/pdf',[
 router.get('/excel',[
     validarJWT,
 ], generateExcelReports );
+
+router.get('/pdf/abonos',[
+    validarJWT,
+], generatePdfReportsAbonosAll );
+
+router.get('/excel/abonos',[
+    validarJWT,
+], generateExcelReportsAbonosAll );
 
 router.get('/pdf/voucher-abono/:id_abono_account_receivable',[
     validarJWT,

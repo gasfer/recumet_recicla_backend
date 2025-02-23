@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
     type_payment: DataTypes.STRING,
     account_input: DataTypes.STRING,
     id_bank: DataTypes.INTEGER,
+    from_pay_multiple: DataTypes.BOOLEAN
   }, {
     sequelize,
     modelName: 'AbonosAccountsReceivable',

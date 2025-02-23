@@ -1,9 +1,9 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable, getAccountAllProvider, payAccountMultiple } = require('../controllers/accounts_payables.controller');
-const { getValidateCreate, validateDelete, getValidateGetForProvider } = require('../middlewares/validators/accounts_payable');
-const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVoucher, printAccountPayableVoucher } = require('../controllers/reports/accounts_payables.controller');
+const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable, getAccountAllProvider, payAccountMultiple, getAbonosAllPayablePaginate } = require('../controllers/accounts_payables.controller');
+const { getValidateCreate, validateDelete, getValidateGetForProvider, getValidateGetForProviderGet } = require('../middlewares/validators/accounts_payable');
+const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVoucher, printAccountPayableVoucher, generatePdfReportsAbonosAll, generateExcelReportsAbonosAll } = require('../controllers/reports/accounts_payables.controller');
 
 const router = Router();
 
@@ -14,8 +14,12 @@ router.get('/',[
 
 router.get('/forProvider',[
     validarJWT,
-    getValidateGetForProvider
+    getValidateGetForProviderGet
 ],getAccountAllProvider );
+
+router.get('/abonos/all',[
+    validarJWT,
+],getAbonosAllPayablePaginate );
 
 router.post('/payMultiProvider',[
     validarJWT,
@@ -38,9 +42,17 @@ router.get('/pdf',[
     validarJWT,
 ], generatePdfReports );
 
+router.get('/pdf/abonos',[
+    validarJWT,
+], generatePdfReportsAbonosAll );
+
 router.get('/excel',[
     validarJWT,
 ], generateExcelReports );
+
+router.get('/excel/abonos',[
+    validarJWT,
+], generateExcelReportsAbonosAll );
 
 router.get('/pdf/voucher-abono/:id_abono_account_payable',[
     validarJWT,

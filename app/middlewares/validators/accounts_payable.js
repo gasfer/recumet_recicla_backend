@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistAccountPayable, idExistAbonoAccountPayable, idExistProvider } = require('./database');
+const { idExistAccountPayable, idExistAbonoAccountPayable, idExistProvider, idExistSucursal } = require('./database');
 
 const validationSchema =  {
     id_account_payable: {
@@ -21,12 +21,28 @@ const validationSchema =  {
     },
 };
 
+const validationProviderGet =  {
+    id_provider: {
+        isEmpty: {
+            negated: true, errorMessage: "El proveedor es obligatorio",
+        },
+        custom: { options: idExistProvider }
+    }
+};
+
 const validationProvider =  {
     id_provider: {
         isEmpty: {
             negated: true, errorMessage: "El proveedor es obligatorio",
         },
         custom: { options: idExistProvider }
+    },
+    id_sucursal: {
+        isEmpty: {
+            negated: true,
+            errorMessage: "El id sucursal es obligatorio",
+        },
+        custom: { options: idExistSucursal },
     },
 };
 
@@ -37,6 +53,11 @@ const getValidateCreate = [
 
 const getValidateGetForProvider = [
     checkSchema(validationProvider),
+    validatedResponse
+];
+
+const getValidateGetForProviderGet = [
+    checkSchema(validationProviderGet),
     validatedResponse
 ];
 
@@ -51,6 +72,7 @@ const validateDelete = [
 module.exports = {
     getValidateCreate,
     validateDelete,
-    getValidateGetForProvider
+    getValidateGetForProvider,
+    getValidateGetForProviderGet
 }
 

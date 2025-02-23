@@ -20,6 +20,15 @@ module.exports = {
       }
     });
 
+    // await queryInterface.addColumn('abonos_accounts_payables', 'from_pay_multiple', {
+    //   type: Sequelize.BOOLEAN,
+    //   default: false,
+    // });
+    // await queryInterface.addColumn('abonos_accounts_receivable', 'from_pay_multiple', {
+    //   type: Sequelize.BOOLEAN,
+    //   default: false,
+    // });
+
 
     await queryInterface.addColumn('abonos_accounts_receivable', 'comments', {
       type: Sequelize.TEXT,
@@ -44,7 +53,8 @@ module.exports = {
     await queryInterface.removeColumn('abonos_accounts_payables', 'type_payment');
     await queryInterface.removeColumn('abonos_accounts_payables', 'account_output');
     await queryInterface.removeColumn('abonos_accounts_payables', 'id_bank');
-
+    // await queryInterface.removeColumn('abonos_accounts_payables', 'from_pay_multiple');
+    // await queryInterface.removeColumn('abonos_accounts_receivable', 'from_pay_multiple');
     await queryInterface.removeColumn('abonos_accounts_receivable', 'comments');
     await queryInterface.removeColumn('abonos_accounts_receivable', 'type_payment');
     await queryInterface.removeColumn('abonos_accounts_receivable', 'account_input');
