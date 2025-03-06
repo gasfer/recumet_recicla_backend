@@ -57,7 +57,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
                 'id_product',
                 [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
                 [sequelize.literal('COALESCE(SUM(quantity_output), 0)'), 'quantity_output'],
-                [sequelize.literal('MIN(quantity_inicial) + COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
+                [sequelize.literal('COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
                 [sequelize.literal('MIN(quantity_inicial)'), 'quantity_inicial'],
             ],
             where: {

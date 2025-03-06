@@ -128,7 +128,7 @@ const newOutput = async (req = request, res = response) => {
                 transaction: t
             });
             //??ERROR STOCK INSUFICIENTE
-            if(stock.stock < detail.quantity){
+            if(Number(stock.stock) < Number(detail.quantity)){
                 listProductNotStock.push(
                     { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`}
                 );
@@ -300,7 +300,7 @@ const updateOutput = async (req = request, res = response) => {
                 transaction: t
             });
             //??ERROR STOCK INSUFICIENTE
-            if(stock.stock < detail.quantity){
+            if(Number(stock.stock) < Number(detail.quantity)){
                 listProductNotStock.push(
                     { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`}
                 );
