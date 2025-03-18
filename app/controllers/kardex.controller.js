@@ -79,6 +79,23 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             group: ['id_product', 'product.id', 'product.unit.id', 'storage.id']
         };
         let kardexes = await paginate(Kardex, page, limit, type, query, optionsDb); 
+        for (const kardex of kardexes.data) {
+            const where = {
+                [Op.and]: [
+                    id_sucursal ? { id_sucursal } : {},
+                    id_storage  ? { id_storage  } : {},
+                    id_provider ? { id_provider } : {},
+                    { id_product :  kardex.id_product  },
+                    { date: whereDate },
+                    { status: true },
+                ]
+            }
+            const kardex_inicial = await Kardex.findOne({where,order:[['id','ASC']] });
+            const quantity_inicial = kardex_inicial.quantity_inicial;
+            kardex.dataValues.quantity_inicial = quantity_inicial;
+            kardex.dataValues.quantity_input = Number( kardex.dataValues.quantity_input) + Number(quantity_inicial);
+            kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + Number(quantity_inicial);
+        }
         return res.status(200).json({
             ok: true,
             kardexes

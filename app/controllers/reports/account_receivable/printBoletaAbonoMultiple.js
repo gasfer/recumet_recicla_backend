@@ -25,15 +25,17 @@ const printAbonoMultipleAccountReceivableVoucher = async (req = request, res = r
             include: [ 
                 { association: 'sucursal', include:{ association: 'company'}},
                 { association: 'output', include: [
-                    { association: 'detailsOutput', 
-                        include: [
-                            {   association: 'product',
-                                include: [{ association:'unit'}]
-                            }
-                        ]
-                    },
-                ]
-            }]
+                        { association: 'detailsOutput', 
+                            include: [
+                                {   association: 'product',
+                                    include: [{ association:'unit'}]
+                                }
+                            ]
+                        },
+                    ]
+                },
+                {association: 'abonosAccountsReceivable'}
+            ]
         });
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnAbonoAccountReceivableMultipleVoucher(abono_account_receivable,accountsReceivables[0],decimal); //PDF 
@@ -42,13 +44,11 @@ const printAbonoMultipleAccountReceivableVoucher = async (req = request, res = r
             saldoTotal: 0,
             payIn: abono_account_receivable.type_payment
         }
-        accountsReceivables.forEach(accountsPayable => {
+        accountsReceivables.forEach(accountsReceivable => {
             let quantity_total = 0;
             let units = [];
             let tableData = [];
-            saldoTotal.acuentaTotal = Number(saldoTotal.acuentaTotal) + Number(accountsPayable.monto_abonado);
-            saldoTotal.saldoTotal   = Number(saldoTotal.saldoTotal) + Number(accountsPayable.monto_restante).toFixed(decimal);
-            accountsPayable.output.detailsOutput.forEach(detail => {
+            accountsReceivable.output.detailsOutput.forEach(detail => {
                 quantity_total+= Number(detail?.quantity);
                 if (!units.includes(detail?.product?.unit.siglas)) {
                     units.push(detail?.product?.unit.siglas);
@@ -65,43 +65,21 @@ const printAbonoMultipleAccountReceivableVoucher = async (req = request, res = r
             });
             const footer = [
                 [
-                    {text:'',colSpan: 2, border:[true,false,false,false]},
+                    {text:'',colSpan: 2, border:[false,false,false,false]},
                     '',
                     {text: quantity_total,  fontSize:8, alignment:'center'},
                     {text: units.join(','), fontSize:8, alignment:'center'},
-                    {   border:[true,false,true,true],
-                        text: `SUB TOTAL: ${Number(accountsPayable.output.sub_total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
-                        bold:true,
+                    {   border:[false,false,false,false],
+                        text: ``, colSpan: 2,fontSize:8,
                     },
                 ],
-                [
-                    {text:'',colSpan: 4, border:[true,false,false,false]},
-                    '',
-                    '',
-                    '',
-                    {   border:[true,false,true,true],
-                        text: `DESCUENTO: ${Number(accountsPayable.output.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
-                        bold:true,
-                    },
-                ],
-                [
-                    {
-                        text:'SON: ' + NumeroALetras(Number(accountsPayable.output.total).toFixed(decimal)),
-                        style: 'sonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
-                    },
-                    '',
-                    '',
-                    '',
-                    {   border:[true,false,true,true],
-                        text: `TOTAL: ${Number(accountsPayable.output.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
-                        bold:true,
-                    },
-                ]
             ]
-            dataPdf.push(...addTableInputAbonosMultiple(tableData,footer,accountsPayable,decimal));
+            const abono_in_pay = accountsReceivable.abonosAccountsReceivable.find(abono => 
+                abono_account_receivable.dataValues.ids_abonos_receivables.includes(abono.id)
+            );
+            saldoTotal.acuentaTotal = Number(saldoTotal.acuentaTotal) + Number(abono_in_pay.monto_abono);
+            saldoTotal.saldoTotal   = Number(saldoTotal.saldoTotal) + Number(abono_in_pay.restante_credito).toFixed(decimal);
+            dataPdf.push(...addTableInputAbonosMultiple(tableData,footer,accountsReceivable,abono_in_pay,decimal));
         });
         dataPdf.push(...addFooterAbonosMultiple(abono_account_receivable,saldoTotal,decimal));
       
@@ -127,34 +105,34 @@ const printAbonoMultipleAccountReceivableVoucher = async (req = request, res = r
     }
 }
 
-const dataPdfReturnAbonoAccountReceivableMultipleVoucher = (abono_account_receivable,accountsPayable,decimal) => [
+const dataPdfReturnAbonoAccountReceivableMultipleVoucher = (abono_account_receivable,accountsReceivable,decimal) => [
     {
         image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
         width: 60,
         absolutePosition: { x:30, y: 15 }
     },
-    {   text: accountsPayable.sucursal.name, style: 'text',
+    {   text: accountsReceivable.sucursal.name, style: 'text',
         absolutePosition: { x:97, y: 25 }
     },
     {   text: 'NIT:', bold:true, style: 'text',
         absolutePosition: { x:97, y: 35 }
     },
-    {   text: `${accountsPayable.sucursal.company.nit}`, style: 'text',
+    {   text: `${accountsReceivable.sucursal.company.nit}`, style: 'text',
         absolutePosition: { x:120, y: 35 }
     },
     {   text: 'TELÉFONO:',bold:true, style: 'text',
         absolutePosition: { x:97, y: 45 }
     },
-    {   text: `${accountsPayable?.sucursal?.cellphone ?? '-'}`, style: 'text',
+    {   text: `${accountsReceivable?.sucursal?.cellphone ?? '-'}`, style: 'text',
         absolutePosition: { x:155, y: 45 }
     },
     {   text: 'EMAIL:', bold:true, style: 'text',
         absolutePosition: { x:97, y: 55 }
     },
-    {   text: `${accountsPayable.sucursal.email}`, style: 'text',
+    {   text: `${accountsReceivable.sucursal.email}`, style: 'text',
         absolutePosition: { x:133, y: 55 }
     },
-    { text: 'CUENTA: ' + accountsPayable.cod, style: 'fechaDoc',
+    { text: 'CUENTA: ' + accountsReceivable.cod, style: 'fechaDoc',
       absolutePosition: {  y: 30 }
     },
     { text: moment(abono_account_receivable.date_abono).format('dddd, D [de] MMMM [de] YYYY, h:mm:ss a'),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
@@ -179,7 +157,7 @@ const dataPdfReturnAbonoAccountReceivableMultipleVoucher = (abono_account_receiv
     },
 ];
 
-const addTableInputAbonosMultiple = (tableData,footer,accountsPayable,decimal) => {
+const addTableInputAbonosMultiple = (tableData,footer,accountsReceivable,abono_in_pay,decimal) => {
     return [
         {
             margin: [0,8,0,0],
@@ -190,21 +168,21 @@ const addTableInputAbonosMultiple = (tableData,footer,accountsPayable,decimal) =
                     width: '25%',
                     columns: [
                     { text: 'Venta Nº ', style: 'datos_person', bold: true, fontSize: 10, alignment: 'right', width: 55 },
-                    { text: accountsPayable.output.cod,     style: 'datos_person', fontSize: 10,  alignment: 'left'}
+                    { text: accountsReceivable.output.cod,     style: 'datos_person', fontSize: 10,  alignment: 'left'}
                     ]
                 },
                 {
                     width: '20%',
                     columns: [
                     { text: 'A cuenta:', style: 'datos_person', bold: true, fontSize: 10, alignment: 'right', width: 50 },
-                    { text: Number(accountsPayable.monto_abonado).toFixed(decimal), style: 'datos_person', fontSize: 10,alignment: 'left' }
+                    { text: Number(abono_in_pay.monto_abono).toFixed(decimal), style: 'datos_person', fontSize: 10,alignment: 'left' }
                     ]
                 },
                 {
                     width: '20%',
                     columns: [
                     { text: 'Saldo:',   style: 'datos_person', bold: true, fontSize: 10, alignment: 'right', width: 50 },
-                    { text: Number(accountsPayable.monto_restante).toFixed(decimal),     style: 'datos_person', fontSize: 10,alignment: 'left' }
+                    { text: Number(abono_in_pay.restante_credito).toFixed(decimal),     style: 'datos_person', fontSize: 10,alignment: 'left' }
                     ]
                 }
             ],

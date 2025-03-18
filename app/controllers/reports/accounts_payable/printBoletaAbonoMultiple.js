@@ -1,4 +1,4 @@
-const { AccountsPayable, AbonosAccountsPayableMultiple} = require('../../../database/config');
+const { AccountsPayable, AbonosAccountsPayableMultiple, AbonosAccountsPayable} = require('../../../database/config');
 const { Op } = require("sequelize");
 const { getNumberDecimal } = require("../../../helpers/company");
 const path = require('path');
@@ -25,15 +25,17 @@ const printAbonoMultipleAccountPayableVoucher = async (req = request, res = resp
             include: [ 
                 { association: 'sucursal', include:{ association: 'company'}},
                 { association: 'input', include: [
-                    { association: 'detailsInput', 
-                        include: [
-                            {   association: 'product',
-                                include: [{ association:'unit'}]
-                            }
-                        ]
-                    },
-                ]
-            }]
+                        { association: 'detailsInput', 
+                            include: [
+                                {   association: 'product',
+                                    include: [{ association:'unit'}]
+                                }
+                            ]
+                        },
+                    ]
+                },
+                {association: 'abonosAccountsPayable'}
+            ]
         });
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnAbonoAccountPayableMultipleVoucher(abono_account_payable,accountsPayables[0],decimal); //PDF 
@@ -46,8 +48,6 @@ const printAbonoMultipleAccountPayableVoucher = async (req = request, res = resp
             let quantity_total = 0;
             let units = [];
             let tableData = [];
-            saldoTotal.acuentaTotal = Number(saldoTotal.acuentaTotal) + Number(accountsPayable.monto_abonado);
-            saldoTotal.saldoTotal   = Number(saldoTotal.saldoTotal) + Number(accountsPayable.monto_restante).toFixed(decimal);
             accountsPayable.input.detailsInput.forEach(detail => {
                 quantity_total+= Number(detail?.quantity);
                 if (!units.includes(detail?.product?.unit.siglas)) {
@@ -64,43 +64,21 @@ const printAbonoMultipleAccountPayableVoucher = async (req = request, res = resp
             });
             const footer = [
                 [
-                    {text:'',colSpan: 2, border:[true,false,false,false]},
+                    {text:'',colSpan: 2, border:[false,false,false,false]},
                     '',
                     {text: quantity_total,  fontSize:8, alignment:'center'},
                     {text: units.join(','), fontSize:8, alignment:'center'},
-                    {   border:[true,false,true,true],
-                        text: `SUB TOTAL: ${Number(accountsPayable.input.sumas).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
-                        bold:true,
+                    {   border:[false,false,false,false],
+                        text: ``, colSpan: 2,fontSize:8,
                     },
                 ],
-                [
-                    {text:'',colSpan: 4, border:[true,false,false,false]},
-                    '',
-                    '',
-                    '',
-                    {   border:[true,false,true,true],
-                        text: `DESCUENTO: ${Number(accountsPayable.input.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
-                        bold:true,
-                    },
-                ],
-                [
-                    {
-                        text:'SON: ' + NumeroALetras(Number(accountsPayable.input.total).toFixed(decimal)),
-                        style: 'sonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
-                    },
-                    '',
-                    '',
-                    '',
-                    {   border:[true,false,true,true],
-                        text: `TOTAL: ${Number(accountsPayable.input.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
-                        bold:true,
-                    },
-                ]
             ]
-            dataPdf.push(...addTableInputAbonosMultiple(tableData,footer,accountsPayable,decimal));
+            const abono_in_pay = accountsPayable.abonosAccountsPayable.find(abono => 
+                abono_account_payable.dataValues.ids_abonos_payables.includes(abono.id)
+            );
+            saldoTotal.acuentaTotal = Number(saldoTotal.acuentaTotal) + Number(abono_in_pay.monto_abono);
+            saldoTotal.saldoTotal   = Number(saldoTotal.saldoTotal) + Number(abono_in_pay.restante_credito).toFixed(decimal);
+            dataPdf.push(...addTableInputAbonosMultiple(tableData,footer,accountsPayable,abono_in_pay,decimal));
         });
         dataPdf.push(...addFooterAbonosMultiple(abono_account_payable,saldoTotal,decimal));
       
@@ -178,7 +156,7 @@ const dataPdfReturnAbonoAccountPayableMultipleVoucher = (abono_account_payable,a
     },
 ];
 
-const addTableInputAbonosMultiple = (tableData,footer,accountsPayable,decimal) => {
+const addTableInputAbonosMultiple = (tableData,footer,accountsPayable,abono_in_pay,decimal) => {
     return [
         {
             margin: [0,8,0,0],
@@ -196,14 +174,14 @@ const addTableInputAbonosMultiple = (tableData,footer,accountsPayable,decimal) =
                     width: '20%',
                     columns: [
                     { text: 'A cuenta:', style: 'datos_person', bold: true, fontSize: 10, alignment: 'right', width: 50 },
-                    { text: Number(accountsPayable.monto_abonado).toFixed(decimal), style: 'datos_person', fontSize: 10,alignment: 'left' }
+                    { text: Number(abono_in_pay.monto_abono).toFixed(decimal), style: 'datos_person', fontSize: 10,alignment: 'left' }
                     ]
                 },
                 {
                     width: '20%',
                     columns: [
                     { text: 'Saldo:',   style: 'datos_person', bold: true, fontSize: 10, alignment: 'right', width: 50 },
-                    { text: Number(accountsPayable.monto_restante).toFixed(decimal),     style: 'datos_person', fontSize: 10,alignment: 'left' }
+                    { text: Number(abono_in_pay.restante_credito).toFixed(decimal),     style: 'datos_person', fontSize: 10,alignment: 'left' }
                     ]
                 }
             ],

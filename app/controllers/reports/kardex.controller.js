@@ -670,8 +670,7 @@ const returnDataInputKardexFisico = async (params) => {
             'id_product',
             [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
             [sequelize.literal('COALESCE(SUM(quantity_output), 0)'), 'quantity_output'],
-            [sequelize.literal('MIN(quantity_inicial) + COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
-            [sequelize.literal('MIN(quantity_inicial)'), 'quantity_inicial'],
+            [sequelize.literal('COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
         ],
         where: {
             [Op.and]: [
@@ -692,7 +691,25 @@ const returnDataInputKardexFisico = async (params) => {
         ],
         group: ['id_product', 'product.id', 'product.unit.id', 'storage.id','sucursal.id']
     };
-    return await Kardex.findAll(optionsDb);
+    const kardexes = await Kardex.findAll(optionsDb);
+    for (const kardex of kardexes) {
+        const where = {
+            [Op.and]: [
+                id_sucursal ? { id_sucursal } : {},
+                id_storage  ? { id_storage  } : {},
+                id_provider ? { id_provider } : {},
+                { id_product :  kardex.id_product  },
+                { createdAt: whereDate },
+                { status: true },
+            ]
+        }
+        const kardex_inicial = await Kardex.findOne({where,order:[['id','ASC']] });
+        const quantity_inicial = kardex_inicial.quantity_inicial;
+        kardex.dataValues.quantity_inicial = quantity_inicial;
+        kardex.dataValues.quantity_input = Number( kardex.dataValues.quantity_input) + Number(quantity_inicial);
+        kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + Number(quantity_inicial);
+    }
+    return kardexes;
 }
 
 module.exports = {
