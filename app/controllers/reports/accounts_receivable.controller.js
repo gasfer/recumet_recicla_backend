@@ -547,7 +547,7 @@ const dataPdfReturnAbonoAccountReceivableVoucher = (abono_account_receivable,acc
         margin: [0,3,0,0],
         columns: [
             { text: `La suma de:`, bold:true ,style: 'text',width: 60, },
-            { text: `Bs. ${Number(abono_account_receivable.monto_abono).toFixed(decimal)} -  ${NumeroALetras(Number(abono_account_receivable.monto_abono).toFixed(decimal))}`, style: 'text',  },
+            { text: `Bs. ${Number(abono_account_receivable.monto_abono).toFixed(decimal)} \n  ${NumeroALetras(Number(abono_account_receivable.monto_abono).toFixed(decimal))}`, style: 'text',  },
             { text: `Por concepto de:`, bold:true, style: 'text',width: 85,  },
             { text: `Abono crédito ${accountsReceivable.cod} - Venta ${accountsReceivable.output.cod}, en fecha: ` + moment(abono_account_receivable.date_abono).format('DD/MM/YYYY HH:mm:ss'),  style: 'text',  },
         ]

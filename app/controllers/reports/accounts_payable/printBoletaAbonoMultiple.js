@@ -149,7 +149,7 @@ const dataPdfReturnAbonoAccountPayableMultipleVoucher = (abono_account_payable,a
         margin: [0,3,0,0],
         columns: [
             { text: `La suma de:`, bold:true ,style: 'text',width: 60, },
-            { text: `Bs. ${Number(abono_account_payable.monto_abono).toFixed(decimal)} -  ${NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(decimal))}`, style: 'text',  },
+            { text: `Bs. ${Number(abono_account_payable.monto_abono).toFixed(decimal)} \n  ${NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(decimal))}`, style: 'text',  },
             { text: `Por concepto de:`, bold:true, style: 'text',width: 85,  },
             { text: `${abono_account_payable.comments ?? '-'}`,  style: 'text',  },
         ]
