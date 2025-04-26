@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { sequelize } = require('../database/config');
+const { loadDecimals } = require('../helpers/decimals-value');
 
 class Server {
     static _instance;
@@ -32,10 +33,11 @@ class Server {
             });
     }
 
-    listen() {
+    async listen() {
         this.app.listen(this.port, ()=> {
             console.log('Ejecuto en puerto : ', this.port);
         });
+        await loadDecimals();
         sequelize.sync({force: false}).then( ()=> {
             console.log('Conexión exitosa a la base de datos');
         });

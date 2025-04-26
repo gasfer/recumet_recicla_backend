@@ -2,6 +2,7 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalSetter, formattedDecimalQuantitySetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class Classified extends Model {
     static associate(models) {
@@ -21,8 +22,18 @@ module.exports = (sequelize, DataTypes) => {
     id_user: DataTypes.INTEGER,
     comments: DataTypes.TEXT,
     id_product: DataTypes.INTEGER,
-    cost_product: DataTypes.DECIMAL,
-    quantity_product: DataTypes.DECIMAL,
+    cost_product: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_product', formattedDecimalSetter(value));
+      }
+    },
+    quantity_product: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('quantity_product', formattedDecimalQuantitySetter(value));
+      }
+    },
     id_scale: DataTypes.INTEGER,
     id_storage: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,

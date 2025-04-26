@@ -2,6 +2,7 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class Product extends Model {
     static associate(models) {
@@ -23,7 +24,12 @@ module.exports = (sequelize, DataTypes) => {
     cod: DataTypes.STRING,
     name: DataTypes.STRING,
     description: DataTypes.TEXT,
-    costo: DataTypes.DECIMAL,
+    costo: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('costo', formattedDecimalSetter(value));
+      }
+    },
     inventariable: DataTypes.BOOLEAN,
     img: DataTypes.STRING,
     id_category: DataTypes.INTEGER,

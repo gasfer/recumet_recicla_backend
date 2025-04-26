@@ -2,6 +2,7 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class Output extends Model {
     static associate(models) {
@@ -21,15 +22,45 @@ module.exports = (sequelize, DataTypes) => {
     cod: DataTypes.STRING,
     voucher: DataTypes.STRING,
     date_output: DataTypes.DATE,
-    total: DataTypes.DECIMAL,
+    total: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('total', formattedDecimalSetter(value));
+      }
+    },
     type_voucher: DataTypes.STRING,
     type_output: DataTypes.STRING,
     type_payment: DataTypes.STRING,
-    sub_total: DataTypes.DECIMAL,
-    discount: DataTypes.STRING,
-    payment_cash: DataTypes.DECIMAL,
-    payment_linea: DataTypes.DECIMAL,
-    change_money: DataTypes.DECIMAL,
+    sub_total: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('sub_total', formattedDecimalSetter(value));
+      }
+    },
+    discount: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('discount', formattedDecimalSetter(value));
+      }
+    },
+    payment_cash: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('payment_cash', formattedDecimalSetter(value));
+      }
+    },
+    payment_linea: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('payment_linea', formattedDecimalSetter(value));
+      }
+    },
+    change_money: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('change_money', formattedDecimalSetter(value));
+      }
+    },
     account_output: DataTypes.STRING,
     agreed_date_output: DataTypes.DATE,
     comments: DataTypes.STRING,

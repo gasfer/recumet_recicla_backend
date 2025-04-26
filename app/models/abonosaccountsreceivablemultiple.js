@@ -2,6 +2,7 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class AbonosAccountsReceivableMultiple extends Model {
     static associate(models) {
@@ -15,7 +16,12 @@ module.exports = (sequelize, DataTypes) => {
     ids_abonos_receivables: DataTypes.ARRAY(DataTypes.INTEGER),
     codes_output: DataTypes.ARRAY(DataTypes.STRING),
     date_abono: DataTypes.DATE,
-    monto_abono: DataTypes.DECIMAL,
+    monto_abono: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('monto_abono', formattedDecimalSetter(value));
+      }
+    },
     id_user: DataTypes.INTEGER,
     id_client: DataTypes.INTEGER,
     status: DataTypes.BOOLEAN,

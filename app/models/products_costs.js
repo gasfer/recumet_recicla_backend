@@ -1,5 +1,6 @@
 'use strict';
 const { Model } = require('sequelize');
+const { formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class ProductCosts extends Model {
     static associate(models) {
@@ -10,8 +11,18 @@ module.exports = (sequelize, DataTypes) => {
   ProductCosts.init({
     id_product: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,
-    cost_two:DataTypes.DECIMAL,
-    cost_tree: DataTypes.DECIMAL,
+    cost_two: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_two', formattedDecimalSetter(value));
+      }
+    },
+    cost_tree: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_tree', formattedDecimalSetter(value));
+      }
+    },
     status: DataTypes.BOOLEAN
   }, {
     sequelize,

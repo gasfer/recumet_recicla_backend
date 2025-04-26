@@ -1,8 +1,8 @@
 const { Company } = require('../database/config');
+const { getDecimalPlaces } = require('./decimals-value');
 
 const getNumberDecimal = async () => {
-    const {decimals} = await Company.findOne({ attributes: ['decimals'] ,where: { id: 1 } });
-    return decimals;
+    return getDecimalPlaces();
 }
 
 module.exports = {
