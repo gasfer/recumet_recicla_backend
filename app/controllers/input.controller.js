@@ -239,7 +239,7 @@ const updateInput = async (req = request, res = response) => {
             detail.id_input = id_input;
             await DetailsInput.create(detail,{ transaction: t });   
              //**ACTUALIZAR COSTO PRODUCTO */
-            await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});     
+            // await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});     
             const old_kardex = await Kardex.findOne({ 
                 order: [['id', 'DESC']],
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
