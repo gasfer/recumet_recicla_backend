@@ -293,6 +293,15 @@ const idExistInput = async (id = "") => {
     throw new Error(`La compra con id: ${id}, no existe o esta inactiva`);
   };
 }
+const registryNumberIsUnique = async (value) => {
+    const exists = await Input.findOne({
+        where: { registry_number: value }
+    });
+    if (exists) {
+        return Promise.reject('El número de pesaje ya existe en el sistema');
+    }
+    return true;
+}; 
 
 //=========================== OUTPUT =============================
 const idExistOutput = async (id = "") => {
@@ -401,6 +410,7 @@ module.exports = {
   nameExistSector,
   idExistBank,
   idExistInput,
+  registryNumberIsUnique,
   nameExistBank,
   idExistOutput,
   idExistClassified,

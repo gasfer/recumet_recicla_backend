@@ -303,14 +303,14 @@ const dataDetailsPdfReturn = (auth,date1,date2) => [
         width: 70,
         absolutePosition: { x:25, y: 15 }
     },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
+    {   text:`Fecha Impreso: ` + moment().format('LLLL'), style: 'fechaDoc',
         absolutePosition: { y: 16 },
     },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
+    {   text:`Impreso por:` + `${auth.number_document} - ${auth.full_names}`, style: 'fechaDoc',
         absolutePosition: {  y: 27 }
     },
-    { text: 'COMPRAS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte FECHA:' +  date1 + ' ' + date2, alignment:'center',absolutePosition: {  y: 73 } },
+    { text: 'COMPRAS TPTALIZADAS ', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
+    { text: 'Fecha Reporte:' +  date1 + ' ' + date2, alignment:'center',absolutePosition: {  y: 73 } },
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
