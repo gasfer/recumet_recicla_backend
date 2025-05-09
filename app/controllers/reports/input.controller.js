@@ -309,7 +309,7 @@ const dataDetailsPdfReturn = (auth,date1,date2) => [
     {   text:`Impreso por:` + `${auth.number_document} - ${auth.full_names}`, style: 'fechaDoc',
         absolutePosition: {  y: 27 }
     },
-    { text: 'COMPRAS TPTALIZADAS ', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
+    { text: 'COMPRAS TOTALIZADAS ', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
     { text: 'Fecha Reporte:' +  date1 + ' ' + date2, alignment:'center',absolutePosition: {  y: 73 } },
     {
         style: 'tableReport',

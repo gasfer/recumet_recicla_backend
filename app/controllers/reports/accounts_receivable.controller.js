@@ -747,7 +747,7 @@ const dataPdfReturnAccountPayableVoucher = (accountsReceivable,decimal) => [
       absolutePosition: {  y: 30 }
     },
     { text: moment(accountsReceivable.date_credit).format('DD/MM/YYYY HH:mm:ss'),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: `ESTADO DE CUENTA DE CREDITO ${accountsReceivable.cod}`, style: 'title',bold:true , fontSize:16},
+    { text: `ESTADO DE CUENTA DE CREDITO - ${accountsReceivable.cod}`, style: 'title',bold:true , fontSize:16},
     { text: 'DATOS:', style: 'datos_person', bold:true ,fontSize:10 },
     {
         columns: [
