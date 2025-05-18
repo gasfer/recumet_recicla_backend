@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { Kardex, sequelize } = require('../../database/config');
+const { Kardex, sequelize , ViewKardex} = require('../../database/config');
 const PdfPrinter = require('pdfmake');
 const fonts = require('../../helpers/generator-pdf/fonts');
 const styles = require('../../helpers/generator-pdf/styles');
@@ -16,20 +16,19 @@ moment.locale('es');
 const generatePdfReports = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2} = req.query;
-        const kardexes = await returnDataInput(req.query);
+        const kardexes = await returnDataKardex(req.query);
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
         kardexes.forEach(kardex => {
             const tableData = [
                 {text:kardex?.type == 'INPUT' ? 'ENTRADA' : 'SALIDA', fontSize:8}, 
-                {text:moment(kardex?.date).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
-                {text:kardex?.detalle, fontSize:8}, 
+                {text:moment(kardex?.date).format('DD/MM/YYYY'), fontSize:8}, 
+                {text:kardex?.detail, fontSize:8}, 
                 {text:kardex?.product.name, fontSize:8}, 
                 {text:kardex?.product.unit.siglas, fontSize:8}, 
-                {text:Number(kardex?.quantity_inicial).toFixed(decimal), fontSize:8}, 
                 {text:Number(kardex?.quantity_input).toFixed(decimal), fontSize:8}, 
                 {text:Number(kardex?.quantity_output).toFixed(decimal), fontSize:8}, 
-                {text:Number(kardex?.quantity_saldo).toFixed(decimal), fontSize:8, },  
+                {text:Number(kardex?.saldo).toFixed(decimal), fontSize:8, },  
                 {text:kardex?.sucursal.name, fontSize:8,}, 
                 {text:kardex?.storage.name, fontSize:8,},
             ];
@@ -65,7 +64,7 @@ const generatePdfReports = async (req = request, res = response) => {
         return res.sendFile(pathImage);
     }
 }
-
+//TODO:
 const generatePdfReportsKardexFisico = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2} = req.query;
@@ -80,7 +79,7 @@ const generatePdfReportsKardexFisico = async (req = request, res = response) => 
                 // {text:kardex?.quantity_inicial, fontSize:8}, 
                 {text:Number(kardex?.quantity_input).toFixed(decimal), fontSize:8}, 
                 {text:Number(kardex?.quantity_output).toFixed(decimal), fontSize:8}, 
-                {text:Number(kardex?.quantity_saldo).toFixed(decimal), fontSize:8, },  
+                {text:Number(kardex?.dataValues.quantity_saldo).toFixed(decimal), fontSize:8, },  
                 // {text:kardex?.sucursal.name, fontSize:7,}, 
                 {text:kardex?.storage.name, fontSize:8,},
             ];
@@ -117,44 +116,43 @@ const generatePdfReportsKardexFisico = async (req = request, res = response) => 
         return res.sendFile(pathImage);
     }
 }
-
+//TODO:
 const generatePdfReportsExistencia = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2} = req.query;
-        const kardexes = await returnDataInput(req.query);
+        const kardexes = await returnDataKardex(req.query);
         const decimal = await getNumberDecimal();
         let totalFInput = 0, totalFOutput = 0, totalFSaldo = 0;
         let totalVInput = 0, totalVOutput = 0, totalVSaldo = 0;
         kardexes?.map((resp) => {
-            const {cost_price,detallePrimary} = _returnDetailsPrimary(resp);
-            resp.cost_price = cost_price; 
-            resp.detallePrimary = detallePrimary; 
+            resp.cost_price = resp.cost_unitario; 
+            resp.detallePrimary = resp.detail; 
             totalFInput +=Number(resp.quantity_input);
             totalFOutput+=Number(resp.quantity_output);
-            totalFSaldo +=Number(resp.quantity_saldo);
+            totalFSaldo +=Number(resp.saldo);
 
-            totalVInput +=Number(resp.cost_u_input);
-            totalVOutput+=Number(resp.cost_u_output);
-            totalVSaldo +=Number(resp.cost_u_saldo);
+            totalVInput +=Number(resp.cost_input);
+            totalVOutput+=Number(resp.cost_output);
+            totalVSaldo +=Number(resp.cost_saldo);
           })
         let dataPdf = dataPdfReturnKardexExistencia(req.userAuth,kardexes); //PDF 
         kardexes.forEach(kardex => {
             const tableData = [
                 {text:moment(kardex?.date).format('DD/MM/YYYY'), fontSize:8}, 
-                {text:kardex?.document, fontSize:8}, 
+                {text:kardex?.registry_number, fontSize:8}, 
                 {
                     columns: [
                         { text: kardex?.detallePrimary, alignment: 'left' , fontSize:8},
-                        { text: kardex?.detalle, alignment: 'right', fontSize:7 }
+                        { text: kardex?.sub_detail, alignment: 'right', fontSize:7 }
                     ]
                 },
                 {text:Number(kardex?.quantity_input).toFixed(decimal), fontSize:8 ,fillColor: '#DFF0D8'}, 
                 {text:Number(kardex?.quantity_output).toFixed(decimal), fontSize:8,fillColor: '#F2DEDE'}, 
-                {text:Number(kardex?.quantity_saldo).toFixed(decimal), fontSize:8,fillColor: '#D9EDF7'}, 
-                {text:Number(kardex?.cost_u_inicial).toFixed(decimal), fontSize:8}, 
-                {text:Number(kardex?.cost_u_input).toFixed(decimal), fontSize:8,  fillColor: '#DFF0D8'},  
-                {text:Number(kardex?.cost_u_output).toFixed(decimal), fontSize:8,fillColor: '#F2DEDE'}, 
-                {text:Number(kardex?.cost_u_saldo).toFixed(decimal), fontSize:8,fillColor: '#D9EDF7'}, 
+                {text:Number(kardex?.saldo).toFixed(decimal), fontSize:8,fillColor: '#D9EDF7'}, 
+                {text:Number(kardex?.cost_unitario).toFixed(decimal), fontSize:8}, 
+                {text:Number(kardex?.cost_input).toFixed(decimal), fontSize:8,  fillColor: '#DFF0D8'},  
+                {text:Number(kardex?.cost_output).toFixed(decimal), fontSize:8,fillColor: '#F2DEDE'}, 
+                {text:Number(kardex?.cost_saldo).toFixed(decimal), fontSize:8,fillColor: '#D9EDF7'}, 
                 {text:kardex?.storage.name, fontSize:8,},
             ];
             dataPdf[5].table.body.push(tableData);
@@ -202,31 +200,6 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
     }
 }
 
-const _returnDetailsPrimary = (kardex) => {
-    let detallePrimary = '';
-    let cost_price ='';
-    if(kardex.type == 'INPUT') {
-        cost_price = `${kardex.cost_u_input}`;
-        if(kardex.detalle.includes('CLASIFICACIÓN')) {
-            detallePrimary = `${kardex.productClassified?.name ?? '-'}` 
-        } else if(kardex.detalle.includes('TRASLADO')){
-            detallePrimary = `${kardex.sucursalOriginDestination?.name ?? '-'}` 
-        } else {
-            detallePrimary = `${kardex.provider?.full_names ?? '-'}` 
-        }
-    } else {
-        cost_price = `${kardex.price_u_inicial}`;
-        if(kardex.detalle.includes('CLASIFICACIÓN')) {
-            detallePrimary = `${kardex.productClassified?.name ?? '-'}` 
-        } else if(kardex.detalle.includes('TRASLADO')){
-            detallePrimary = `${kardex.sucursalOriginDestination?.name ?? '-'}` 
-        } else {
-            detallePrimary = `${kardex?.client?.full_names ?? '-'}`;
-        }
-    }
-    return {cost_price,detallePrimary};
-}
-
 const dataPdfReturn = (auth) => [
     {
         image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
@@ -266,7 +239,7 @@ const dataPdfReturn = (auth) => [
         }
     }
 ];
-
+//TODO:
 const dataPdfReturnKardexExistencia = (auth,kardex) => [
     {
         image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
@@ -364,7 +337,7 @@ const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth,kardexes) => [
 
 const generateExcelReports = async (req = request, res = response) => {
   try {
-        const kardexes = await returnDataInput(req.query);
+        const kardexes = await returnDataKardex(req.query);
         const decimal = await getNumberDecimal();
         let kardex_data = [];
         if(kardexes.length == 0) {
@@ -469,6 +442,7 @@ const generateExcelReports = async (req = request, res = response) => {
     };
 }
 
+//TODO:
 const generateExcelReportsKardexFisico = async (req = request, res = response) => {
     try {
           const kardexes = await returnDataInputKardexFisico(req.query);
@@ -480,7 +454,6 @@ const generateExcelReportsKardexFisico = async (req = request, res = response) =
                   Detalle : '',
                   Unidad : '',
   
-                  "Inv. Inicial" : '',
                   Entrada: '',
                   Salida : '',
   
@@ -495,10 +468,9 @@ const generateExcelReportsKardexFisico = async (req = request, res = response) =
                   Código: kardex.product.cod,
                   Detalle: kardex.product.name,
                   Unidad: kardex.product.unit.siglas,
-                  "Inv. Inicial": Number(kardex.quantity_inicial).toFixed(decimal),
                   Entrada: Number(kardex.quantity_input).toFixed(decimal),
                   Salida: Number(kardex.quantity_output).toFixed(decimal),
-                  Saldo: Number(kardex.quantity_saldo).toFixed(decimal),
+                  Saldo: Number(kardex.dataValues.quantity_saldo).toFixed(decimal),
                   Sucursal: kardex.sucursal.name,
                   Almacén: kardex.storage.name,
               }
@@ -545,10 +517,10 @@ const generateExcelReportsKardexFisico = async (req = request, res = response) =
           });
       };
   }
-
+//TODO:
 const generateExcelReportsExistencia = async (req = request, res = response) => {
 try {
-        const kardexes = await returnDataInput(req.query);
+        const kardexes = await returnDataKardex(req.query);
         const decimal = await getNumberDecimal();
         let kardex_data = [];
         if(kardexes.length == 0) {
@@ -568,21 +540,20 @@ try {
             });
         }
         kardexes.forEach(kardex => {
-            const {cost_price,detallePrimary} = _returnDetailsPrimary(kardex);
-            kardex.cost_price = cost_price; 
-            kardex.detallePrimary = detallePrimary; 
+            kardex.cost_price = kardex.cost_unitario; 
+            kardex.detallePrimary = kardex.detail; 
             const tableData = {
                 FECHA: moment(kardex?.date).format('DD/MM/YYYY'),
-                'N°' :kardex?.document,
+                'N°' :kardex?.registry_number,
                 DETALLE:  kardex?.detallePrimary,
-                SUB_DETALLE: kardex?.detalle,
+                SUB_DETALLE: kardex?.sub_detail,
                 ENTRADA_FISICO: Number(kardex?.quantity_input).toFixed(decimal),
                 SALIDA_FISICO: Number(kardex?.quantity_output).toFixed(decimal),
-                SALDO_FISICO: Number(kardex?.quantity_saldo).toFixed(decimal),
-                'P.U.': Number(kardex?.cost_u_inicial ?? 0).toFixed(decimal),
-                ENTRADA_VALORADO: Number(kardex?.cost_u_input ?? 0).toFixed(decimal),
-                SALIDA_VALORADO: Number(kardex?.cost_u_output ?? 0).toFixed(decimal),
-                SALDO_VALORADO: Number(kardex?.cost_u_saldo ?? 0).toFixed(decimal),
+                SALDO_FISICO: Number(kardex?.saldo).toFixed(decimal),
+                'P.U.': Number(kardex?.cost_unitario ?? 0).toFixed(decimal),
+                ENTRADA_VALORADO: Number(kardex?.cost_input ?? 0).toFixed(decimal),
+                SALIDA_VALORADO: Number(kardex?.cost_output ?? 0).toFixed(decimal),
+                SALDO_VALORADO: Number(kardex?.cost_saldo ?? 0).toFixed(decimal),
                 ALMACÉN: kardex.storage.name,
             }
             kardex_data.push(tableData);
@@ -611,6 +582,7 @@ try {
         worksheet.getColumn('I').width = 20; 
         worksheet.getColumn('J').width = 20; 
         worksheet.getColumn('K').width = 50; 
+        worksheet.getColumn('L').width = 50; 
        
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=kardex-report.xlsx`);
@@ -630,42 +602,38 @@ try {
         });
     };
 }
-const returnDataInput = async (params) => {
-    const {id_sucursal, id_storage, id_provider, id_product, filterBy, date1, date2, type_kardex,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."date"');
+//TODO:
+const returnDataKardex = async (params) => {
+    const {id_sucursal, id_storage, id_product, filterBy, date1, date2, type_kardex,orderNew} = params;
+    const whereDate = whereDateForType(filterBy,date1, date2, '"ViewKardex"."date"');
     const optionsDb = {
         order: [orderNew],
+        attributes: ['type','date','id_movement','type_movement','registry_number','detail','sub_detail','quantity','quantity_input','quantity_output','cost_unitario','cost_input','cost_output','saldo','cost_saldo'],
         where: {
             [Op.and]: [
                 id_sucursal ? { id_sucursal } : {},
                 id_storage  ? { id_storage  } : {},
-                id_provider ? { id_provider } : {},
                 id_product  ? { id_product  } : {},
                 type_kardex  ? { type:type_kardex  } : {},
                 { date: whereDate },
-                { status: true },
             ]
         },
         include: [ 
-            { association: 'provider', attributes: ['full_names','number_document','name_contact']},
             { association: 'sucursal', attributes: ['name','city']},
-            { association: 'sucursalOriginDestination', attributes: ['name','city']},
             { association: 'storage', attributes: ['name']},
-            { association: 'client'},
-            { association: 'productClassified',  attributes: {exclude: ['id','id_category','id_unit','status','createdAt','updatedAt']}},
             { association: 'product',  attributes: {exclude: ['id','id_category','id_unit','status','createdAt','updatedAt']},
-                include: [ {association: 'unit', attributes: ['name','siglas']}]
+              include: [ {association: 'unit', attributes: ['name','siglas']}]
             },
         ]
     };
-    return await Kardex.findAll(optionsDb);
+    return await ViewKardex.findAll(optionsDb);
 }
-
+//TODO:
 const returnDataInputKardexFisico = async (params) => {
-    const {id_sucursal, id_storage, id_provider, id_product, filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Kardex"."date"');
+    const {id_sucursal, id_storage, id_product, filterBy, date1, date2,orderNew} = params;
+    const whereDate = whereDateForType(filterBy,date1, date2, '"ViewKardex"."date"');
     const optionsDb = {
-        //order: [orderNew],
+        order: [orderNew],
         attributes: [
             'id_product',
             [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
@@ -676,10 +644,8 @@ const returnDataInputKardexFisico = async (params) => {
             [Op.and]: [
                 id_sucursal ? { id_sucursal } : {},
                 id_storage  ? { id_storage  } : {},
-                id_provider ? { id_provider } : {},
                 id_product  ? { id_product  } : {},
                 { date: whereDate },
-                { status: true },
             ]
         },
         include: [ 
@@ -691,20 +657,18 @@ const returnDataInputKardexFisico = async (params) => {
         ],
         group: ['id_product', 'product.id', 'product.unit.id', 'storage.id','sucursal.id']
     };
-    const kardexes = await Kardex.findAll(optionsDb);
+    const kardexes = await ViewKardex.findAll(optionsDb);
     for (const kardex of kardexes) {
         const where = {
             [Op.and]: [
                 id_sucursal ? { id_sucursal } : {},
                 id_storage  ? { id_storage  } : {},
-                id_provider ? { id_provider } : {},
                 { id_product :  kardex.id_product  },
-                { createdAt: whereDate },
-                { status: true },
+                { date: whereDate },
             ]
         }
-        const kardex_inicial = await Kardex.findOne({where,order:[['id','ASC']] });
-        const quantity_inicial = kardex_inicial.quantity_inicial;
+        const kardex_inicial = await ViewKardex.findOne({attributes: ['saldo_inicial'],where,order:[['id','ASC']] });
+        const quantity_inicial = kardex_inicial.saldo_inicial;
         kardex.dataValues.quantity_inicial = quantity_inicial;
         kardex.dataValues.quantity_input = Number( kardex.dataValues.quantity_input) + Number(quantity_inicial);
         kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + Number(quantity_inicial);
