@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistScala, idExistStorage, idExistProvider, idExistSucursal, idExistBank, idExistProduct, idExistInput, registryNumberIsUnique} = require('./database');
+const { idExistScala, idExistStorage, idExistProvider, idExistSucursal, idExistBank, idExistProduct, idExistInput} = require('./database');
 
 const validationSchema =  {
     input_data: {
@@ -27,13 +27,13 @@ const validationSchema =  {
             negated: true, errorMessage: "El tipo de registro es obligatorio",
         },
     },
-    'input_data.registry_number': {
+    /*'input_data.registry_number': {
         isEmpty: {
             negated: true,
             errorMessage: "El número de registro es obligatorio",
         },
         custom: { options: registryNumberIsUnique },
-    },
+    },*/
     'input_data.account_input': {
         isLength: {
             errorMessage: 'La cuenta debe tener máximo 20 caracteres',
@@ -169,7 +169,7 @@ const validateIdInput = [
 
 
 module.exports = {
-    registryNumberIsUnique,
+   // registryNumberIsUnique,
     getValidateCreate,
     getValidateUpdate,
     validateIdInput,

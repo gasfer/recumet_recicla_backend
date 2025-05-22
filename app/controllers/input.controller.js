@@ -87,7 +87,7 @@ const newInput = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
         const { input_data, input_details } = req.body;
-        const { id_sucursal, id_provider, id_storage, registry_number } = input_data;
+        const { id_sucursal, id_provider, id_storage,registry_number } = input_data; //,registry_number(validar_ num boleta)
         input_data.id_user = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         const input = await Input.create(input_data, { transaction: t });
