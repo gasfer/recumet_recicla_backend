@@ -1,11 +1,10 @@
 const { request, response } = require("express")
-const { Output, sequelize, History ,Stock,OutputBig, Kardex,DetailsOutput,AccountsReceivable,AbonosAccountsReceivable,Sequelize,DetailsCajaSmall,CajaSmall} = require('../database/config');
+const { Output, sequelize, History ,Stock,OutputBig,DetailsOutput,AccountsReceivable,AbonosAccountsReceivable,Sequelize,DetailsCajaSmall,CajaSmall} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
 const { validaOpenCajaSmall } = require("../middlewares/validators/caja_small");
-const { returnDataKardexOutput, returnDataKardexInput, returnDataAfterUpdateKardex } = require("../helpers/kardex");
 
 const getOutputsPaginate = async (req = request, res = response) => {
     try {
@@ -94,7 +93,6 @@ const newOutput = async (req = request, res = response) => {
         const { output_data, output_details, output_big } = req.body;
         const { id_sucursal, id_storage, number_registry } = output_data;
         output_data.id_user = req.userAuth.id;
-        output_data.date_output = new Date();
         output_data.type_output = output_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         /**Crear venta y cod */
         const output = await Output.create(output_data, { transaction: t });
@@ -113,14 +111,6 @@ const newOutput = async (req = request, res = response) => {
         for (const detail of output_details) {
             detail.id_output = id_output;
             await DetailsOutput.create(detail,{ transaction: t });        
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexOutput(`VENTA ${output_data.voucher} #${cod}`,output_data.id_client,detail.price,null,number_registry,old_kardex,detail,id_output, id_sucursal, id_storage );
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
                 include: [{association:'product', required:true, attributes: ['name','cod']}],
@@ -241,12 +231,11 @@ const updateOutput = async (req = request, res = response) => {
         const output_old = await Output.findByPk(id_output,{
             include: [ 
                 { association: 'detailsOutput'},
-                { association: 'kardex'},
                 { association: 'accounts_receivable', include:[ {association: 'abonosAccountsReceivable', required:false,where: {status:true}}]},
             ],
             transaction: t
         });
-        //** Reset details and kardex and stock and update Output */
+        //** Reset details and stock and update Output */
         await Output.update(output_data,{where:{id: id_output}, transaction: t});
         await DetailsOutput.destroy({where: {id: [...output_old.detailsOutput.map(resp=>resp.id)]}, transaction: t });   
         //** Venta por mayor *//
@@ -255,17 +244,6 @@ const updateOutput = async (req = request, res = response) => {
             output_big.id_output = id_output;
             await OutputBig.create(output_big, { transaction: t });
         }
-        //* Destroy kardex */
-        const kardexIdes = [...output_old.kardex.map(resp => resp.id)];
-        const minKardexId = Math.min(...kardexIdes);
-        await Kardex.destroy({where: {id: kardexIdes}, transaction: t });   
-        //**Eliminar y Agregar los kardex nuevamente que son mayores al del primer kardex eliminado*/
-        const kardex_afters = await Kardex.findAll({
-            where: { id: { [Op.gt]: minKardexId }, status: true },// Filtrar por IDs mayores que el de la fila kardex encontrada
-            transaction: t
-        }); 
-        //**Elimino los demas ya que se modifican los saldos */
-        await Kardex.destroy({ where: { id: { [Op.gte]: minKardexId },status: true }, transaction: t }); 
         //*Descuento stock*/
         for (const detail_old of output_old.detailsOutput){
             const stock = await Stock.findOne({
@@ -279,20 +257,11 @@ const updateOutput = async (req = request, res = response) => {
                 await stock.save({ transaction: t });
             }
         }
-        //*** New details and kardex and stock */
+        //*** New details and stock */
         let listProductNotStock = [];
         for (const detail of output_details) {
             detail.id_output = id_output;
             await DetailsOutput.create(detail,{ transaction: t });        
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexOutput(`VENTA ${output_data.voucher} #${output_old.cod}`,output_data.id_client,detail.price,null,registry_number,old_kardex,detail,id_output, id_sucursal, id_storage );
-            data_new.date = output_old.createdAt; //PONER EN KARDEX LA MISMA FECHA DE VENTA, POR QUE ES UPDATE
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
                 include: [{association:'product', required:true, attributes: ['name','cod']}],
@@ -316,17 +285,6 @@ const updateOutput = async (req = request, res = response) => {
                 errors: listProductNotStock,
             });
         } 
-        //**Agregar los kardex nuevamente los eliminados*/
-        for (const kardex_after of kardex_afters){
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:kardex_after.id_product, id_sucursal:kardex_after.id_sucursal, id_storage:kardex_after.id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_kardex = returnDataAfterUpdateKardex(kardex_after,old_kardex);
-            await Kardex.create(data_kardex,{ transaction: t });
-        }
         //**Update abono input credit */
         /** si la compra era a crédito
          * Por ende validamos que no se tengan varios abonos. si son varios. no podemos editar o anular abonos.
@@ -435,15 +393,6 @@ const anularOutput = async (req = request, res = response) => {
         await output_anular.save({transaction: t});
         const { id_sucursal, id_storage, } = output_anular;
         for (const detail of output_anular.detailsOutput) {
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            detail.total = Number(detail.cost) * Number(detail.quantity);
-            const data_new = returnDataKardexInput(`ANULACIÓN VENTA #${output_anular.cod}`,null,null,null, old_kardex,detail,null, null, id_sucursal, id_storage, id_output);
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
                 lock: true,

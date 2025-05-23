@@ -492,7 +492,7 @@ const dataPdfReturnClassifiedVoucher = (classified,sucursal,decimal) => [
     { text: 'CLASIFICADO: ' + classified.cod, style: 'fechaDoc',
       absolutePosition: {  y: 30 }
     },
-    { text: new Date(classified.createdAt).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
+    { text: new Date(classified.date_classified).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
     { text: 'NOTA DE CLASIFICACIÓN', style: 'title',bold:true , fontSize:12},
     { text: 'DATOS PRODUCTO:', style: 'datos_person', bold:true ,fontSize:10, margin:[0,0,8,0] },
     {

@@ -1,10 +1,9 @@
 const { response, request } = require('express');
-const {  sequelize, Classified, DetailsClassified, Kardex, Stock, History } = require('../database/config');
+const {  sequelize, Classified, DetailsClassified, Stock, History } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
-const { returnDataKardexOutput, returnDataKardexInput } = require('../helpers/kardex');
 
 const getClassifiedsPaginate = async (req = request, res = response) => {
     try {
@@ -62,23 +61,8 @@ const newClassified = async (req = request, res = response ) => {
         const count_classifieds = await Classified.count({ where: {id_sucursal}, transaction: t });
         const cod = get_num_request('CL',count_classifieds,5);
         classified.cod = cod;
-        classified.date_classified = new Date();
         await classified.save({transaction: t});
         const id_classified = classified.id;
-        /*Salida y Kardex y stock del producto a clasificar*/
-        const old_kardex = await Kardex.findOne({ 
-            order: [['id', 'DESC']],
-            where: { id_product, id_sucursal, id_storage, status: true },
-            lock: true,
-            transaction: t
-        });
-        const detail = {
-            cost: cost_product,
-            quantity: quantity_product,
-            id_product,
-        }
-        const data_new = returnDataKardexOutput(`CLASIFICACIÓN #${cod}`,null,null,null,number_registry,old_kardex,detail,null, id_sucursal, id_storage );
-        await Kardex.create(data_new,{ transaction: t });
         const stock = await Stock.findOne({
             where: { id_product, id_sucursal, id_storage, status: true },
             include: [{association:'product', required:true, attributes: ['name','cod']}],
@@ -101,14 +85,6 @@ const newClassified = async (req = request, res = response ) => {
         for (const detail of classified_details) {
             detail.id_classified = id_classified;
             await DetailsClassified.create(detail,{ transaction: t });        
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexInput(`CLASIFICACIÓN #${cod}`,id_product,null,number_registry, old_kardex,detail,null, null, id_sucursal, id_storage)
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 order: [['id', 'DESC']],
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
@@ -165,19 +141,6 @@ const destroyClassified = async (req = request, res = response) => {
         await classified_anular.save({transaction: t});
         const { id_sucursal, id_storage, id_product, cost_product, quantity_product} = classified_anular;
         /*ANULAR PRODUCTO CLASIFICADO*/
-        const old_kardex = await Kardex.findOne({ 
-            order: [['id', 'DESC']],
-            where: { id_product, id_sucursal, id_storage, status: true },
-            lock: true,
-            transaction: t
-        });
-        const detail = {
-            cost: cost_product,
-            quantity: quantity_product,
-            id_product,
-        }
-        const data_new = returnDataKardexInput(`ANULACIÓN CLASIFICADO #${classified_anular.cod}`, null,null ,null, old_kardex,detail,null, null, id_sucursal, id_storage)
-        await Kardex.create(data_new,{ transaction: t });
         const stock = await Stock.findOne({
             where: { id_product, id_sucursal, id_storage, status: true },
             lock: true,
@@ -187,14 +150,6 @@ const destroyClassified = async (req = request, res = response) => {
         await stock.save({ transaction: t });
         /*ANULAR DETALLE CLASIFICADO*/
         for (const detail of classified_anular.detailsClassified) {
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexOutput(`ANULACIÓN CLASIFICADO #${classified_anular.cod}`,null,null,null,null,old_kardex,detail,null, id_sucursal, id_storage );
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
                 lock: true,

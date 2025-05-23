@@ -1,10 +1,9 @@
 const { response, request } = require('express');
-const { Transfers, sequelize , DetailsTransfers, Stock, Kardex, History  } = require('../database/config');
+const { Transfers, sequelize , DetailsTransfers, Stock, History  } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const get_num_request = require('../helpers/generate-cod');
-const { returnDataKardexOutput, returnDataKardexInput } = require('../helpers/kardex');
 
 const getTransfersPaginate = async (req = request, res = response) => {
     try {
@@ -65,7 +64,6 @@ const newTransfer = async (req = request, res = response ) => {
         const { transfer_data, transfer_details } = req.body;
         const { id_sucursal_send, id_storage_send,id_sucursal_received } = transfer_data;
         transfer_data.id_user_send = req.userAuth.id;
-        transfer_data.date_send = new Date();
         transfer_data.status = 'PENDING';
         /**Crear venta y cod */
         const transfer = await Transfers.create(transfer_data, { transaction: t });
@@ -78,14 +76,6 @@ const newTransfer = async (req = request, res = response ) => {
         for (const detail of transfer_details) {
             detail.id_transfer = id_transfer;
             await DetailsTransfers.create(detail,{ transaction: t });        
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal:id_sucursal_send, id_storage:id_storage_send, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexOutput(`TRASLADO #${cod}`,null,null, id_sucursal_received,null,old_kardex,detail,null, id_sucursal_send, id_storage_send );
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal:id_sucursal_send, id_storage:id_storage_send, status: true },
                 include: [{association:'product', required:true, attributes: ['name','cod']}],
@@ -139,28 +129,27 @@ const newTransfer = async (req = request, res = response ) => {
 const receivedTransfer = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
-        const { id_transfer, id_storage_received, observations_received} = req.body;
+        const { id_transfer, id_storage_received, observations_received, date_received} = req.body;
         const transfer_received = await Transfers.findOne({
             where: { id:id_transfer, status:'PENDING' },
             include: [{association: 'detailsTransfers'}], transaction: t
         });
         transfer_received.status = 'RECEIVED';   
         transfer_received.id_user_received = req.userAuth.id;
-        transfer_received.date_received = new Date();
+        if( new Date(transfer_received.date_send)  > new Date(date_received)) {
+            await t.rollback();
+            return res.status(422).json({
+                ok: false,
+                errors: [{ msg: `Fecha de recepción no puede ser menor a la fecha de envío.`}],
+            });
+        }
         transfer_received.id_storage_received = id_storage_received;
         transfer_received.observations_received = observations_received;
+        transfer_received.date_received = date_received;
         await transfer_received.save({transaction: t});
         const { id_sucursal_send,id_sucursal_received } = transfer_received;
         /*  detalles del traslado */
         for (const detail of transfer_received.detailsTransfers) {
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal:id_sucursal_received, id_storage:id_storage_received, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexInput(`RECEPCIÓN DE TRASLADO #${transfer_received.cod}`,null,id_sucursal_send,null, old_kardex,detail,null, null, id_sucursal_received, id_storage_received);
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 order: [['id', 'DESC']],
                 where: { id_product:detail.id_product, id_sucursal:id_sucursal_received, id_storage:id_storage_received, status: true },
@@ -217,14 +206,6 @@ const deleteTransfer = async (req = request, res = response) => {
         await transfer_anular.save({transaction: t});
         const { id_sucursal_send, id_storage_send,  id_sucursal_received} = transfer_anular;
         for (const detail of transfer_anular.detailsTransfers) {
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal:id_sucursal_send, id_storage:id_storage_send, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexInput(`ANULACIÓN TRASLADO #${transfer_anular.cod}`,null,id_sucursal_received,null, old_kardex,detail,null, null, id_sucursal_send, id_storage_send);
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal:id_sucursal_send, id_storage:id_storage_send, status: true },
                 lock: true,
