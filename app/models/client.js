@@ -8,7 +8,6 @@ module.exports = (sequelize, DataTypes) => {
       Client.belongsTo(models.Sucursal,{as: 'sucursal', foreignKey:'id_sucursal'});
       Client.hasMany(models.Output,{as: 'outputs', foreignKey:'id_client'});
       Client.hasMany(models.AccountsReceivable,{as: 'accounts_receivable', foreignKey:'id_client'});
-      Client.hasMany(models.Kardex,{as: 'kardex', foreignKey:'id_client'});
     }
   }
   Client.init({

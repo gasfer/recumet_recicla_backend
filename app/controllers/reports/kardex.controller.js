@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { Kardex, sequelize , ViewKardex} = require('../../database/config');
+const { sequelize , ViewKardex} = require('../../database/config');
 const PdfPrinter = require('pdfmake');
 const fonts = require('../../helpers/generator-pdf/fonts');
 const styles = require('../../helpers/generator-pdf/styles');

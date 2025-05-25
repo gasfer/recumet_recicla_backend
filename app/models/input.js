@@ -6,7 +6,6 @@ const { formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class Input extends Model {
     static associate(models) {
-      Input.hasMany(models.Kardex,{as: 'kardex', foreignKey:'id_input'});
       Input.hasMany(models.DetailsInput,{as: 'detailsInput', foreignKey:'id_input'});
       Input.hasOne(models.AccountsPayable,{as: 'accounts_payable', foreignKey:'id_input'});
       Input.belongsTo(models.Scale,{as: 'scale', foreignKey:'id_scales'});

@@ -8,7 +8,6 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       Output.hasMany(models.DetailsOutput,{as: 'detailsOutput', foreignKey:'id_output'});
       Output.hasOne(models.AccountsReceivable,{as: 'accounts_receivable', foreignKey:'id_output'});
-      Output.hasMany(models.Kardex,{as: 'kardex', foreignKey:'id_output'});
       Output.belongsTo(models.User,{as: 'user', foreignKey:'id_user'});
       Output.belongsTo(models.Bank,{as: 'bank', foreignKey:'id_bank'});
       Output.belongsTo(models.Storage,{as: 'storage', foreignKey:'id_storage'});

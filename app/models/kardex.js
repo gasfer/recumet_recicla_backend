@@ -3,6 +3,7 @@ const {
   Model
 } = require('sequelize');
 const { formattedDecimalSetter, formattedDecimalQuantitySetter } = require('../helpers/number-formatter');
+//TODO!: UNA VEZ MIGRADO LOS MOVIMIENTOS INICIALES, ELIMINAR ESTE MODELO
 module.exports = (sequelize, DataTypes) => {
   class Kardex extends Model {
     static associate(models) {

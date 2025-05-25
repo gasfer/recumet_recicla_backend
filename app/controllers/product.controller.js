@@ -1,11 +1,10 @@
 const { response, request } = require('express');
-const { Product, Price, sequelize,Stock,ProductSucursals,Kardex, ProductCosts } = require('../database/config');
+const { Product, Price, sequelize,Stock,ProductSucursals, ProductCosts,kardexMovements } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const get_num_request = require('../helpers/generate-cod');
 const { fileMoveAndRemoveOld, deleteFile } = require('../helpers/file-upload');
 const path = require('path');
 const { Op } = require('sequelize');
-const { returnDataKardexInput } = require('../helpers/kardex');
 
 const getProductPaginate = async (req = request, res = response) => {
     try {
@@ -228,13 +227,20 @@ const newProduct = async (req = request, res = response ) => {
             status: true,
         }, { transaction: t });
         if(Number(stock) > 0) {
-            //kardex
-            detailKardex = product;
-            detailKardex.cost       = product.costo;
-            detailKardex.quantity   = stock;
-            detailKardex.id_product = product.id;
-            const data_new = returnDataKardexInput(`INV. INICIAL`,null,null,'0000', null,detailKardex,null, null, id_sucursal, id_storage);
-            await Kardex.create(data_new,{ transaction: t });
+            //kardex movements
+            await kardexMovements.create({
+                type: 'INPUT',
+                date: new Date(),
+                details: `INVENTARIO INICIAL`,
+                quantity: stock,
+                cost: product.costo,
+                price: Number(body.precio_venta),
+                total: Number(body.precio_venta) * Number(stock),
+                id_product: product.id,
+                id_user: req.userAuth.id,
+                id_sucursal, id_storage,
+                status: true
+            },{ transaction: t });
             //stock
             await Stock.create({
                 stock_min: 1, stock: stock,

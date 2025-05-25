@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { Kardex ,sequelize, ViewKardex} = require('../database/config');
+const { sequelize, ViewKardex} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');

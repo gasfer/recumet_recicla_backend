@@ -9,7 +9,6 @@ module.exports = (sequelize, DataTypes) => {
       Provider.belongsTo(models.TypesProvider,{as: 'type', foreignKey:'id_type_provider'});
       Provider.belongsTo(models.Sucursal,{as: 'sucursal', foreignKey:'id_sucursal'});
       Provider.belongsTo(models.Sector,{as: 'sector', foreignKey:'id_sector'});
-      Provider.hasMany(models.Kardex,{as: 'kardex', foreignKey:'id_provider'});
       Provider.hasMany(models.Input,{as: 'input', foreignKey:'id_provider'});
       Provider.hasMany(models.AccountsPayable,{as: 'accounts_payable', foreignKey:'id_provider'});
     }
