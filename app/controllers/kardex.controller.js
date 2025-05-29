@@ -64,11 +64,14 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             },
             include: [ 
                 { association: 'product',  attributes: {exclude: ['id','id_category','id_unit','status','createdAt','updatedAt']},
-                  include: [ {association: 'unit', attributes: ['name','siglas']}]
+                  include: [ 
+                        {association: 'unit', attributes: ['name','siglas']},
+                        {association: 'category', attributes: ['name']}
+                    ]
                 },
                 { association: 'storage', attributes: ['name']},
             ],
-            group: ['id_product', 'product.id', 'product.unit.id', 'storage.id']
+            group: ['id_product', 'product.id', 'product.unit.id','product.category.id', 'storage.id']
         };
         let kardexes = await paginate(ViewKardex, page, limit, type, query, optionsDb); 
         for (const kardex of kardexes.data) {
