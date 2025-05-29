@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getClassifiedsPaginate, newClassified, destroyClassified } = require('../controllers/classified.controller');
+const { getClassifiedsPaginate, newClassified, destroyClassified, getClassifiedFindOne } = require('../controllers/classified.controller');
 const { getValidateCreate, validateIdClassified } = require('../middlewares/validators/classified');
 const { printClassifiedVoucher, generatePdfReports, generatePdfDetailsReports, generateExcelReports, generateExcelDetailsReports } = require('../controllers/reports/classified.controller');
 
@@ -11,6 +11,10 @@ const router = Router();
 router.get('/',[
     validarJWT,
 ],getClassifiedsPaginate );
+
+router.get('/:id_classified',[
+    validarJWT,
+],getClassifiedFindOne );
 
 router.post('/', [
     validarJWT,

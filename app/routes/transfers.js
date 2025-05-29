@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getTransfersPaginate, newTransfer, deleteTransfer, receivedTransfer } = require('../controllers/transfers.controller');
+const { getTransfersPaginate, newTransfer, deleteTransfer, receivedTransfer, getTransferFindOne } = require('../controllers/transfers.controller');
 const { getValidateCreate, validateIdTransferPending, getValidateReceived, validateIdTransfer } = require('../middlewares/validators/transfers');
 const { printTransferVoucher, generatePdfReports, generateExcelReports } = require('../controllers/reports/transfers.controller');
 
@@ -12,6 +12,9 @@ router.get('/',[
     validarJWT,
 ],getTransfersPaginate );
 
+router.get('/:id_transfer',[
+    validarJWT,
+],getTransferFindOne );
 
 router.post('/', [
     validarJWT,

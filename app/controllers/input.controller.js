@@ -5,6 +5,38 @@ const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
 
+const getInputFindOne = async (req = request, res = response) => {
+    try {
+        const { id_input } = req.params;
+        const optionsDb = {
+            include: [ 
+                { association: 'provider' },
+                { association: 'sucursal',attributes: ['name'] },
+                { association: 'storage',attributes: ['name'] },
+                { association: 'scale', attributes: ['name']},
+                { association: 'user', attributes: ['full_names','number_document']},
+                { association: 'bank'},
+                { association: 'detailsInput', attributes: {exclude: ['id','id_input','id_product','status','createdAt','updatedAt']}, 
+                    include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
+                                attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
+                },
+                { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
+            ]
+        };
+        let input = await Input.findByPk(id_input, optionsDb); 
+        return res.status(200).json({
+            ok: true,
+            input,
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
 const getInputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
@@ -366,6 +398,7 @@ const anularInput = async (req = request, res = response) => {
 
 module.exports = {
     getInputsPaginate,
+    getInputFindOne,
     newInput,
     updateInput,
     anularInput

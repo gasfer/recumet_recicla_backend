@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getOutputsPaginate, newOutput, anularOutput, updateOutput } = require('../controllers/output.controller');
+const { getOutputsPaginate, newOutput, anularOutput, updateOutput, getOutputFindOne } = require('../controllers/output.controller');
 const { getValidateCreate, validateIdOutput, getValidateUpdate } = require('../middlewares/validators/output');
 const { printOutputVoucher, generatePdfReports, generateExcelReports, generatePdfDetailsReports, generateExcelDetailsReports } = require('../controllers/reports/output.controller');
 
@@ -12,6 +12,9 @@ router.get('/',[
     validarJWT,
 ],getOutputsPaginate );
 
+router.get('/:id_output',[
+    validarJWT,
+],getOutputFindOne );
 
 router.post('/', [
     validarJWT,

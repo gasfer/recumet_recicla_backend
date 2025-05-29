@@ -6,6 +6,43 @@ const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
 const { validaOpenCajaSmall } = require("../middlewares/validators/caja_small");
 
+
+const getOutputFindOne = async (req = request, res = response) => {
+    try {
+        const { id_output } = req.params;
+        const optionsDb = {
+            include: [ 
+                { association: 'client' },
+                { association: 'sucursal',attributes: ['name'] },
+                { association: 'storage',attributes: ['name'] },
+                { association: 'scale', attributes: ['name']},
+                { association: 'user', attributes: ['full_names','number_document']},
+                { association: 'bank'},
+                { association: 'detailsOutput', attributes: {exclude: ['id','id_output','id_product','status','createdAt','updatedAt']}, 
+                    include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'},{association: 'prices'}],
+                                attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
+                },
+                { association: 'outputBig', include: [
+                    { association: 'chauffeur', include: [{association: 'trasport_company'}]},
+                    { association: 'cargo_truck'}
+                ]},
+                { association: 'accounts_receivable', include:[ {association: 'abonosAccountsReceivable', required:false,where: {status:true}}]},
+            ]
+        };
+        let output = await Output.findByPk(id_output, optionsDb); 
+        return res.status(200).json({
+            ok: true,
+            output
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
 const getOutputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type,type_registry,type_output,id_client,type_pay, id_sucursal, id_storage, status, filterBy, date1, date2,orderNew} = req.query;
@@ -446,6 +483,7 @@ const anularOutput = async (req = request, res = response) => {
 
 module.exports = {
     getOutputsPaginate,
+    getOutputFindOne,
     newOutput,
     updateOutput,
     anularOutput

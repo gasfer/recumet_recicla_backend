@@ -5,6 +5,42 @@ const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const get_num_request = require('../helpers/generate-cod');
 
+const getTransferFindOne = async (req = request, res = response) => {
+    try {
+        const { id_transfer } = req.params;
+        const optionsDb = {
+            include: [
+                {association: 'sucursal_send', attributes: ['name']},
+                {association: 'sucursal_received', attributes: ['name']},
+                {association: 'storage_send', attributes: ['name']},
+                {association: 'storage_received', attributes: ['name']},
+                {association: 'user_send', attributes: ['full_names']},
+                {association: 'user_received', attributes: ['full_names']},
+                {association: 'detailsTransfers', include: [
+                        { association: 'product',  attributes: [
+                                [sequelize.literal(`CONCAT("detailsTransfers->product"."cod",' - ' ,"detailsTransfers->product"."name")`), 'name'],
+                                'description',
+                                'cod'
+                            ],
+                        },
+                    ]
+                },
+            ]
+        };
+        let transfer = await Transfers.findByPk(id_transfer, optionsDb); 
+        return res.status(200).json({
+            ok: true,
+            transfer
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
 const getTransfersPaginate = async (req = request, res = response) => {
     try {
         const { query, page, limit, type, status,filterBy, date1, date2, 
@@ -244,5 +280,6 @@ module.exports = {
     getTransfersPaginate,
     newTransfer,
     deleteTransfer,
-    receivedTransfer
+    receivedTransfer,
+    getTransferFindOne
 };

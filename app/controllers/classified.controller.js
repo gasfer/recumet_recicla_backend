@@ -5,6 +5,39 @@ const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
 
+const getClassifiedFindOne= async (req = request, res = response) => {
+    try {
+        const { id_classified } = req.params;
+        const optionsDb = {
+            include: [ 
+                { association: 'sucursal',attributes: ['name'] },
+                { association: 'storage',attributes: ['name'] },
+                { association: 'scale', attributes: ['name']},
+                { association: 'product',  attributes: [
+                    [sequelize.literal(`CONCAT("product"."cod",' - ' ,"product"."name")`), 'name'],
+                  ],
+                },
+                { association: 'user', attributes: ['full_names','number_document']},
+                { association: 'detailsClassified', attributes: {exclude: ['id','id_classified','id_product','status','createdAt','updatedAt']}, 
+                    include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
+                                attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
+                },
+            ]
+        };
+        let classified = await Classified.findByPk(id_classified, optionsDb); 
+        return res.status(200).json({
+            ok: true,
+            classified
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
 const getClassifiedsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type,type_registry,id_product, id_sucursal, id_storage, status, filterBy, date1, date2,orderNew} = req.query;
@@ -185,6 +218,7 @@ const destroyClassified = async (req = request, res = response) => {
 
 module.exports = {
     getClassifiedsPaginate,
+    getClassifiedFindOne,
     newClassified,
     destroyClassified
 };
