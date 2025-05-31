@@ -650,12 +650,15 @@ const returnDataInputKardexFisico = async (params) => {
         },
         include: [ 
             { association: 'product',  attributes: {exclude: ['id','id_category','id_unit','status','createdAt','updatedAt']},
-              include: [ {association: 'unit', attributes: ['name','siglas']}]
+              include: [ 
+                    {association: 'unit', attributes: ['name','siglas']},
+                    {association: 'category', attributes: ['name']}
+                ]
             },
             { association: 'storage', attributes: ['name']},
             { association: 'sucursal', attributes: ['name','city']},
         ],
-        group: ['id_product', 'product.id', 'product.unit.id', 'storage.id','sucursal.id']
+        group: ['id_product', 'product.id', 'product.unit.id', 'product.category.id','storage.id','sucursal.id']
     };
     const kardexes = await ViewKardex.findAll(optionsDb);
     for (const kardex of kardexes) {
