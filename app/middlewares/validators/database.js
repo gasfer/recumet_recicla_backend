@@ -293,15 +293,15 @@ const idExistInput = async (id = "") => {
     throw new Error(`La compra con id: ${id}, no existe o esta inactiva`);
   };
 }
-/*const registryNumberIsUnique = async (value) => {
-    const exists = await Input.findOne({
-       // where: { registry_number: value }
-    });
-    if (exists) {
-        return Promise.reject('El número de pesaje ya existe en el sistema');
-    }
-    return true;
-}; */
+
+const registryNumberExist = async (registry_number = "",{req}) => {
+  const { id_input } = req.params;
+  const existDB = await Input.findOne({ where: { registry_number } });
+  if(!existDB) return;
+  if (existDB.id != id_input) {
+    throw new Error(`El Nro. Pesaje: ${registry_number}, ya existe`);
+  }
+};
 
 //=========================== OUTPUT =============================
 const idExistOutput = async (id = "") => {
@@ -311,6 +311,15 @@ const idExistOutput = async (id = "") => {
   };
 }
 
+const registryNumberExistOutput = async (number_registry = "",{req}) => {
+  const { id_output } = req.params;
+  const existDB = await Output.findOne({ where: { number_registry } });
+  if(!existDB) return;
+  if (existDB.id != id_output) {
+    throw new Error(`El Nro. Pesaje: ${number_registry}, ya existe`);
+  }
+};
+
 //=========================== CLASSIFIED =============================
 const idExistClassified = async (id = "") => {
   const idExist = await Classified.findOne({where: {id,status:'ACTIVE'}});
@@ -318,6 +327,15 @@ const idExistClassified = async (id = "") => {
     throw new Error(`La clasificación con id: ${id}, no existe o esta inactiva`);
   };
 }
+
+const registryNumberExistClassified = async (number_registry = "",{req}) => {
+  const { id_classified } = req.params;
+  const existDB = await Classified.findOne({ where: { number_registry } });
+  if(!existDB) return;
+  if (existDB.id != id_classified) {
+    throw new Error(`El Nro. Pesaje: ${number_registry}, ya existe`);
+  }
+};
 //=========================== ACCOUNTS PAYABLE =============================
 const idExistAccountPayable = async (id = "") => {
   const idExist = await AccountsPayable.findOne({where: {id,status:true}});
@@ -410,7 +428,6 @@ module.exports = {
   nameExistSector,
   idExistBank,
   idExistInput,
-  //registryNumberIsUnique,
   nameExistBank,
   idExistOutput,
   idExistClassified,
@@ -423,5 +440,8 @@ module.exports = {
   idTypeProvider,
   numberDocumentExistProvider,
   idExistAbonoAccountPayableMultiple,
-  idExistAbonoAccountReceivableMultiple
+  idExistAbonoAccountReceivableMultiple,
+  registryNumberExist,
+  registryNumberExistOutput,
+  registryNumberExistClassified
 };
