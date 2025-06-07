@@ -12,7 +12,7 @@ router.get('/',[
     validarJWT,
 ],getInputsPaginate );
 
-router.get('/:id_input',[
+router.get('/find/:id_input',[
     validarJWT,
 ],getInputFindOne );
 
