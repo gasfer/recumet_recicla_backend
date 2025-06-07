@@ -81,7 +81,7 @@ const generatePdfReportsKardexFisico = async (req = request, res = response) => 
                 {text:Number(kardex?.quantity_output).toFixed(decimal), fontSize:8}, 
                 {text:Number(kardex?.dataValues.quantity_saldo).toFixed(decimal), fontSize:8, },  
                 // {text:kardex?.sucursal.name, fontSize:7,}, 
-                {text:kardex?.storage.name, fontSize:8,},
+                // {text:kardex?.storage.name, fontSize:8,},
             ];
             dataPdf[5].table.body.push(tableData);
         });
@@ -138,7 +138,7 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
         let dataPdf = dataPdfReturnKardexExistencia(req.userAuth,kardexes); //PDF 
         kardexes.forEach(kardex => {
             const tableData = [
-                {text:moment(kardex?.date).format('DD/MM/YYYY'), fontSize:8}, 
+                {text:moment(kardex?.date).format('DD/MM/YYYY HH:mm'), fontSize:8}, 
                 {text:kardex?.registry_number, fontSize:8}, 
                 {
                     columns: [
@@ -153,11 +153,11 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
                 {text:Number(kardex?.cost_input).toFixed(decimal), fontSize:8,  fillColor: '#DFF0D8'},  
                 {text:Number(kardex?.cost_output).toFixed(decimal), fontSize:8,fillColor: '#F2DEDE'}, 
                 {text:Number(kardex?.cost_saldo).toFixed(decimal), fontSize:8,fillColor: '#D9EDF7'}, 
-                {text:kardex?.storage.name, fontSize:8,},
+                // {text:kardex?.storage.name, fontSize:8,},
             ];
             dataPdf[5].table.body.push(tableData);
         });
-        dataPdf[5].table.body.push([{text:' ', fontSize:8,colSpan:9},{},{},{},{},{},{},{},{},{},{}]);
+        dataPdf[5].table.body.push([{text:' ', fontSize:8,colSpan:9},{},{},{},{},{},{},{},{},{}]);
         dataPdf[5].table.body.push([
             {colSpan:3, text:'Totales:',fontSize:8},{},{},
             {text:Number(totalFInput), fontSize:8,fillColor: '#DFF0D8'},
@@ -167,7 +167,6 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
             {text:Number(totalVInput).toFixed(decimal), fontSize:8,fillColor: '#DFF0D8'},
             {text:Number(totalVOutput).toFixed(decimal), fontSize:8,fillColor: '#F2DEDE'},
             {text:Number(totalVSaldo).toFixed(decimal), fontSize:8,fillColor: '#D9EDF7'},
-            {}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
@@ -259,7 +258,7 @@ const dataPdfReturnKardexExistencia = (auth,kardex) => [
         absolutePosition: { x:20, y: 95 },
         table: {
                 headerRows: 2,
-                widths: [45, 45, '*', 40, 40, 40, 50, 50, 50, 50, 70],
+                widths: [45, 45, '*', 55, 55, 55, 55, 60, 60, 60],
                 body: [
                     [
                         { text: 'FECHA', fontSize: 8, fillColor: '#eeeeee', bold: true, rowSpan: 2 },
@@ -270,7 +269,7 @@ const dataPdfReturnKardexExistencia = (auth,kardex) => [
                         { text: 'P.U.', fontSize: 8, fillColor: '#eeeeee', bold: true, rowSpan: 2, alignment: 'center' },
                         { text: 'VALORADO', fontSize: 8, fillColor: '#eeeeee', bold: true, colSpan: 3, alignment: 'center' },
                         {}, {}, // Empty cells for colSpan
-                        { text: 'ALMACÉN', fontSize: 8, fillColor: '#eeeeee', bold: true, rowSpan: 2, alignment: 'center' }
+                        // { text: 'ALMACÉN', fontSize: 8, fillColor: '#eeeeee', bold: true, rowSpan: 2, alignment: 'center' }
                     ],
                     [
                         {}, // Empty cell due to rowSpan
@@ -283,7 +282,7 @@ const dataPdfReturnKardexExistencia = (auth,kardex) => [
                         { text: 'ENTRADA', fontSize: 8, fillColor: '#eeeeee', bold: true, alignment: 'center' },
                         { text: 'SALIDA', fontSize: 8, fillColor: '#eeeeee', bold: true, alignment: 'center' },
                         { text: 'SALDO', fontSize: 8, fillColor: '#eeeeee', bold: true, alignment: 'center' },
-                        {} // Empty cell due to rowSpan
+                        // {} // Empty cell due to rowSpan
                     ],
                     // Add more rows here...
                 ],
@@ -312,7 +311,7 @@ const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth,kardexes) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 2,
-            widths: [50,'*',35,55,55,55,70],
+            widths: ['auto', '*', 'auto', 'auto', 'auto', 'auto'],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true, rowSpan: 2}, 
@@ -320,14 +319,14 @@ const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth,kardexes) => [
                     {text:'UNIDAD', fontSize:8 ,fillColor: '#eeeeee', bold:true, rowSpan: 2}, 
                     { text: 'FISICO', fontSize: 8, fillColor: '#eeeeee', bold: true, colSpan: 3, alignment: 'center' },
                     {}, {},
-                    {text:'ALMACÉN',alignment: 'center', fontSize:7,fillColor: '#eeeeee', bold:true, rowSpan: 2}, 
+                    // {text:'ALMACÉN',alignment: 'center', fontSize:7,fillColor: '#eeeeee', bold:true, rowSpan: 2}, 
                 ],
                 [
                     {},{},{},
                     {text:'COMPRA', fontSize:8 ,fillColor: '#eeeeee', bold:true, alignment: 'center'}, 
                     {text:'VENTA', fontSize:8,fillColor: '#eeeeee', bold:true, alignment: 'center'}, 
                     {text:'SALDO', fontSize:8,fillColor: '#eeeeee', bold:true, alignment: 'center'},
-                    {}, 
+                    // {}, 
                 ]
             ],
             layout: 'lightHorizontalLines'
@@ -459,8 +458,8 @@ const generateExcelReportsKardexFisico = async (req = request, res = response) =
   
                   Saldo : '', 
   
-                  Sucursal : '',
-                  Almacén : ''
+                //   Sucursal : '',
+                //   Almacén : ''
               });
           }
           kardexes.forEach(kardex => {
@@ -471,8 +470,8 @@ const generateExcelReportsKardexFisico = async (req = request, res = response) =
                   Entrada: Number(kardex.quantity_input).toFixed(decimal),
                   Salida: Number(kardex.quantity_output).toFixed(decimal),
                   Saldo: Number(kardex.dataValues.quantity_saldo).toFixed(decimal),
-                  Sucursal: kardex.sucursal.name,
-                  Almacén: kardex.storage.name,
+                //   Sucursal: kardex.sucursal.name,
+                //   Almacén: kardex.storage.name,
               }
               kardex_data.push(tableData);
           });
@@ -536,7 +535,7 @@ try {
                 ENTRADA : '',
                 SALIDA : '', 
                 SALDO : '',
-                ALMACÉN : '', 
+                // ALMACÉN : '', 
             });
         }
         kardexes.forEach(kardex => {
@@ -554,7 +553,7 @@ try {
                 ENTRADA_VALORADO: Number(kardex?.cost_input ?? 0).toFixed(decimal),
                 SALIDA_VALORADO: Number(kardex?.cost_output ?? 0).toFixed(decimal),
                 SALDO_VALORADO: Number(kardex?.cost_saldo ?? 0).toFixed(decimal),
-                ALMACÉN: kardex.storage.name,
+                // ALMACÉN: kardex.storage.name,
             }
             kardex_data.push(tableData);
         });
