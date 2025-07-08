@@ -12,7 +12,7 @@ router.get('/',[
     validarJWT,
 ],getClassifiedsPaginate );
 
-router.get('/:id_classified',[
+router.get('/find/:id_classified',[
     validarJWT,
 ],getClassifiedFindOne );
 

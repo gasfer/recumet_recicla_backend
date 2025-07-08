@@ -12,7 +12,7 @@ router.get('/',[
     validarJWT,
 ],getTransfersPaginate );
 
-router.get('/:id_transfer',[
+router.get('/find/:id_transfer',[
     validarJWT,
 ],getTransferFindOne );
 

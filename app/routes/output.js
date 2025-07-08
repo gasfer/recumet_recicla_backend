@@ -12,7 +12,7 @@ router.get('/',[
     validarJWT,
 ],getOutputsPaginate );
 
-router.get('/:id_output',[
+router.get('/find/:id_output',[
     validarJWT,
 ],getOutputFindOne );
 
