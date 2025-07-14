@@ -736,7 +736,7 @@ const dataPdfReturnOutputVoucher = (output,sucursal,decimal) => [
                 [
                     {text:output?.outputBig.number_factura, fontSize:8}, 
                     {text:output?.outputBig.number_precinto, fontSize:8}, 
-                    {text:output?.outputBig.number_container, fontSize:8}, 
+                    {text:output?.outputBig.number_contenedor, fontSize:8}, 
                     {text:output?.outputBig.type_container, fontSize:8}, 
                 ]
             ]

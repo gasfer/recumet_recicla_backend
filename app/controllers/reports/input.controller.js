@@ -663,13 +663,20 @@ const dataPdfReturnInputVoucher = (input,sucursal,decimal) => [
             { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
         ]
     },
-    {
+      {
+        margin: [0,-2,0,0],
+        columns: [
+            { text: `PROVEEDOR: ${input?.provider?.full_names}`, style: 'text',alignment: 'center' },
+            { text: `RESPONSABLE CAJA`,style: 'text',alignment: 'center' },
+        ]
+    },
+  /*  {
         margin: [0,-2,0,0],
         columns: [
             { text: `Responsable de almacén` , style: 'text',alignment: 'center' },
             { text: `Proveedor`,style: 'text',alignment: 'center' },
         ]
-    },
+    },*/
 ];
 
 module.exports = {
