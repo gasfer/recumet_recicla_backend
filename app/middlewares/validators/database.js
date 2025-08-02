@@ -295,6 +295,7 @@ const idExistInput = async (id = "") => {
 }
 
 const registryNumberExist = async (registry_number = "",{req}) => {
+  if(!registry_number) return;
   const { id_input } = req.params;
   const { id_sucursal } = req.body.input_data;
   const existDB = await Input.findOne({ where: { registry_number, id_sucursal } });

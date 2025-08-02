@@ -28,10 +28,6 @@ const validationSchema =  {
         },
     },
     'input_data.registry_number': {
-       isEmpty: {
-            negated: true,
-            errorMessage: "El número de registro es obligatorio",
-        },
         custom: { options: registryNumberExist },
     },
     'input_data.account_input': {

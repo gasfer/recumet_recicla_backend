@@ -118,7 +118,13 @@ const newInput = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
         const { input_data, input_details } = req.body;
-        const { id_sucursal, id_provider, id_storage,registry_number } = input_data; //,registry_number(validar_ num boleta)
+        const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
+        //number default, not ficha
+        if(type_registry === 'SIN FICHA') {
+            const count_inputs = await Input.count({ where: {type_registry:'SIN FICHA'}, transaction: t });
+            input_data.registry_number = get_num_request('SF-',count_inputs + 1,5);
+        }
+
         input_data.id_user = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         const input = await Input.create(input_data, { transaction: t });
