@@ -35,7 +35,7 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:input?.type_registry, fontSize:9}, 
                 {text:input?.registry_number, fontSize:9}, 
                 {text:input?.provider?.full_names, fontSize:9}, 
-                {text:input?.comments, fontSize:9}, 
+                {text:input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '), fontSize:9}, 
                 {text:input?.type, fontSize:9}, 
                 {text:Number(input?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(input.total).toFixed(decimal), fontSize:9, alignment: 'right'},
@@ -103,15 +103,15 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,70,50,55,90,'*',45,60,60],
+            widths: [60,50,40,55,90,'*',45,60,60],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA COMPRA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'FECHA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'NRO. DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'PROVEEDOR', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'COMENTARIOS', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'CANT. KG', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
@@ -134,7 +134,7 @@ const generateExcelReports = async (req = request, res = response) => {
         TIPO_DOCUMENTO: '',
         NRO_DOCUMENTO: '',
         PROVEEDOR: '',
-        COMENTARIOS: '',
+        DETALLE: '',
         TIPO: '',
         CANT_KG: '',
         TOTAL: '',
@@ -151,7 +151,7 @@ const generateExcelReports = async (req = request, res = response) => {
         TIPO_DOCUMENTO: input.type_registry,
         NRO_DOCUMENTO: input.registry_number,
         PROVEEDOR: input.provider.full_names,
-        COMENTARIOS: input.comments,
+        DETALLE: input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '),
         TIPO: input.type,
         CANT_KG: Number(input.total_quantity).toFixed(decimal),
         TOTAL: Number(input.total).toFixed(decimal),
@@ -164,7 +164,7 @@ const generateExcelReports = async (req = request, res = response) => {
         TIPO_DOCUMENTO: '',
         NRO_DOCUMENTO: '',
         PROVEEDOR: '',
-        COMENTARIOS: '',
+        DETALLE: '',
         TIPO: '',
         CANT_KG: Number(total_quantity).toFixed(decimal),
         TOTAL: Number(total).toFixed(decimal),
@@ -232,7 +232,7 @@ const returnDataInput = async (params) => {
             { association: 'provider', attributes: ['full_names','number_document','name_contact']},
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
-            { association: 'detailsInput', attributes: {include: ['quantity']} },
+            { association: 'detailsInput', attributes: {include: ['quantity']} , include: [{ association: 'product', attributes: ['cod','name'], include: [{association: 'unit', attributes: ['name','siglas']}] } ]},
         ]
     };
     const inputs = await Input.findAll(optionsDb);
