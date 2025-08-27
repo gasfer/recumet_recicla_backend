@@ -221,7 +221,7 @@ const updateInput = async (req = request, res = response) => {
     try {
         const { id_input } = req.params;
         const { input_data, input_details } = req.body;
-        const { id_sucursal, id_provider, id_storage, registry_number } = input_data;
+        const { id_sucursal, id_provider, id_storage, registry_number, type_registry } = input_data;
         input_data.id_user = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         const input_old = await Input.findByPk(id_input,{
@@ -235,6 +235,10 @@ const updateInput = async (req = request, res = response) => {
             ],
             transaction: t
         });
+        if(type_registry === 'SIN FICHA') {
+            const count_inputs = await Input.count({ where: {type_registry:'SIN FICHA' , id: { [Op.ne]: input_old.id }}, transaction: t });
+            input_data.registry_number = get_num_request('SF-',count_inputs + 1,5);
+        }
         //** Reset details and stock and update input */
         await Input.update(input_data,{where:{id: id_input}, transaction: t});
         await DetailsInput.destroy({where: {id: [...input_old.detailsInput.map(resp=>resp.id)]}, transaction: t });   
