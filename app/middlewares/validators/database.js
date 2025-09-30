@@ -393,6 +393,17 @@ const idExistTransfer = async (id = "") => {
     throw new Error(`El traslado con id: ${id}, no existe`);
   };
 }
+
+const registryNumberExistTransfer = async (registry_number = "",{req}) => {
+  if(!registry_number) return;
+  const { id_transfer } = req.params;
+  const { id_sucursal_send } = req.body.transfer_data;
+  const existDB = await Transfers.findOne({ where: { registry_number, id_sucursal_send } });
+  if(!existDB) return;
+  if (existDB.id != id_transfer) {
+    throw new Error(`El Nro. Pesaje: ${registry_number}, ya existe`);
+  }
+};
 //=========================== TYPES PROVIDER =============================
 const idTypeProvider= async (id = "") => {
   const idExist = await TypesProvider.findByPk(id);
@@ -447,5 +458,6 @@ module.exports = {
   idExistAbonoAccountReceivableMultiple,
   registryNumberExist,
   registryNumberExistOutput,
-  registryNumberExistClassified
+  registryNumberExistClassified,
+  registryNumberExistTransfer
 };

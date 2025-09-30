@@ -48,20 +48,26 @@ const getTransfersPaginate = async (req = request, res = response) => {
                 id_storage_received, id_user_send,id_user_received ,orderNew} = req.query;
 
         const whereDate = whereDateForType(filterBy,date1, date2, '"Transfers"."date_send"');
+        const whereDateSum = whereDateForType(filterBy,date1, date2, '"transfers"."date_send"');
+        const baseConditions = [
+            id_sucursal_send     ? { id_sucursal_send } : {},
+            id_storage_send      ? { id_storage_send  } : {},
+            id_sucursal_received ? { id_sucursal_received  } : {},
+            id_storage_received  ? { id_storage_received   } : {},
+            id_user_send         ? { id_user_send   } : {},
+            id_user_received     ? { id_user_received   } : {},
+            { status },
+        ];
+        const where = {
+            [Op.and]: [...baseConditions, { date_send: whereDate }]
+        };
+
+        const whereSum = {
+            [Op.and]: [...baseConditions, { date_send: whereDateSum }]
+        };
         const optionsDb = {
             order: [orderNew],
-            where: {
-                [Op.and]: [
-                    id_sucursal_send     ? { id_sucursal_send } : {},
-                    id_storage_send      ? { id_storage_send  } : {},
-                    id_sucursal_received ? { id_sucursal_received  } : {},
-                    id_storage_received  ? { id_storage_received   } : {},
-                    id_user_send         ? { id_user_send   } : {},
-                    id_user_received     ? { id_user_received   } : {},
-                    { status },
-                    { date_send: whereDate }
-                ]
-            },
+            where,
             include: [
                 {association: 'sucursal_send', attributes: ['name']},
                 {association: 'sucursal_received', attributes: ['name']},
@@ -80,7 +86,24 @@ const getTransfersPaginate = async (req = request, res = response) => {
                 },
             ]
         };
-        let transfers = await paginate(Transfers, page, limit, type, query, optionsDb); 
+        let transfers = await paginate(Transfers, page, limit, type, query, optionsDb);
+        for (const input of transfers.data) {
+            input.dataValues.total_quantity = input.detailsTransfers.reduce((acc, item) => acc + Number(item.quantity), 0);
+        }
+        const totalTransfer = await Transfers.sum('total', {where});
+        const totalQuantity = await DetailsTransfers.sum('quantity', {
+            include: [
+                {
+                    attributes: [],
+                    association: 'transfers',
+                    where: whereSum
+                }
+            ]
+        }); 
+        transfers.totals = {
+            totalTransfer,
+            totalQuantity
+        }
         return res.status(200).json({
             ok: true,
             transfers
@@ -98,7 +121,12 @@ const newTransfer = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
         const { transfer_data, transfer_details } = req.body;
-        const { id_sucursal_send, id_storage_send,id_sucursal_received } = transfer_data;
+        const { id_sucursal_send, id_storage_send,id_sucursal_received, type_registry } = transfer_data;
+        //number default, not ficha
+        if(type_registry === 'SIN FICHA') {
+            const count_transfers = await Transfers.count({ where: {type_registry:'SIN FICHA'}, transaction: t });
+            transfer_data.registry_number = get_num_request('SF-',count_transfers + 1,5);
+        }
         transfer_data.id_user_send = req.userAuth.id;
         transfer_data.status = 'PENDING';
         /**Crear venta y cod */

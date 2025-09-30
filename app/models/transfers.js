@@ -13,6 +13,7 @@ module.exports = (sequelize, DataTypes) => {
       Transfers.belongsTo(models.User,    {as: 'user_send',     foreignKey:'id_user_send'});
       Transfers.belongsTo(models.User,    {as: 'user_received',     foreignKey:'id_user_received'});
       Transfers.hasMany(models.DetailsTransfers,{as: 'detailsTransfers', foreignKey:'id_transfer'});
+      Transfers.belongsTo(models.Scale,{as: 'scale', foreignKey:'id_scales'});
     }
   }
   Transfers.init({
@@ -34,6 +35,10 @@ module.exports = (sequelize, DataTypes) => {
     id_user_send: DataTypes.INTEGER,
     id_user_received: DataTypes.INTEGER,
     status: DataTypes.STRING,
+
+    type_registry: DataTypes.STRING,
+    registry_number: DataTypes.STRING,
+    id_scales: DataTypes.INTEGER,
   }, {
     sequelize,
     modelName: 'Transfers',

@@ -8,8 +8,9 @@ const { Op } = require('sequelize');
 
 const getProductPaginate = async (req = request, res = response) => {
     try {
-        let {query, page, limit, type, status, stock,id_sucursal,id_storage,orderNew} = req.query;
+        let {query, page, limit, type, status, stock, withStock,id_sucursal,id_storage,orderNew} = req.query;
         const user = req.userAuth;
+        withStock = withStock === 'true' ? true : false;
         let idsProductBySucursal = await ProductSucursals.findAll({where: {status:true, id_sucursal}});
         idsProductBySucursal = idsProductBySucursal.map(resp => resp.id_product);
         let isSearchPos = type === 'pos' ? true : false;   
@@ -24,7 +25,11 @@ const getProductPaginate = async (req = request, res = response) => {
                 { association: 'unit' },
                 { association: 'prices',required:false, where: {status: true}},
                 { association: 'stocks', attributes: ['stock','stock_min'],
-                    required:false, where: {status: true},
+                    required: withStock ?  true : false,
+                    where: {
+                        status: true,
+                        ...(withStock ? { id_storage:id_storage,id_sucursal:id_sucursal, stock: { [Op.gt]: 0 } } : {})
+                    },
                     include: [
                         {association: 'sucursal', attributes: ['id','name']},
                         {association: 'storage', attributes:['id','name']}
