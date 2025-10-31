@@ -3,6 +3,7 @@ const { AccountsPayable , AbonosAccountsPayable ,sequelize, History, AbonosAccou
 const paginate = require('../helpers/paginate');
 const { whereDateForType } = require('../helpers/where_range');
 const { Op } = require('sequelize');
+const { getNumberDecimal } = require('../helpers/company');
 
 
 const getAccountsPayablePaginate = async (req = request, res = response) => {
@@ -414,8 +415,9 @@ const payAccountMultiple = async (req = request, res = response) => {
 const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
     try {
         const  {monto_abono, date_abono, type_payment, comments, account_output, id_bank} = body;
+        const decimal = await getNumberDecimal();
         let total_account_monto = Number(account.monto_abonado) + Number(monto_abono);
-        let new_total_restante = Number(account.total) - Number(total_account_monto);
+        let new_total_restante = Number(account.total).toFixed(decimal) - Number(total_account_monto).toFixed(decimal)
         
         if(new_total_restante < 0) {
             return  {ok: false, msg: `El monto abono es superior a la deuda`};
