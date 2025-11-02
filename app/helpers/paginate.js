@@ -16,12 +16,6 @@ const paginate = async (model, pageSize, pageLimit, type, query, optionsDb = {})
                     if (!foundInclude.where) foundInclude.where = {};
                     if (!isNaN(query)) {
                         foundInclude.where[column] = { [Op.eq]: `${query}` };
-                    } else if (new Date(query) != 'Invalid Date') {
-                        let date = new Date(query);
-                        foundInclude.where[column] = {
-                            [Op.gt]: date,
-                            [Op.lt]: new Date(date.setDate(date.getDate() + 1))
-                        };
                     } else {
                         foundInclude.where[column] = { [Op.iLike]: `%${query}%` };
                     }
@@ -43,15 +37,7 @@ const paginate = async (model, pageSize, pageLimit, type, query, optionsDb = {})
                 if (!isNaN(query)) {
                     where[type] = { [Op.eq]: `${query}` };
                 } else {
-                    if (new Date(query) != 'Invalid Date') {
-                        let date = new Date(query);
-                        where[type] = {
-                            [Op.gt]: new Date(query),
-                            [Op.lt]: date.setDate(date.getDate() + 1)
-                        };
-                    } else {
-                        where[type] = { [Op.iLike]: `%${query}%` };
-                    }
+                    where[type] = { [Op.iLike]: `%${query}%` };
                 }
             }
             try {
