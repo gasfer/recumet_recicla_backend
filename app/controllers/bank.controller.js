@@ -8,6 +8,7 @@ const getBankPaginate = async (req = request, res = response) => {
         const optionsDb = {
             order: [orderNew],
             where: { status },
+            
         };
         let banks = await paginate(Bank, page, limit, type, query, optionsDb); 
         return res.status(200).json({
