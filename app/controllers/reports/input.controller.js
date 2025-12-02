@@ -38,13 +38,15 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '), fontSize:9}, 
                 {text:input?.type, fontSize:9}, 
                 {text:input?.referral_sources, fontSize:9}, 
+                {text:input?.provider?.type.name, fontSize:9}, 
                 {text:Number(input?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(input.total).toFixed(decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            {colSpan: 8, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10, },
+            {colSpan: 9, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10, },
+            {text:''},
             {text:''},
             {text:''},
             {text:''},
@@ -105,7 +107,7 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,50,40,55,90,'*',45,80,60,60],
+            widths: [60,50,40,55,90,'*',45,80,60,50,50],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
@@ -116,6 +118,7 @@ const dataPdfReturn = (auth) => [
                     {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'REFERENCIA', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TIPO PROVEEDOR', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CANT. KG', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                 ]
@@ -140,6 +143,7 @@ const generateExcelReports = async (req = request, res = response) => {
         DETALLE: '',
         TIPO: '',
         REFERENCIA: '',
+        TIPO_PROVEEDOR: '',
         CANT_KG: '',
         TOTAL: '',
       });
@@ -158,6 +162,7 @@ const generateExcelReports = async (req = request, res = response) => {
         DETALLE: input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '),
         TIPO: input.type,
         REFERENCIA: input.referral_sources,
+        TIPO_PROVEEDOR: input.provider.type.name,
         CANT_KG: Number(input.total_quantity).toFixed(decimal),
         TOTAL: Number(input.total).toFixed(decimal),
       }
@@ -172,6 +177,7 @@ const generateExcelReports = async (req = request, res = response) => {
         DETALLE: '',
         TIPO: '',
         REFERENCIA: '',
+        TIPO_PROVEEDOR: '',
         CANT_KG: Number(total_quantity).toFixed(decimal),
         TOTAL: Number(total).toFixed(decimal),
       });
@@ -196,7 +202,7 @@ const generateExcelReports = async (req = request, res = response) => {
     worksheet.getColumn('F').width = 50; 
     worksheet.getColumn('G').width = 50; 
     worksheet.getColumn('H').width = 50; 
-    worksheet.getColumn('I').width = 15; 
+    worksheet.getColumn('I').width = 50; 
     worksheet.getColumn('J').width = 15; 
     worksheet.getColumn('K').width = 15; 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -219,7 +225,7 @@ const generateExcelReports = async (req = request, res = response) => {
 }
 
 const returnDataInput = async (params) => {
-    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew, referral_sources} = params;
+    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew, referral_sources, id_type_provider} = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
     const optionsDb = {
         order: [orderNew],
@@ -236,7 +242,11 @@ const returnDataInput = async (params) => {
             ]
         },
         include: [ 
-            { association: 'provider', attributes: ['full_names','number_document','name_contact']},
+            { 
+                association: 'provider', attributes: ['full_names','number_document','name_contact'],
+                where: id_type_provider ? { id_type_provider } : {},
+                include: [{association: 'type', attributes: ['name']}],
+            },
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
             { association: 'detailsInput', attributes: {include: ['quantity']} , include: [{ association: 'product', attributes: ['cod','name'], include: [{association: 'unit', attributes: ['name','siglas']}] } ]},
@@ -402,7 +412,7 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
 }
 
 const returnDataDetailsInput = async (params) => {
-    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2, referral_sources} = params;
+    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2, referral_sources, id_type_provider} = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
     const optionsDb = {
         attributes: [
@@ -429,6 +439,14 @@ const returnDataDetailsInput = async (params) => {
                             referral_sources ? { referral_sources } : {},
                         ]
                 }, 
+                include: [
+                    {
+                        association: 'provider',
+                        where: id_type_provider ? { id_type_provider } : {},
+                        attributes: [], 
+                        include: [{association: 'type', attributes: []}],
+                    },
+                ]
             }
         ],
         group: [ 'id_product','product.id']

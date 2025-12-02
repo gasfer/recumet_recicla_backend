@@ -40,7 +40,7 @@ const getInputFindOne = async (req = request, res = response) => {
 const getInputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
-                id_provider, status, filterBy, date1, date2, orderNew, referral_sources} = req.query;
+                id_provider, status, filterBy, date1, date2, orderNew, referral_sources, id_type_provider} = req.query;
         const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
         const whereDateSum = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
         const where = {
@@ -70,7 +70,12 @@ const getInputsPaginate = async (req = request, res = response) => {
             order: [orderNew],
             where,
             include: [ 
-                { association: 'provider' },
+                {
+                    association: 'provider',
+                    where: id_type_provider ? { id_type_provider } : {},
+                    include: [{association: 'type', attributes: ['name']}],
+                },
+                  
                 { association: 'sucursal',attributes: ['name'] },
                 { association: 'storage',attributes: ['name'] },
                 { association: 'scale', attributes: ['name']},
