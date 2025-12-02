@@ -50,7 +50,8 @@ module.exports = (sequelize, DataTypes) => {
     id_bank: DataTypes.INTEGER,
     id_user: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,
-    status: DataTypes.STRING
+    status: DataTypes.STRING,
+    referral_sources: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Input',
