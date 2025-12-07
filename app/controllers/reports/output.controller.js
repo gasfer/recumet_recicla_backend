@@ -35,7 +35,17 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:output?.type_registry, fontSize:9}, 
                 {text:output?.number_registry, fontSize:9}, 
                 {text:output?.client?.full_names, fontSize:8}, 
-                {text:output?.user?.full_names, fontSize:8}, 
+                {
+                    text: output.detailsOutput
+                        .map(detail => {
+                            const productName = detail.product.name;
+                            const quantity = detail.quantity;
+                            const unit = detail.product.unit.siglas;
+                            return `${productName} [${quantity} ${unit}]`;
+                        })
+                        .join(', '), 
+                    fontSize: 9,
+                }, 
                 {text:output?.comments, fontSize:9}, 
                 {text:output?.type_output, fontSize:9}, 
                 {text:Number(output?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
@@ -105,7 +115,7 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,70,50,55,'*',80,'*',45,60,60],
+            widths: [60,70,50,55,'*','*','*',45,60,60],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
@@ -113,7 +123,7 @@ const dataPdfReturn = (auth) => [
                     {text:'TIPO DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'NRO. DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CLIENTE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'POR USUARIO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'COMENTARIOS', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'CANT. KG',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
@@ -137,7 +147,7 @@ const generateExcelReports = async (req = request, res = response) => {
         TIPO_DOCUMENTO: '',
         NRO_DOCUMENTO: '',
         CLIENTE: '',
-        USUARIO: '',
+        DETALLE: '',
         COMENTARIOS: '',
         TIPO: '',
         TOTAL_KG: '',
@@ -155,7 +165,14 @@ const generateExcelReports = async (req = request, res = response) => {
         TIPO_DOCUMENTO: output.type_registry,
         NRO_DOCUMENTO: output.number_registry,
         CLIENTE: output?.client?.full_names ?? '',
-        USUARIO: output.user.full_names,
+        DETALLE: output.detailsOutput
+            .map(detail => {
+                const productName = detail.product.name;
+                const quantity = detail.quantity;
+                const unit = detail.product.unit.siglas;
+                return `${productName} [${quantity} ${unit}]`;
+            })
+            .join(', '), 
         COMENTARIOS: output.comments,
         TIPO: output.type_output,
         TOTAL_KG: Number(output.total_quantity).toFixed(decimal),
@@ -169,7 +186,7 @@ const generateExcelReports = async (req = request, res = response) => {
         TIPO_DOCUMENTO: '',
         NRO_DOCUMENTO: '',
         CLIENTE: '',
-        USUARIO: '',
+        DETALLE: '',
         COMENTARIOS: '',
         TIPO: '',
         TOTAL_KG:  Number(total_quantity).toFixed(decimal),
@@ -242,8 +259,23 @@ const returnDataOutput = async (params) => {
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
             { association: 'bank'},
-            { association: 'detailsOutput', attributes: {include: ['quantity']} },
-
+            { 
+                association: 'detailsOutput', 
+                attributes: ['quantity'],
+                include: [
+                    { 
+                        association: 'product', 
+                        attributes: ['cod', 'name'],
+                        include: [
+                            {
+                                association: 'unit', 
+                                attributes: ['name', 'siglas']
+                            }
+                        ]
+                    },
+                    
+                ]
+            }
         ]
     };
     const outputs = await Output.findAll(optionsDb);
