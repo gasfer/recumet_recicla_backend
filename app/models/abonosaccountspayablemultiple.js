@@ -9,6 +9,8 @@ module.exports = (sequelize, DataTypes) => {
       AbonosAccountsPayableMultiple.belongsTo(models.User,{as: 'user', foreignKey:'id_user'});
       AbonosAccountsPayableMultiple.belongsTo(models.Provider,{as: 'provider', foreignKey:'id_provider'});
       AbonosAccountsPayableMultiple.belongsTo(models.Sucursal,{as: 'sucursal', foreignKey:'id_sucursal'});
+      AbonosAccountsPayableMultiple.belongsTo(models.Bank,{as: 'abonosMultipleDestination', foreignKey:'id_bank'});
+      AbonosAccountsPayableMultiple.belongsTo(models.Bank,{as: 'abonosMultipleOrigin', foreignKey:'id_bank_origin'});
     }
   }
   AbonosAccountsPayableMultiple.init({
@@ -29,7 +31,9 @@ module.exports = (sequelize, DataTypes) => {
     account_output: DataTypes.STRING,
     id_bank: DataTypes.INTEGER,
     status: DataTypes.BOOLEAN,
-    id_sucursal: DataTypes.INTEGER
+    id_sucursal: DataTypes.INTEGER,
+    account_origin: DataTypes.STRING,
+    id_bank_origin: DataTypes.INTEGER,
   }, {
     sequelize,
     modelName: 'AbonosAccountsPayableMultiple',

@@ -18,7 +18,9 @@ const printAbonoMultipleAccountPayableVoucher = async (req = request, res = resp
         const abono_account_payable = await AbonosAccountsPayableMultiple.findByPk(id_abono_account_payable_multiple,{
             include: [ 
                 { association: 'provider'},
-                { association: 'sucursal'}
+                { association: 'sucursal'},
+                { association: 'abonosMultipleDestination' },
+                { association: 'abonosMultipleOrigin' },
             ]
         });
         const accountsPayables = await AccountsPayable.findAll({order: [['id','ASC']],where: {id: {[Op.in]: abono_account_payable.ids_account_payables }}, 
@@ -34,7 +36,9 @@ const printAbonoMultipleAccountPayableVoucher = async (req = request, res = resp
                         },
                     ]
                 },
-                {association: 'abonosAccountsPayable'}
+                {
+                    association: 'abonosAccountsPayable',
+                },
             ]
         });
         const decimal = await getNumberDecimal();
@@ -362,6 +366,61 @@ const addFooterAbonosMultiple = (abono_account_payable,saldoTotal,decimal) => {
                 },
                 { text: `Pago con:`, bold:true, style: 'text',width: 70 },
                 { text: `${saldoTotal.payIn}`,  style: 'text' },
+            ]
+        },
+        {
+            margin: [0, 3, 0, 0],
+            columns: [
+              { 
+                  text: `ORIGEN:`,
+                  bold: true,
+                  style: 'text',
+                  width: 70,
+                  alignment: 'left'
+              },
+              {
+                  table: {
+                      widths: ['*'],
+                      body: [[
+                          {
+                              text: abono_account_payable.type_payment != 'EFECTIVO'
+                                ? `${abono_account_payable.abonosMultipleOrigin?.name ?? '-'} | Cuenta: ${abono_account_payable.account_origin ?? ''}`
+                                : '-',
+                              style: 'text',
+                              fontSize: 10,       
+                              alignment: 'left',
+                              margin: [0,0,0,0] 
+                          }
+                      ]]
+                  },
+                  layout: 'noBorders', 
+                  width: 200
+              },
+              { 
+                  text: `DESTINO:`,
+                  bold: true,
+                  style: 'text',
+                  width: 80,
+                  alignment: 'left'
+              },
+              {
+                  table: {
+                      widths: ['*'],
+                      body: [[
+                          {
+                              text: abono_account_payable.type_payment != 'EFECTIVO'
+                                ? `${abono_account_payable.abonosMultipleDestination.name} | Cuenta: ${abono_account_payable.account_output}` 
+                                : '-',
+                              style: 'text',
+                              fontSize: 10,       
+                              alignment: 'left',
+                              margin: [0,0,0,0]
+                          }
+                      ]]
+                  },
+                  layout: 'noBorders', 
+                  width: 200
+              }
             ]
         },
         {

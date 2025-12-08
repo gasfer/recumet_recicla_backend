@@ -426,6 +426,8 @@ const printAbonoAccountPayableVoucher = async (req = request, res = response) =>
                         
                     ]}
                 ]},
+                { association: 'bankOrigin' },
+                { association: 'bankDestination' },
             ]
         });
         const decimal = await getNumberDecimal();
@@ -708,6 +710,61 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
               }
               
         ]
+    },
+    {
+      margin: [0, 3, 0, 0],
+      columns: [
+        { 
+            text: `ORIGEN:`,
+            bold: true,
+            style: 'text',
+            width: 70,
+            alignment: 'left'
+        },
+        {
+            table: {
+                widths: ['*'],
+                body: [[
+                    {
+                        text: abono_account_payable.type_payment != 'EFECTIVO'
+                          ? `${abono_account_payable.bankOrigin?.name ?? '-'} | Cuenta: ${abono_account_payable.account_origin ?? ''}`
+                          : '-',
+                        style: 'text',
+                        fontSize: 10,       
+                        alignment: 'left',
+                        margin: [0,0,0,0] 
+                    }
+                ]]
+            },
+            layout: 'noBorders', 
+            width: 200
+        },
+        { 
+            text: `DESTINO:`,
+            bold: true,
+            style: 'text',
+            width: 80,
+            alignment: 'left'
+        },
+        {
+            table: {
+                widths: ['*'],
+                body: [[
+                    {
+                        text: abono_account_payable.type_payment != 'EFECTIVO'
+                          ? `${abono_account_payable.bankDestination.name} | Cuenta: ${abono_account_payable.account_output}` 
+                          : '-',
+                        style: 'text',
+                        fontSize: 10,       
+                        alignment: 'left',
+                        margin: [0,0,0,0]
+                    }
+                ]]
+            },
+            layout: 'noBorders', 
+            width: 200
+        }
+      ]
     },
     {
         margin: [0,40,0,0],
