@@ -28,10 +28,7 @@ const validationSchema =  {
         },
     },
     'classified_data.number_registry': {
-       isEmpty: {
-            negated: true,
-            errorMessage: "El número de registro es obligatorio",
-        },
+        optional:{ options: {nullable: true}},
         custom: { options: registryNumberExistClassified },
     },
     'classified_data.comments': {

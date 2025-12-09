@@ -87,8 +87,14 @@ const newClassified = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
         const { classified_data, classified_details } = req.body;
-        const { id_sucursal, id_storage, number_registry, id_product, cost_product,quantity_product } = classified_data;
+        const { id_sucursal, id_storage, number_registry, id_product, cost_product,quantity_product, type_registry } = classified_data;
         classified_data.id_user = req.userAuth.id;
+
+        if (type_registry === 'SIN FICHA') {
+            const count_classifieds = await Classified.count({ where: {type_registry:'SIN FICHA'}, transaction: t });
+            classified_data.number_registry = get_num_request('SF-',count_classifieds + 1,5);
+        }
+
         /*Creación de clasificación*/
         const classified = await Classified.create(classified_data, { transaction: t });
         const count_classifieds = await Classified.count({ where: {id_sucursal}, transaction: t });
