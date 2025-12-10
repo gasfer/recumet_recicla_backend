@@ -326,6 +326,62 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
     }
 }
 
+const generatePdfDetailsCPPReports = async (req = request, res = response) => {
+    try {
+        const {filterBy, date1, date2} = req.query;
+        const decimal = await getNumberDecimal();
+        const detailsInput = await returnDataDetailsInput(req.query);
+        let dataPdf = dataDetailsPdfDetailsCPPReturn(req.userAuth,date1,date2); //PDF
+        let total_import = 0, suma_quantity = 0; 
+        detailsInput.forEach(detail => {
+            suma_quantity = Number(suma_quantity) + Number(detail.dataValues.suma_quantity);
+            total_import = Number(total_import) + Number(detail.dataValues.suma_total);
+            const tableData = [
+                {text:detail?.product.cod, fontSize:9}, 
+                {text:detail?.product.name, fontSize:9}, 
+                {text:Number(detail?.dataValues.cpp).toFixed(decimal), fontSize:10, alignment: 'right', bold: true, fillColor: '#DFF0D8'}, 
+                {text:Number(detail?.dataValues.suma_quantity).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+                {text:Number(detail?.dataValues.suma_total).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+            ];
+            dataPdf[5].table.body.push(tableData);
+        });
+        dataPdf[5].table.body.push([
+            {colSpan: 3, text:`TOTAL`, bold: true,fontSize:10, fillColor: '#eeeeee'},
+            {text:''},
+            {text:''},
+            {text: `${Number(suma_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'},
+            {text: `${Number(total_import).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'}
+        ]);
+        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
+        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
+        let docDefinition = {
+            content: dataPdf,
+            footer: function(currentPage, pageCount) { return [
+                {
+                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
+                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
+                }
+            ] },
+            styles: styles,
+        };
+        const printer = new PdfPrinter(fonts);
+        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
+        let chunks = [];
+        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
+        pdfDoc.on("end", () => {
+            const result = Buffer.concat(chunks);
+            res.setHeader('Content-Type', 'application/pdf;');
+            res.setHeader('Content-disposition', `filename=report_compras_detalle_${new Date()}.pdf`);
+            return res.send(result);
+        });
+        pdfDoc.end();
+    } catch (error) {
+        console.log(error);
+        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
+        return res.sendFile(pathImage);
+    }
+}
+
 const dataDetailsPdfReturn = (auth,date1,date2) => [
     {
         image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
@@ -352,6 +408,40 @@ const dataDetailsPdfReturn = (auth,date1,date2) => [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'PRODUCTO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CANTIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                ]
+            ]   ,
+            layout: 'lightHorizontalLines'
+        }
+    }
+];
+
+const dataDetailsPdfDetailsCPPReturn = (auth,date1,date2) => [
+    {
+        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
+        width: 70,
+        absolutePosition: { x:25, y: 15 }
+    },
+    {   text:`Fecha Impreso: ` + moment().format('LLLL'), style: 'fechaDoc',
+        absolutePosition: { y: 16 },
+    },
+    {   text:`Impreso por:` + `${auth.number_document} - ${auth.full_names}`, style: 'fechaDoc',
+        absolutePosition: {  y: 27 }
+    },
+    { text: 'COMPRAS DETALLE COSTO PROMEDIO ', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
+    { text: 'Fecha Reporte:' +  date1 + ' ' + date2, alignment:'center',absolutePosition: {  y: 73 } },
+    {
+        style: 'tableReport',
+        absolutePosition: { x:20, y: 95 },
+        table: {
+            headerRows: 1,
+            widths: [70,'*',70,70,70],
+            body: [
+                [
+                    {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'PRODUCTO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'COSTO PROMEDIO PONDERADO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CANTIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TOTAL COMPRA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                 ]
             ]   ,
             layout: 'lightHorizontalLines'
@@ -430,6 +520,12 @@ const returnDataDetailsInput = async (params) => {
         attributes: [
             [sequelize.fn('SUM', sequelize.col('quantity')), 'suma_quantity'],
             [sequelize.fn('SUM', sequelize.col('DetailsInput.total')), 'suma_total'],
+            [
+                sequelize.literal(`
+                    SUM("DetailsInput"."total") / NULLIF(SUM(quantity), 0)
+                `),
+                'cpp'
+            ]
         ],
         include: [
             { 
@@ -724,5 +820,6 @@ module.exports = {
     generateExcelReports,
     generatePdfDetailsReports,
     generateExcelDetailsReports,
-    printInputVoucher
+    printInputVoucher,
+    generatePdfDetailsCPPReports
 }

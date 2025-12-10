@@ -3,7 +3,7 @@ const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getInputsPaginate, newInput, anularInput, updateInput, getInputFindOne } = require('../controllers/input.controller');
 const { getValidateCreate, validateIdInput, getValidateUpdate } = require('../middlewares/validators/input');
-const { generatePdfReports, generateExcelReports, generatePdfDetailsReports, generateExcelDetailsReports, printInputVoucher } = require('../controllers/reports/input.controller');
+const { generatePdfReports, generateExcelReports, generatePdfDetailsReports, generateExcelDetailsReports, printInputVoucher, generatePdfDetailsCPPReports } = require('../controllers/reports/input.controller');
 
 const router = Router();
 
@@ -46,6 +46,10 @@ router.get('/pdf',[
 router.get('/pdf/details',[
     validarJWT,
 ], generatePdfDetailsReports );
+
+router.get('/pdf/details/cpp',[
+    validarJWT,
+], generatePdfDetailsCPPReports );
 
 router.get('/excel',[
     validarJWT,
