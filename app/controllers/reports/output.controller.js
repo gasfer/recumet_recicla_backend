@@ -115,11 +115,11 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,70,50,55,'*','*','*',45,60,60],
+            widths: [60,40,45,55,'*','*','*',45,60,60],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA VENTA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'FECHA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'NRO. DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CLIENTE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
@@ -172,7 +172,7 @@ const generateExcelReports = async (req = request, res = response) => {
                 const unit = detail.product.unit.siglas;
                 return `${productName} [${quantity} ${unit}]`;
             })
-            .join(', '), 
+            .join(', \n '), 
         COMENTARIOS: output.comments,
         TIPO: output.type_output,
         TOTAL_KG: Number(output.total_quantity).toFixed(decimal),
@@ -210,7 +210,8 @@ const generateExcelReports = async (req = request, res = response) => {
     worksheet.getColumn('C').width = 25; 
     worksheet.getColumn('D').width = 20; 
     worksheet.getColumn('E').width = 20; 
-    worksheet.getColumn('F').width = 50; 
+    worksheet.getColumn('F').width = 100; 
+    worksheet.getColumn('F').alignment = { wrapText: true };
     worksheet.getColumn('G').width = 50; 
     worksheet.getColumn('H').width = 20; 
     worksheet.getColumn('I').width = 15; 

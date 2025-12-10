@@ -718,7 +718,7 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
             text: `ORIGEN:`,
             bold: true,
             style: 'text',
-            width: 70,
+            width: 50,
             alignment: 'left'
         },
         {
@@ -743,7 +743,7 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
             text: `DESTINO:`,
             bold: true,
             style: 'text',
-            width: 80,
+            width: 50,
             alignment: 'left'
         },
         {

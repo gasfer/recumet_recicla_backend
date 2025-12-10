@@ -375,7 +375,7 @@ const addFooterAbonosMultiple = (abono_account_payable,saldoTotal,decimal) => {
                   text: `ORIGEN:`,
                   bold: true,
                   style: 'text',
-                  width: 70,
+                  width: 50,
                   alignment: 'left'
               },
               {
@@ -400,7 +400,7 @@ const addFooterAbonosMultiple = (abono_account_payable,saldoTotal,decimal) => {
                   text: `DESTINO:`,
                   bold: true,
                   style: 'text',
-                  width: 80,
+                  width: 50,
                   alignment: 'left'
               },
               {
