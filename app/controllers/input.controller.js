@@ -40,7 +40,9 @@ const getInputFindOne = async (req = request, res = response) => {
 const getInputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
-                id_provider, status, filterBy, date1, date2, orderNew, referral_sources, id_type_provider} = req.query;
+                id_provider, status, filterBy, date1, date2, orderNew, referral_sources, id_type_provider,
+                old_customer, with_pickup
+            } = req.query;
         const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
         const whereDateSum = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
         const where = {
@@ -53,6 +55,8 @@ const getInputsPaginate = async (req = request, res = response) => {
                 { status },
                 { date_voucher: whereDate },
                 referral_sources ? { referral_sources } : {},
+                old_customer ? { old_customer: old_customer == 'SI' } : {},
+                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
             ]
         };
         const whereSum = {
@@ -63,7 +67,10 @@ const getInputsPaginate = async (req = request, res = response) => {
                 type_registry ? { type_registry } : {},
                 id_provider   ? { id_provider   } : {},
                 { status },
-                { date_voucher: whereDateSum }
+                { date_voucher: whereDateSum },
+                referral_sources ? { referral_sources } : {},
+                old_customer ? { old_customer: old_customer == 'SI' } : {},
+                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
             ]
         };
         const optionsDb = {

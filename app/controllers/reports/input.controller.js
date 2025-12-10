@@ -37,7 +37,13 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:input?.provider?.full_names, fontSize:9}, 
                 {text:input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '), fontSize:9}, 
                 {text:input?.type, fontSize:9}, 
-                {text:input?.referral_sources, fontSize:9}, 
+                {
+                    text:
+                        (input?.referral_sources ?? '-') + '\n' +
+                        'Cliente antiguo: ' + (input?.old_customer ? 'SI' : 'NO') + '\n' +
+                        'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
+                    fontSize: 9
+                },
                 {text:input?.provider?.type.name, fontSize:9}, 
                 {text:Number(input?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(input.total).toFixed(decimal), fontSize:9, alignment: 'right'},
@@ -161,7 +167,9 @@ const generateExcelReports = async (req = request, res = response) => {
         PROVEEDOR: input.provider.full_names,
         DETALLE: input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '),
         TIPO: input.type,
-        REFERENCIA: input.referral_sources,
+        REFERENCIA: (input?.referral_sources ?? '-') + '  ' +
+                        'Cliente antiguo: ' + (input?.old_customer ? 'SI' : 'NO') + '  ' +
+                        'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
         TIPO_PROVEEDOR: input.provider.type.name,
         CANT_KG: Number(input.total_quantity).toFixed(decimal),
         TOTAL: Number(input.total).toFixed(decimal),
@@ -225,7 +233,9 @@ const generateExcelReports = async (req = request, res = response) => {
 }
 
 const returnDataInput = async (params) => {
-    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew, referral_sources, id_type_provider} = params;
+    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew, referral_sources, id_type_provider,
+        old_customer, with_pickup
+    } = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
     const optionsDb = {
         order: [orderNew],
@@ -239,6 +249,8 @@ const returnDataInput = async (params) => {
                 { status },
                 { date_voucher: whereDate },
                 referral_sources ? { referral_sources } : {},
+                old_customer ? { old_customer: old_customer == 'SI' } : {},
+                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
             ]
         },
         include: [ 
@@ -412,7 +424,7 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
 }
 
 const returnDataDetailsInput = async (params) => {
-    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2, referral_sources, id_type_provider} = params;
+    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2, referral_sources, id_type_provider, old_customer, with_pickup} = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
     const optionsDb = {
         attributes: [
@@ -437,6 +449,8 @@ const returnDataDetailsInput = async (params) => {
                             status ? { status } : {},
                             { date_voucher: whereDate },
                             referral_sources ? { referral_sources } : {},
+                            old_customer ? { old_customer: old_customer == 'SI' } : {},
+                            with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
                         ]
                 }, 
                 include: [
