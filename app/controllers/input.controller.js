@@ -134,8 +134,20 @@ const newInput = async (req = request, res = response) => {
         const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
         //number default, not ficha
         if(type_registry === 'SIN FICHA') {
-            const count_inputs = await Input.count({ where: {type_registry:'SIN FICHA'}, transaction: t });
-            input_data.registry_number = get_num_request('SF-',count_inputs + 1,5);
+            const lastInput = await Input.findOne({
+                where: { 
+                    type_registry: 'SIN FICHA',
+                    registry_number: { [Op.like]: 'SF-%'}
+                },
+                order: [['registry_number', 'DESC']],
+                transaction: t
+            });
+            let nextNumber = 1;
+            if (lastInput && lastInput.registry_number) {
+                const lastNumber = parseInt(lastInput.registry_number.split('-')[1]);
+                nextNumber = lastNumber + 1;
+            }
+            input_data.registry_number = get_num_request('SF-',nextNumber,5);
         }
 
         input_data.id_user = req.userAuth.id;
@@ -248,9 +260,27 @@ const updateInput = async (req = request, res = response) => {
             ],
             transaction: t
         });
-        if(type_registry === 'SIN FICHA') {
-            const count_inputs = await Input.count({ where: {type_registry:'SIN FICHA' , id: { [Op.ne]: input_old.id }}, transaction: t });
-            input_data.registry_number = get_num_request('SF-',count_inputs + 1,5);
+        if (type_registry === 'SIN FICHA') {
+            if (!input_old.registry_number || input_old.type_registry != 'SIN FICHA') {
+                const lastInput = await Input.findOne({
+                    where: { 
+                        type_registry: 'SIN FICHA',
+                        registry_number: { [Op.like]: 'SF-%'}
+                    },
+                    order: [['registry_number', 'DESC']],
+                    transaction: t
+                });
+                
+                let nextNumber = 1;
+                if (lastInput && lastInput.registry_number) {
+                    const lastNumber = parseInt(lastInput.registry_number.split('-')[1]);
+                    nextNumber = lastNumber + 1;
+                }
+                
+                input_data.registry_number = get_num_request('SF-',nextNumber,5);
+            } else {
+                input_data.registry_number = input_old.registry_number;
+            }
         }
         //** Reset details and stock and update input */
         await Input.update(input_data,{where:{id: id_input}, transaction: t});
