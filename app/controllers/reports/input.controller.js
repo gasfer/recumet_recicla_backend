@@ -133,12 +133,12 @@ const dataPdfReturn = (auth) => [
         }
     }
 ];
-
 const generateExcelReports = async (req = request, res = response) => {
   try {
     const inputs = await returnDataInput(req.query);
     const decimal = await getNumberDecimal();
     let input_data = [];
+
     if (inputs.length == 0) {
       input_data.push({
         CÓDIGO: '',
@@ -150,15 +150,18 @@ const generateExcelReports = async (req = request, res = response) => {
         TIPO: '',
         REFERENCIA: '',
         TIPO_PROVEEDOR: '',
-        CANT_KG: '',
-        TOTAL: '',
+        CANT_KG: 0,
+        TOTAL: 0,
       });
     }
+
     let total = 0;
     let total_quantity = 0;
+
     inputs.forEach(input => {
-      total+=Number(input.total);
-      total_quantity+=Number(input.total_quantity);
+      total += Number(input.total);
+      total_quantity += Number(input.total_quantity);
+
       const tableData = {
         CÓDIGO: input.cod,
         FECHA_COMPRA: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
@@ -168,40 +171,46 @@ const generateExcelReports = async (req = request, res = response) => {
         DETALLE: input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '),
         TIPO: input.type,
         REFERENCIA: (input?.referral_sources ?? '-') + '  ' +
-                        'Cliente antiguo: ' + (input?.old_customer ? 'SI' : 'NO') + '  ' +
-                        'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
+                    'Cliente antiguo: ' + (input?.old_customer ? 'SI' : 'NO') + '  ' +
+                    'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
         TIPO_PROVEEDOR: input.provider.type.name,
-        CANT_KG: Number(input.total_quantity).toFixed(decimal),
-        TOTAL: Number(input.total).toFixed(decimal),
-      }
+        CANT_KG: Number(input.total_quantity),
+        TOTAL: Number(input.total),
+      };
       input_data.push(tableData);
     });
+
+    // Totales finales (como número, no texto)
     input_data.push({
-        CÓDIGO: '',
-        FECHA_COMPRA: '',
-        TIPO_DOCUMENTO: '',
-        NRO_DOCUMENTO: '',
-        PROVEEDOR: '',
-        DETALLE: '',
-        TIPO: '',
-        REFERENCIA: '',
-        TIPO_PROVEEDOR: '',
-        CANT_KG: Number(total_quantity).toFixed(decimal),
-        TOTAL: Number(total).toFixed(decimal),
-      });
+      CÓDIGO: '',
+      FECHA_COMPRA: '',
+      TIPO_DOCUMENTO: '',
+      NRO_DOCUMENTO: '',
+      PROVEEDOR: '',
+      DETALLE: '',
+      TIPO: '',
+      REFERENCIA: '',
+      TIPO_PROVEEDOR: '',
+      CANT_KG: Number(total_quantity),
+      TOTAL: Number(total),
+    });
+
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(`Compras totales`);
-    // Agregar encabezados
+
+    // Encabezados
     const headers = Object.keys(input_data[0]);
     worksheet.addRow(headers);
-    // Agregar datos
+
+    // Datos
     input_data.forEach(data => {
       const row = [];
-      headers.forEach(header => {
-        row.push(data[header]);
-      });
+      headers.forEach(header => row.push(data[header]));
       worksheet.addRow(row);
     });
+
+    // Configuración visual
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
     worksheet.getColumn('A').width = 15; 
     worksheet.getColumn('B').width = 20; 
     worksheet.getColumn('C').width = 25; 
@@ -213,24 +222,30 @@ const generateExcelReports = async (req = request, res = response) => {
     worksheet.getColumn('I').width = 50; 
     worksheet.getColumn('J').width = 15; 
     worksheet.getColumn('K').width = 15; 
+
+    // Formato decimal para números
+    const decimalFormat = decimal === 3 ? '#,##0.000' : '#,##0.00';
+    worksheet.getColumn('J').numFmt = decimalFormat; // CANT_KG
+    worksheet.getColumn('K').numFmt = decimalFormat; // TOTAL
+    worksheet.getColumn('J').alignment = { horizontal: 'right' };
+    worksheet.getColumn('K').alignment = { horizontal: 'right' };
+
+    // Enviar Excel
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=compras-report.xlsx`);
-    workbook.xlsx.write(res)
-      .then(() => {
-        res.end();
-      })
-      .catch(err => {
-        console.error('Error generar Excel:', err);
-        res.status(500).json({ error: 'Error al crear excel' });
-      })
+
+    await workbook.xlsx.write(res);
+    res.end();
+
   } catch (error) {
     console.log(error);
     return res.status(500).json({
       ok: false,
       errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
-  });
+    });
   };
-}
+};
+
 
 const returnDataInput = async (params) => {
     const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew, referral_sources, id_type_provider,
@@ -454,64 +469,73 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
         const detailsInput = await returnDataDetailsInput(req.query);
         const decimal = await getNumberDecimal();
         let detailsInput_data = [];
+
         if (detailsInput.length == 0) {
             detailsInput_data.push({
                 CÓDIGO: '',
                 PRODUCTO: '',
-                CANTIDAD: ''
+                CANTIDAD: 0
             });
         }
+
         let total = 0;
         detailsInput.forEach(detail => {
-            total+=Number(detail?.dataValues.suma_quantity);
+            total += Number(detail?.dataValues.suma_quantity);
             const tableData = {
                 CÓDIGO: detail?.product.cod,
                 PRODUCTO: detail?.product.name,
-                CANTIDAD:Number(detail?.dataValues.suma_quantity).toFixed(decimal)
+                CANTIDAD: Number(detail?.dataValues.suma_quantity)
             }
             detailsInput_data.push(tableData);
         });
+
+        // Total final
         detailsInput_data.push({
             CÓDIGO: '',
             PRODUCTO: '',
-            CANTIDAD: Number(total).toFixed(decimal)
+            CANTIDAD: Number(total)
         });
+
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet(`Compras detalladas`);
-        // Agregar encabezados
+
+        // Encabezados
         const headers = Object.keys(detailsInput_data[0]);
         worksheet.addRow(headers);
-        // Agregar datos
+
+        // Datos
         detailsInput_data.forEach(data => {
             const row = [];
-            headers.forEach(header => {
-                row.push(data[header]);
-            });
+            headers.forEach(header => row.push(data[header]));
             worksheet.addRow(row);
         });
+
+        // Configuración visual
         worksheet.getColumn('A').width = 15; 
         worksheet.getColumn('B').width = 50; 
         worksheet.getColumn('C').width = 20; 
-        worksheet.getColumn('D').width = 20; 
-        worksheet.getColumn('E').width = 20; 
+
+        // Formato decimal para CANTIDAD
+        const decimalFormat = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        worksheet.getColumn('C').numFmt = decimalFormat;
+        worksheet.getColumn('C').alignment = { horizontal: 'right' };
+
+        // Enviar Excel
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=compras-detalle-report.xlsx`);
-        workbook.xlsx.write(res)
-            .then(() => {
-                res.end();
-            })
-            .catch(err => {
-                console.error('Error generar Excel:', err);
-                res.status(500).json({ error: 'Error al crear excel' });
-            })
+
+        await workbook.xlsx.write(res);
+        res.end();
+
     } catch (error) {
-      console.log(error);
-      return res.status(500).json({
-        ok: false,
-        errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
-    });
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
     };
-}
+};
+
 
 const returnDataDetailsInput = async (params) => {
     const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2, referral_sources, id_type_provider, old_customer, with_pickup} = params;
