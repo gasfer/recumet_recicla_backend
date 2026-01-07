@@ -13,20 +13,7 @@ moment.locale("es");
 
 const imagePath = path.join(__dirname, "../../../uploads/logo.png");
 
-// -------------------- PDF HELPERS --------------------
-const createPdfBuffer = async (docDefinition) => {
-  return new Promise((resolve, reject) => {
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
-    let chunks = [];
-    pdfDoc.on("data", chunk => chunks.push(chunk));
-    pdfDoc.on("end", () => resolve(Buffer.concat(chunks)));
-    pdfDoc.on("error", err => reject(err));
-    pdfDoc.end();
-  });
-};
-
-// -------------------- EXCEL HELPERS --------------------
+// -------------------- HELPER: GENERAR EXCEL --------------------
 const generateExcelReport = async (res, data, sheetName, fileName, numericColumns = [], columnWidths = []) => {
   const decimal = await getNumberDecimal();
   const workbook = new ExcelJS.Workbook();
@@ -45,6 +32,7 @@ const generateExcelReport = async (res, data, sheetName, fileName, numericColumn
     });
   });
 
+  // Ajuste de anchos
   if (columnWidths.length === headers.length) {
     columnWidths.forEach((w, i) => worksheet.getColumn(i + 1).width = w);
   } else {
@@ -57,96 +45,32 @@ const generateExcelReport = async (res, data, sheetName, fileName, numericColumn
   res.end();
 };
 
-// -------------------- DATA QUERIES --------------------
-const returnDataKardex = async ({
-  id_sucursal, id_storage, id_product, filterBy, date1, date2, type_kardex, orderNew=["date","ASC"], include_zero=true
-}) => {
-  const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
-  const zeroFilter = include_zero ? {} : {
-    [Op.or]: [
-      { quantity_input: { [Op.ne]: 0 } },
-      { quantity_output: { [Op.ne]: 0 } },
-      { saldo: { [Op.ne]: 0 } },
-      { cost_input: { [Op.ne]: 0 } },
-      { cost_output: { [Op.ne]: 0 } },
-      { cost_saldo: { [Op.ne]: 0 } },
-    ]
-  };
-
-  return ViewKardex.findAll({
-    order: [[...orderNew]],
-    attributes: [
-      "type","date","registry_number","detail","sub_detail",
-      "quantity_input","quantity_output","saldo",
-      "cost_unitario","cost_input","cost_output","cost_saldo"
-    ],
-    where: {
-      [Op.and]: [
-        id_sucursal && { id_sucursal },
-        id_storage && { id_storage },
-        id_product && { id_product },
-        type_kardex && { type: type_kardex },
-        { date: whereDate },
-        zeroFilter
-      ].filter(Boolean)
-    },
-    include: [
-      { association: "sucursal", attributes: ["name"] },
-      { association: "storage", attributes: ["name"] },
-      { association: "product", include: ["unit"] }
-    ]
+// -------------------- GENERAR PDF: FUNCION GENERAL --------------------
+const createPdfBuffer = async (docDefinition) => {
+  return new Promise((resolve, reject) => {
+    const printer = new PdfPrinter(fonts);
+    const pdfDoc = printer.createPdfKitDocument(docDefinition);
+    let chunks = [];
+    pdfDoc.on("data", chunk => chunks.push(chunk));
+    pdfDoc.on("end", () => resolve(Buffer.concat(chunks)));
+    pdfDoc.on("error", err => reject(err));
+    pdfDoc.end();
   });
 };
 
-const returnDataInputKardexFisico = async ({
-  id_sucursal, id_storage, id_product, filterBy, date1, date2, orderNew=["id_product","ASC"], include_zero=true
-}) => {
-  const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
+// -------------------- FUNCIONES PDF Y EXCEL --------------------
 
-  return ViewKardex.findAll({
-    order: [[...orderNew]],
-    attributes: [
-      "id_product",
-      [sequelize.fn("SUM", sequelize.col("quantity_input")), "quantity_input"],
-      [sequelize.fn("SUM", sequelize.col("quantity_output")), "quantity_output"],
-      [sequelize.literal("SUM(quantity_input) - SUM(quantity_output)"), "quantity_saldo"]
-    ],
-    where: {
-      [Op.and]: [
-        id_sucursal && { id_sucursal },
-        id_storage && { id_storage },
-        id_product && { id_product },
-        { date: whereDate },
-      ].filter(Boolean),
-    },
-    include: [
-      { association: "product", include: ["unit", "category"] },
-      { association: "storage", attributes: ["name"] },
-      { association: "sucursal", attributes: ["name"] },
-    ],
-    group: [
-      "id_product",
-      "product.id",
-      "product.unit.id",
-      "product.category.id",
-      "storage.id",
-      "sucursal.id",
-    ],
-    having: include_zero ? undefined : sequelize.literal("SUM(quantity_input) <> 0 OR SUM(quantity_output) <> 0"),
-  });
-};
-
-// -------------------- PDF REPORTS --------------------
-const generatePdfReports = async (req, res) => {
+// 🔹 Generate PDF Report (Kardex)
+const generatePdfReports = async (req = request, res = response) => {
   try {
     const { filterBy, date1, date2 } = req.query;
     const kardexes = await returnDataKardex(req.query);
     const decimal = await getNumberDecimal();
     let dataPdf = dataPdfReturn(req.userAuth);
 
-    kardexes.forEach((kardex) => {
-      const tableData = [
-        { text: kardex?.type === "INPUT" ? "ENTRADA" : "SALIDA", fontSize: 8 },
+    kardexes.forEach(kardex => {
+      dataPdf[5].table.body.push([
+        { text: kardex?.type == "INPUT" ? "ENTRADA" : "SALIDA", fontSize: 8 },
         { text: moment(kardex?.date).format("DD/MM/YYYY"), fontSize: 8 },
         { text: kardex?.detail, fontSize: 8 },
         { text: kardex?.product.name, fontSize: 8 },
@@ -156,132 +80,99 @@ const generatePdfReports = async (req, res) => {
         { text: Number(kardex?.saldo), fontSize: 8 },
         { text: kardex?.sucursal.name, fontSize: 8 },
         { text: kardex?.storage.name, fontSize: 8 },
-      ];
-      dataPdf[5].table.body.push(tableData);
+      ]);
     });
 
-    const formatDate1 = filterBy === "MONTH" ? "MM" : filterBy === "YEAR" ? "YYYY" : "DD-MM-YYYY";
-    const formatDate2 = filterBy === "MONTH" ? "YYYY" : "DD-MM-YYYY";
+    const formatDate1 = filterBy == "MONTH" ? "MM" : filterBy == "YEAR" ? "YYYY" : "DD-MM-YYYY";
+    const formatDate2 = filterBy == "MONTH" ? "YYYY" : "DD-MM-YYYY";
 
-    let docDefinition = {
+    const docDefinition = {
       content: dataPdf,
       pageOrientation: "landscape",
-      footer: function (currentPage, pageCount) {
-        return [
-          {
-            text:
-              `Fechas: ${moment(date1, formatDate1).format(formatDate1)} / ${moment(date2, formatDate2).format(formatDate2) !== "Fecha inválida" ? moment(date2, formatDate2).format(formatDate2) : ""} - Paginas: ${currentPage} de ${pageCount}`,
-            fontSize: 8,
-            alignment: "center",
-            margin: [10, 10, 10, 10],
-          },
-        ];
-      },
-      styles: styles,
+      footer: (currentPage, pageCount) => ({
+        text: `Fechas: ${moment(date1, formatDate1).format(formatDate1)} / ${moment(date2, formatDate2).format(formatDate2) !== "Fecha inválida" ? moment(date2, formatDate2).format(formatDate2) : ""} - Paginas: ${currentPage} de ${pageCount}`,
+        fontSize: 8,
+        alignment: "center",
+        margin: [10,10,10,10]
+      }),
+      styles: styles
     };
 
     const pdfBuffer = await createPdfBuffer(docDefinition);
-    res.setHeader("Content-Type", "application/pdf;");
-    res.setHeader("Content-disposition", `filename=report_compras_${new Date()}.pdf`);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-disposition", `filename=report_kardex_${new Date().getTime()}.pdf`);
     return res.send(pdfBuffer);
+
   } catch (error) {
     console.error(error);
     return res.sendFile(path.join(__dirname, "../../../uploads/none-img.jpg"));
   }
 };
 
-const generatePdfReportsKardexFisico = async (req, res) => {
+// 🔹 Generate Excel Report (Kardex)
+const generateExcelReports = async (req = request, res = response) => {
   try {
-    const { filterBy, date1, date2 } = req.query;
-    const decimal = await getNumberDecimal();
-    const kardexes = await returnDataInputKardexFisico(req.query);
-    let dataPdf = dataPdfReturnKardexFisicoVerticalOnlyReciclen(req.userAuth, kardexes);
+    const inputs = await returnDataInput(req.query);
+    let input_data = [];
+    if (inputs.length === 0) {
+      input_data.push({
+        CÓDIGO: '', FECHA_COMPRA: '', TIPO_DOCUMENTO: '', NRO_DOCUMENTO: '',
+        PROVEEDOR: '', DETALLE: '', TIPO: '', REFERENCIA: '', TIPO_PROVEEDOR: '',
+        CANT_KG: 0, TOTAL: 0,
+      });
+    } else {
+      inputs.forEach(input => {
+        input_data.push({
+          CÓDIGO: input.cod,
+          FECHA_COMPRA: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
+          TIPO_DOCUMENTO: input.type_registry,
+          NRO_DOCUMENTO: input.registry_number,
+          PROVEEDOR: input.provider.full_names,
+          DETALLE: input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '),
+          TIPO: input.type,
+          REFERENCIA: (input?.referral_sources ?? '-') + '  ' +
+                      'Cliente antiguo: ' + (input?.old_customer ? 'SI' : 'NO') + '  ' +
+                      'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
+          TIPO_PROVEEDOR: input.provider.type.name,
+          CANT_KG: Number(input.total_quantity),
+          TOTAL: Number(input.total),
+        });
+      });
+    }
 
-    kardexes.forEach((kardex) => {
-      const tableData = [
-        { text: kardex?.product.cod, fontSize: 8 },
-        { text: kardex?.product.name, fontSize: 8 },
-        { text: kardex?.product.unit.siglas, fontSize: 8 },
-        { text: Number(kardex?.quantity_input), fontSize: 8 },
-        { text: Number(kardex?.quantity_output), fontSize: 8 },
-        { text: Number(kardex?.dataValues.quantity_saldo), fontSize: 8 },
-      ];
-      dataPdf[5].table.body.push(tableData);
-    });
-
-    const formatDate1 = filterBy === "MONTH" ? "MM" : filterBy === "YEAR" ? "YYYY" : "DD-MM-YYYY";
-    const formatDate2 = filterBy === "MONTH" ? "YYYY" : "DD-MM-YYYY";
-
-    let docDefinition = {
-      content: dataPdf,
-      footer: function (currentPage, pageCount) {
-        return [
-          {
-            text: `Fechas: ${moment(date1, formatDate1).format(formatDate1)} / ${moment(date2, formatDate2).format(formatDate2) !== "Fecha inválida" ? moment(date2, formatDate2).format(formatDate2) : ""} - Paginas: ${currentPage} de ${pageCount}`,
-            fontSize: 8,
-            alignment: "center",
-            margin: [10, 10, 10, 10],
-          },
-        ];
-      },
-      styles: styles,
-    };
-
-    const pdfBuffer = await createPdfBuffer(docDefinition);
-    res.setHeader("Content-Type", "application/pdf;");
-    res.setHeader("Content-disposition", `filename=report_kardex_fisico_${new Date()}.pdf`);
-    return res.send(pdfBuffer);
-  } catch (error) {
-    console.error(error);
-    return res.sendFile(path.join(__dirname, "../../../uploads/none-img.jpg"));
-  }
-};
-
-// -------------------- EXCEL REPORTS --------------------
-const generateExcelReports = async (req, res) => {
-  try {
-    const kardexes = await returnDataKardex(req.query);
-    let data = kardexes.map(row => ({
-      TIPO: row.type === "INPUT" ? "ENTRADA" : "SALIDA",
-      FECHA: moment(row.date).format("DD/MM/YYYY HH:mm:ss"),
-      DETALLE: row.detail,
-      PRODUCTO: row.product.name,
-      UND: row.product.unit.siglas,
-      CANT_ENTRADA: Number(row.quantity_input),
-      CANT_SALIDA: Number(row.quantity_output),
-      CANT_SALDO: Number(row.saldo)
-    }));
-    await generateExcelReport(res, data, "Kardex", "kardex.xlsx", ["CANT_ENTRADA","CANT_SALIDA","CANT_SALDO"]);
+    await generateExcelReport(res, input_data, "Reporte Compras", "reporte_compras.xlsx", ["CANT_KG","TOTAL"]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ ok:false, error:"Error generando Excel" });
   }
 };
 
-const generateExcelReportsKardexFisico = async (req, res) => {
-  try {
-    const kardexes = await returnDataInputKardexFisico(req.query);
-    let data = kardexes.map(row => ({
-      CODIGO: row.product.cod,
-      DETALLE: row.product.name,
-      UND: row.product.unit.siglas,
-      ENTRADA: Number(row.quantity_input),
-      SALIDA: Number(row.quantity_output),
-      SALDO: Number(row.dataValues.quantity_saldo)
-    }));
-    await generateExcelReport(res, data, "Kardex Fisico", "kardex-fisico.xlsx", ["ENTRADA","SALIDA","SALDO"]);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ ok:false, error:"Error generando Excel" });
-  }
+// 🔹 Generate PDF Details Reports
+const generatePdfDetailsReports = async (req = request, res = response) => {
+  // Aquí implementa la lógica específica de detalle
+};
+
+// 🔹 Generate Excel Details Reports
+const generateExcelDetailsReports = async (req = request, res = response) => {
+  // Aquí implementa la lógica específica de detalle
+};
+
+// 🔹 Print Input Voucher
+const printInputVoucher = async (req = request, res = response) => {
+  // Aquí implementa la lógica específica de impresión de voucher
+};
+
+// 🔹 Generate PDF Details CPP Reports
+const generatePdfDetailsCPPReports = async (req = request, res = response) => {
+  // Aquí implementa la lógica específica de CPP
 };
 
 // -------------------- EXPORTS --------------------
 module.exports = {
   generatePdfReports,
-  generatePdfReportsKardexFisico,
   generateExcelReports,
-  generateExcelReportsKardexFisico,
-  returnDataKardex,
-  returnDataInputKardexFisico
+  generatePdfDetailsReports,
+  generateExcelDetailsReports,
+  printInputVoucher,
+  generatePdfDetailsCPPReports
 };
