@@ -375,6 +375,69 @@ const uploadFileProduct = async (req, res) => {
     }
   };
 
+  const getAllProducts = async (req = request, res = response) => {
+    try {
+        const {
+            query, 
+            page, 
+            limit, 
+            type, 
+            status,
+            stock,
+            id_sucursal,
+            id_storage,
+            field_sort,
+            order,
+            withStock,
+            category_ids // 🆕 Agregar este parámetro
+        } = req.query;
+        
+        console.log('🔍 Backend productos recibió category_ids:', category_ids);
+        
+        // 🆕 Procesar category_ids
+        let categoryIdsArray = null;
+        if (category_ids) {
+            categoryIdsArray = category_ids.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+            console.log('📋 Categorías procesadas:', categoryIdsArray);
+        }
+        
+        const optionsDb = {
+            order: [[field_sort, order]],
+            where: {
+                [Op.and]: [
+                    status !== undefined ? { status } : {},
+                    stock ? { stock: { [Op.gt]: 0 } } : {},
+                    id_sucursal ? { id_sucursal } : {},
+                    // 🆕 Agregar filtro de categorías
+                    categoryIdsArray && categoryIdsArray.length > 0 
+                        ? { id_category: { [Op.in]: categoryIdsArray } }
+                        : {},
+                ]
+            },
+            include: [
+                { association: 'category', attributes: ['name'] },
+                { association: 'unit', attributes: ['name', 'siglas'] },
+                // ... otros includes
+            ]
+        };
+        
+        let products = await paginate(Product, page, limit, type, query, optionsDb);
+        
+        console.log('✓ Productos retornados:', products.data.length);
+        
+        return res.status(200).json({
+            ok: true,
+            products
+        });
+    } catch (error) {
+        console.log('❌ Error en getAllProducts:', error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }],
+        });
+    }
+}
+
 module.exports = {
     getProductPaginate,
     newProduct,
