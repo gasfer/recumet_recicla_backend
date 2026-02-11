@@ -1,5 +1,6 @@
 const { response, request } = require('express');
 const { Category, sequelize } = require('../database/config');
+const { Op } = require('sequelize');
 const paginate = require('../helpers/paginate');
 
 const getCategoryPaginate = async (req = request, res = response) => {
@@ -87,9 +88,37 @@ const activeInactiveCategory = async (req = request, res = response) => {
     }
 }
 
+const getCategoriesForSelect = async (req = request, res = response) => {
+    try {
+        const { category_type } = req.query;
+        const where = { status: true };
+
+        if (category_type) {
+            where.type = category_type;
+        }
+
+        const categories = await Category.findAll({
+            where,
+            attributes: ['id', 'name']
+        });
+
+        return res.status(200).json({
+            ok: true,
+            categories
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
+        });
+    }
+}
+
 module.exports = {
     getCategoryPaginate,
     newCategory,
     updateCategory,
-    activeInactiveCategory
+    activeInactiveCategory,
+    getCategoriesForSelect
 };

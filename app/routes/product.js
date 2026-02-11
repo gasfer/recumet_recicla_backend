@@ -2,7 +2,7 @@ const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const expressfileUpload = require('express-fileupload');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getProductPaginate, newProduct, updateProduct, activeInactiveProduct, newPriceProduct, deletePriceProduct, uploadFileProduct, getOneProductSucursal, productAssignatSucursals, getProductCostsSucursal, updateProductsCostos, getOneProduct } = require('../controllers/product.controller');
+const { getProductPaginate, newProduct, updateProduct, activeInactiveProduct, newPriceProduct, deletePriceProduct, uploadFileProduct, getOneProductSucursal, productAssignatSucursals, getProductCostsSucursal, updateProductsCostos, getOneProduct, getProductsForSelect } = require('../controllers/product.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete, getValidateCreatePrice, validateDeletePrice } = require('../middlewares/validators/product');
 const { filesExist, validateUploadIdProduct, filesValidateSize } = require('../middlewares/validators/validar-files');
 const { validatedResponse } = require('../middlewares/validated-response');
@@ -31,6 +31,43 @@ router.use(expressfileUpload());
 router.get('/', [
     validarJWT,
 ], getProductPaginate);
+
+/**
+ * @swagger
+ * /product/select:
+ *   get:
+ *     summary: Obtener productos activos para select
+ *     tags: [Products]
+ *     parameters:
+ *       - in: query
+ *         name: query
+ *         schema:
+ *           type: string
+ *         description: Nombre o código del producto
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Límite de resultados
+ *       - in: query
+ *         name: category_type
+ *         schema:
+ *           type: string
+ *           enum: [RAW_MATERIAL, FINISHED_PRODUCT, RESALE_ITEM]
+ *         description: Tipo de categoría para filtrar
+ *       - in: query
+ *         name: category_ids
+ *         schema:
+ *           type: string
+ *         description: IDs de categorías separados por coma (ej. 1,2,3)
+ *     responses:
+ *       200:
+ *         description: Lista de productos para select
+ */
+router.get('/select', [
+    validarJWT,
+], getProductsForSelect);
 
 /**
  * @swagger

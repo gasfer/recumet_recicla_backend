@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getCategoryPaginate, newCategory, updateCategory, activeInactiveCategory } = require('../controllers/category.controller');
+const { getCategoryPaginate, newCategory, updateCategory, activeInactiveCategory, getCategoriesForSelect } = require('../controllers/category.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete } = require('../middlewares/validators/category');
 
 const router = Router();
@@ -64,6 +64,27 @@ const router = Router();
 router.get('/', [
     validarJWT,
 ], getCategoryPaginate);
+
+/**
+ * @swagger
+ * /category/select:
+ *   get:
+ *     summary: Obtener categorías activas para select
+ *     tags: [Categories]
+ *     parameters:
+ *       - in: query
+ *         name: category_type
+ *         schema:
+ *           type: string
+ *           enum: [RAW_MATERIAL, FINISHED_PRODUCT, RESALE_ITEM]
+ *         description: Tipo de categoría para filtrar (opcional)
+ *     responses:
+ *       200:
+ *         description: Lista de categorías para select
+ */
+router.get('/select', [
+    validarJWT,
+], getCategoriesForSelect);
 
 /**
  * @swagger
