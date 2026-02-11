@@ -6,38 +6,125 @@ const { generatePdfReports, generateExcelReports, generatePdfReportsKardexFisico
 const router = Router();
 
 
-router.get('/',[
-    validarJWT,
-],getKardexPaginate );
+/**
+ * @swagger
+ * tags:
+ *   name: Kardex
+ *   description: Gestión de kardex de inventario
+ */
 
-router.get('/fisico',[
+/**
+ * @swagger
+ * /kardex:
+ *   get:
+ *     summary: Obtener kardex paginado
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Lista de movimientos de kardex
+ */
+router.get('/', [
     validarJWT,
-],getKardexFisicoPaginate );
+], getKardexPaginate);
+
+/**
+ * @swagger
+ * /kardex/fisico:
+ *   get:
+ *     summary: Obtener kardex físico paginado
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Lista de movimientos físicos
+ */
+router.get('/fisico', [
+    validarJWT,
+], getKardexFisicoPaginate);
 
 //** REPORTS */
-router.get('/pdf',[
+/**
+ * @swagger
+ * /kardex/pdf:
+ *   get:
+ *     summary: Generar reporte PDF de kardex
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF generado
+ */
+router.get('/pdf', [
     validarJWT,
-], generatePdfReports );
+], generatePdfReports);
 
-router.get('/pdf/fisico',[
+/**
+ * @swagger
+ * /kardex/pdf/fisico:
+ *   get:
+ *     summary: Generar reporte PDF de kardex físico
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF de kardex físico generado
+ */
+router.get('/pdf/fisico', [
     validarJWT,
-], generatePdfReportsKardexFisico );
+], generatePdfReportsKardexFisico);
 
-router.get('/pdf/existencia',[
+/**
+ * @swagger
+ * /kardex/pdf/existencia:
+ *   get:
+ *     summary: Generar reporte PDF de existencias
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF de existencias generado
+ */
+router.get('/pdf/existencia', [
     validarJWT,
-], generatePdfReportsExistencia );
+], generatePdfReportsExistencia);
 
-router.get('/excel',[
+/**
+ * @swagger
+ * /kardex/excel:
+ *   get:
+ *     summary: Generar reporte Excel de kardex
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel generado
+ */
+router.get('/excel', [
     validarJWT,
-], generateExcelReports );
+], generateExcelReports);
 
-router.get('/excel/fisico',[
+/**
+ * @swagger
+ * /kardex/excel/fisico:
+ *   get:
+ *     summary: Generar reporte Excel de kardex físico
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel de kardex físico generado
+ */
+router.get('/excel/fisico', [
     validarJWT,
-], generateExcelReportsKardexFisico );
+], generateExcelReportsKardexFisico);
 
-router.get('/excel/existencia',[
+/**
+ * @swagger
+ * /kardex/excel/existencia:
+ *   get:
+ *     summary: Generar reporte Excel de existencias
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel de existencias generado
+ */
+router.get('/excel/existencia', [
     validarJWT,
-], generateExcelReportsExistencia );
+], generateExcelReportsExistencia);
 
 
 module.exports = router;
