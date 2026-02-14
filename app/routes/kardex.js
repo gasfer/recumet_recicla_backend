@@ -33,6 +33,85 @@ router.get('/', [
  *   get:
  *     summary: Obtener kardex físico paginado
  *     tags: [Kardex]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *         description: Número de página
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *         description: Cantidad de items por página
+ *       - in: query
+ *         name: category_ids
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: integer
+ *         style: form
+ *         explode: true
+ *         description: Lista de IDs de categorías (permite filtro múltiple)
+ *       - in: query
+ *         name: category_types
+ *         schema:
+ *           type: string
+ *         description: Tipos de categoría (ej. RAW_MATERIAL, FINISHED_PRODUCT)
+ *       - in: query
+ *         name: field_sort
+ *         schema:
+ *           type: string
+ *         description: Campo por el cual ordenar (ej. product.cod)
+ *       - in: query
+ *         name: order
+ *         schema:
+ *           type: string
+ *           enum: [ASC, DESC]
+ *         description: Orden ascendente o descendente
+ *       - in: query
+ *         name: type_kardex
+ *         schema:
+ *           type: string
+ *         description: Tipo de kardex
+ *       - in: query
+ *         name: id_sucursal
+ *         schema:
+ *           type: integer
+ *         description: ID de la sucursal
+ *       - in: query
+ *         name: id_storage
+ *         schema:
+ *           type: integer
+ *         description: ID del almacén
+ *       - in: query
+ *         name: id_provider
+ *         schema:
+ *           type: integer
+ *         description: ID del proveedor
+ *       - in: query
+ *         name: id_product
+ *         schema:
+ *           type: integer
+ *         description: ID del producto
+ *       - in: query
+ *         name: filterBy
+ *         schema:
+ *           type: string
+ *           enum: [RANGE, DAY, MONTH, YEAR]
+ *         description: Tipo de filtro de fecha
+ *       - in: query
+ *         name: date1
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha inicio (DD-MM-YYYY)
+ *       - in: query
+ *         name: date2
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha fin (DD-MM-YYYY)
  *     responses:
  *       200:
  *         description: Lista de movimientos físicos
@@ -62,6 +141,39 @@ router.get('/pdf', [
  *   get:
  *     summary: Generar reporte PDF de kardex físico
  *     tags: [Kardex]
+ *     parameters:
+ *       - in: query
+ *         name: filterBy
+ *         schema:
+ *           type: string
+ *           enum: [RANGE, DAY, MONTH, YEAR]
+ *         description: Tipo de filtro de fecha
+ *       - in: query
+ *         name: date1
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha inicio (DD-MM-YYYY)
+ *       - in: query
+ *         name: date2
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: Fecha fin (DD-MM-YYYY)
+ *       - in: query
+ *         name: category_ids
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: integer
+ *         style: form
+ *         explode: true
+ *         description: Lista de IDs de categorías
+ *       - in: query
+ *         name: category_types
+ *         schema:
+ *           type: string
+ *         description: Tipos de categoría
  *     responses:
  *       200:
  *         description: Reporte PDF de kardex físico generado
