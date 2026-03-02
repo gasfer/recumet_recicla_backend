@@ -932,6 +932,8 @@ const returnDataInputKardexFisico = async ({
     date2,
     orderNew = ["id_product", "ASC"],
     include_zero = true,
+    category_ids,
+    category_types
 }) => {
     const whereDate = whereDateForType(
         filterBy,
@@ -939,6 +941,36 @@ const returnDataInputKardexFisico = async ({
         date2,
         '"ViewKardex"."date"'
     );
+
+    let whereProduct = {};
+    if (category_ids) {
+        let ids = category_ids;
+        if (!Array.isArray(category_ids)) {
+            ids = [category_ids];
+        }
+        if (ids.length > 0) {
+            whereProduct = {
+                id_category: {
+                    [Op.in]: ids
+                }
+            }
+        }
+    }
+
+    let whereCategory = {};
+    if (category_types) {
+        let types = category_types;
+        if (!Array.isArray(category_types)) {
+            types = [category_types];
+        }
+        if (types.length > 0) {
+            whereCategory = {
+                type: {
+                    [Op.in]: types
+                }
+            }
+        }
+    }
 
     return ViewKardex.findAll({
         order: [[...orderNew]],
@@ -963,7 +995,7 @@ const returnDataInputKardexFisico = async ({
             ].filter(Boolean),
         },
         include: [
-            { association: "product", include: ["unit", "category"] },
+            { association: "product", where: whereProduct, include: ["unit", { association: "category", where: whereCategory }] },
             { association: "storage", attributes: ["name"] },
             { association: "sucursal", attributes: ["name"] },
         ],

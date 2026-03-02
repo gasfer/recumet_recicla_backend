@@ -5,9 +5,26 @@ const { getAllHistory } = require('../controllers/history.controller');
 const router = Router();
 
 
-router.get('/',[
+/**
+ * @swagger
+ * tags:
+ *   name: History
+ *   description: Historial de acciones
+ */
+
+/**
+ * @swagger
+ * /history:
+ *   get:
+ *     summary: Obtener historial completo
+ *     tags: [History]
+ *     responses:
+ *       200:
+ *         description: Lista de historial
+ */
+router.get('/', [
     validarJWT,
-], getAllHistory );
+], getAllHistory);
 
 
 module.exports = router;

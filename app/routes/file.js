@@ -6,9 +6,39 @@ const { showFile } = require('../controllers/showfiles.controller');
 const router = Router();
 
 
-router.get('/:type/:name',[
+/**
+ * @swagger
+ * tags:
+ *   name: Files
+ *   description: Gestión de archivos e imágenes
+ */
+
+/**
+ * @swagger
+ * /uploads/{type}/{name}:
+ *   get:
+ *     summary: Obtener archivo/imagen
+ *     tags: [Files]
+ *     parameters:
+ *       - in: path
+ *         name: type
+ *         required: true
+ *         description: Tipo de archivo (users, products, company)
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: name
+ *         required: true
+ *         description: Nombre del archivo
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Archivo obtenido
+ */
+router.get('/:type/:name', [
     validateShowFile,
     validatedResponse
-],showFile);
+], showFile);
 
 module.exports = router;

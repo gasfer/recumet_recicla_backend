@@ -8,46 +8,161 @@ const { printClassifiedVoucher, generatePdfReports, generatePdfDetailsReports, g
 const router = Router();
 
 
-router.get('/',[
-    validarJWT,
-],getClassifiedsPaginate );
+/**
+ * @swagger
+ * tags:
+ *   name: Classifieds
+ *   description: Gestión de clasificados
+ */
 
-router.get('/find/:id_classified',[
+/**
+ * @swagger
+ * /classified:
+ *   get:
+ *     summary: Obtener clasificados paginados
+ *     tags: [Classifieds]
+ *     responses:
+ *       200:
+ *         description: Lista de clasificados
+ */
+router.get('/', [
     validarJWT,
-],getClassifiedFindOne );
+], getClassifiedsPaginate);
 
+/**
+ * @swagger
+ * /classified/find/{id_classified}:
+ *   get:
+ *     summary: Obtener un clasificado por ID
+ *     tags: [Classifieds]
+ *     parameters:
+ *       - in: path
+ *         name: id_classified
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Detalle del clasificado
+ */
+router.get('/find/:id_classified', [
+    validarJWT,
+], getClassifiedFindOne);
+
+/**
+ * @swagger
+ * /classified:
+ *   post:
+ *     summary: Crear nuevo clasificado
+ *     tags: [Classifieds]
+ *     responses:
+ *       201:
+ *         description: Clasificado creado
+ */
 router.post('/', [
     validarJWT,
     toUpperCaseConvert,
     getValidateCreate
-],newClassified );
+], newClassified);
 
+/**
+ * @swagger
+ * /classified/destroy/{id_classified}:
+ *   delete:
+ *     summary: Eliminar clasificado
+ *     tags: [Classifieds]
+ *     parameters:
+ *       - in: path
+ *         name: id_classified
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Clasificado eliminado
+ */
 router.delete('/destroy/:id_classified', [
     validarJWT,
     validateIdClassified
-],destroyClassified );
+], destroyClassified);
 
 //** REPORTS */
-router.get('/pdf/voucher/:id_classified',[
+/**
+ * @swagger
+ * /classified/pdf/voucher/{id_classified}:
+ *   get:
+ *     summary: Imprimir voucher de clasificado
+ *     tags: [Classifieds]
+ *     parameters:
+ *       - in: path
+ *         name: id_classified
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Voucher PDF generado
+ */
+router.get('/pdf/voucher/:id_classified', [
     validarJWT,
     validateIdClassified,
-], printClassifiedVoucher );
+], printClassifiedVoucher);
 
-router.get('/pdf',[
+/**
+ * @swagger
+ * /classified/pdf:
+ *   get:
+ *     summary: Generar reporte PDF de clasificados
+ *     tags: [Classifieds]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF generado
+ */
+router.get('/pdf', [
     validarJWT,
-], generatePdfReports );
+], generatePdfReports);
 
-router.get('/pdf/details',[
+/**
+ * @swagger
+ * /classified/pdf/details:
+ *   get:
+ *     summary: Generar reporte PDF detallado de clasificados
+ *     tags: [Classifieds]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF detallado generado
+ */
+router.get('/pdf/details', [
     validarJWT,
-], generatePdfDetailsReports );
+], generatePdfDetailsReports);
 
-router.get('/excel',[
+/**
+ * @swagger
+ * /classified/excel:
+ *   get:
+ *     summary: Generar reporte Excel de clasificados
+ *     tags: [Classifieds]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel generado
+ */
+router.get('/excel', [
     validarJWT,
-], generateExcelReports );
+], generateExcelReports);
 
-router.get('/excel/details',[
+/**
+ * @swagger
+ * /classified/excel/details:
+ *   get:
+ *     summary: Generar reporte Excel detallado de clasificados
+ *     tags: [Classifieds]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel detallado generado
+ */
+router.get('/excel/details', [
     validarJWT,
-], generateExcelDetailsReports );
+], generateExcelDetailsReports);
 
 
 module.exports = router;

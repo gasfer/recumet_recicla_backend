@@ -8,52 +8,183 @@ const { printOutputVoucher, generatePdfReports, generateExcelReports, generatePd
 const router = Router();
 
 
-router.get('/',[
-    validarJWT,
-],getOutputsPaginate );
+/**
+ * @swagger
+ * tags:
+ *   name: Outputs
+ *   description: Gestión de salidas de material
+ */
 
-router.get('/find/:id_output',[
+/**
+ * @swagger
+ * /output:
+ *   get:
+ *     summary: Obtener salidas paginadas
+ *     tags: [Outputs]
+ *     responses:
+ *       200:
+ *         description: Lista de salidas
+ */
+router.get('/', [
     validarJWT,
-],getOutputFindOne );
+], getOutputsPaginate);
 
+/**
+ * @swagger
+ * /output/find/{id_output}:
+ *   get:
+ *     summary: Obtener salida por ID
+ *     tags: [Outputs]
+ *     parameters:
+ *       - in: path
+ *         name: id_output
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Detalle de salida
+ */
+router.get('/find/:id_output', [
+    validarJWT,
+], getOutputFindOne);
+
+/**
+ * @swagger
+ * /output:
+ *   post:
+ *     summary: Registrar nueva salida
+ *     tags: [Outputs]
+ *     responses:
+ *       201:
+ *         description: Salida registrada
+ */
 router.post('/', [
     validarJWT,
     toUpperCaseConvert,
     getValidateCreate
-],newOutput );
+], newOutput);
 
+/**
+ * @swagger
+ * /output/{id_output}:
+ *   put:
+ *     summary: Actualizar salida
+ *     tags: [Outputs]
+ *     parameters:
+ *       - in: path
+ *         name: id_output
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Salida actualizada
+ */
 router.put('/:id_output', [
     validarJWT,
     toUpperCaseConvert,
     getValidateUpdate,
-],updateOutput );
+], updateOutput);
 
-router.delete('/anular/:id_output',[
+/**
+ * @swagger
+ * /output/anular/{id_output}:
+ *   delete:
+ *     summary: Anular salida
+ *     tags: [Outputs]
+ *     parameters:
+ *       - in: path
+ *         name: id_output
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Salida anulada
+ */
+router.delete('/anular/:id_output', [
     validarJWT,
     validateIdOutput
-],anularOutput)
+], anularOutput)
 
 //** REPORTS */
-router.get('/pdf/voucher/:id_output',[
+/**
+ * @swagger
+ * /output/pdf/voucher/{id_output}:
+ *   get:
+ *     summary: Imprimir voucher de salida
+ *     tags: [Outputs]
+ *     parameters:
+ *       - in: path
+ *         name: id_output
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Voucher PDF generado
+ */
+router.get('/pdf/voucher/:id_output', [
     validarJWT,
     validateIdOutput,
-], printOutputVoucher );
+], printOutputVoucher);
 
-router.get('/pdf',[
+/**
+ * @swagger
+ * /output/pdf:
+ *   get:
+ *     summary: Generar reporte PDF de salidas
+ *     tags: [Outputs]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF generado
+ */
+router.get('/pdf', [
     validarJWT,
-], generatePdfReports );
+], generatePdfReports);
 
-router.get('/pdf/details',[
+/**
+ * @swagger
+ * /output/pdf/details:
+ *   get:
+ *     summary: Generar reporte PDF detallado de salidas
+ *     tags: [Outputs]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF detallado generado
+ */
+router.get('/pdf/details', [
     validarJWT,
-], generatePdfDetailsReports );
+], generatePdfDetailsReports);
 
-router.get('/excel',[
+/**
+ * @swagger
+ * /output/excel:
+ *   get:
+ *     summary: Generar reporte Excel de salidas
+ *     tags: [Outputs]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel generado
+ */
+router.get('/excel', [
     validarJWT,
-], generateExcelReports );
+], generateExcelReports);
 
-router.get('/excel/details',[
+/**
+ * @swagger
+ * /output/excel/details:
+ *   get:
+ *     summary: Generar reporte Excel detallado de salidas
+ *     tags: [Outputs]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel detallado generado
+ */
+router.get('/excel/details', [
     validarJWT,
-], generateExcelDetailsReports );
+], generateExcelDetailsReports);
 
 
 module.exports = router;

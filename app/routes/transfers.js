@@ -8,43 +8,148 @@ const { printTransferVoucher, generatePdfReports, generateExcelReports } = requi
 const router = Router();
 
 
-router.get('/',[
-    validarJWT,
-],getTransfersPaginate );
+/**
+ * @swagger
+ * tags:
+ *   name: Transfers
+ *   description: Gestión de transferencias
+ */
 
-router.get('/find/:id_transfer',[
+/**
+ * @swagger
+ * /transfers:
+ *   get:
+ *     summary: Obtener transferencias paginadas
+ *     tags: [Transfers]
+ *     responses:
+ *       200:
+ *         description: Lista de transferencias
+ */
+router.get('/', [
     validarJWT,
-],getTransferFindOne );
+], getTransfersPaginate);
 
+/**
+ * @swagger
+ * /transfers/find/{id_transfer}:
+ *   get:
+ *     summary: Obtener transferencia por ID
+ *     tags: [Transfers]
+ *     parameters:
+ *       - in: path
+ *         name: id_transfer
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Detalle de transferencia
+ */
+router.get('/find/:id_transfer', [
+    validarJWT,
+], getTransferFindOne);
+
+/**
+ * @swagger
+ * /transfers:
+ *   post:
+ *     summary: Crear nueva transferencia
+ *     tags: [Transfers]
+ *     responses:
+ *       201:
+ *         description: Transferencia creada
+ */
 router.post('/', [
     validarJWT,
     toUpperCaseConvert,
     getValidateCreate
-],newTransfer );
+], newTransfer);
 
+/**
+ * @swagger
+ * /transfers/received:
+ *   put:
+ *     summary: Recibir transferencia
+ *     tags: [Transfers]
+ *     responses:
+ *       200:
+ *         description: Transferencia recibida
+ */
 router.put('/received', [
     validarJWT,
     toUpperCaseConvert,
     getValidateReceived
-],receivedTransfer );
+], receivedTransfer);
 
-router.delete('/destroy/:id_transfer',[
+/**
+ * @swagger
+ * /transfers/destroy/{id_transfer}:
+ *   delete:
+ *     summary: Eliminar transferencia
+ *     tags: [Transfers]
+ *     parameters:
+ *       - in: path
+ *         name: id_transfer
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Transferencia eliminada
+ */
+router.delete('/destroy/:id_transfer', [
     validarJWT,
     validateIdTransferPending
-],deleteTransfer)
+], deleteTransfer)
 
 //** REPORTS */
-router.get('/pdf/voucher/:id_transfer',[
+/**
+ * @swagger
+ * /transfers/pdf/voucher/{id_transfer}:
+ *   get:
+ *     summary: Imprimir voucher de transferencia
+ *     tags: [Transfers]
+ *     parameters:
+ *       - in: path
+ *         name: id_transfer
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Voucher PDF generado
+ */
+router.get('/pdf/voucher/:id_transfer', [
     validarJWT,
     validateIdTransfer,
-], printTransferVoucher );
+], printTransferVoucher);
 
-router.get('/pdf',[
+/**
+ * @swagger
+ * /transfers/pdf:
+ *   get:
+ *     summary: Generar reporte PDF de transferencias
+ *     tags: [Transfers]
+ *     responses:
+ *       200:
+ *         description: Reporte PDF generado
+ */
+router.get('/pdf', [
     validarJWT,
-], generatePdfReports );
+], generatePdfReports);
 
-router.get('/excel',[
+/**
+ * @swagger
+ * /transfers/excel:
+ *   get:
+ *     summary: Generar reporte Excel de transferencias
+ *     tags: [Transfers]
+ *     responses:
+ *       200:
+ *         description: Reporte Excel generado
+ */
+router.get('/excel', [
     validarJWT,
-], generateExcelReports );
+], generateExcelReports);
 
 module.exports = router;

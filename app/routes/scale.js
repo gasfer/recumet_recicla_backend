@@ -7,26 +7,85 @@ const { getValidateCreate, getValidateUpdate, validateDelete } = require('../mid
 const router = Router();
 
 
-router.get('/',[
-    validarJWT,
-],getScalePaginate );
+/**
+ * @swagger
+ * tags:
+ *   name: Scales
+ *   description: Gestión de balanzas
+ */
 
+/**
+ * @swagger
+ * /scale:
+ *   get:
+ *     summary: Obtener balanzas paginadas
+ *     tags: [Scales]
+ *     responses:
+ *       200:
+ *         description: Lista de balanzas
+ */
+router.get('/', [
+    validarJWT,
+], getScalePaginate);
+
+/**
+ * @swagger
+ * /scale:
+ *   post:
+ *     summary: Crear nueva balanza
+ *     tags: [Scales]
+ *     responses:
+ *       201:
+ *         description: Balanza creada
+ */
 router.post('/', [
     validarJWT,
     toUpperCaseConvert,
     getValidateCreate
-],newScale );
+], newScale);
 
+/**
+ * @swagger
+ * /scale/{id}:
+ *   put:
+ *     summary: Actualizar balanza
+ *     tags: [Scales]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Balanza actualizada
+ */
 router.put('/:id', [
     validarJWT,
     toUpperCaseConvert,
     getValidateUpdate
-],updateScale );
+], updateScale);
 
+/**
+ * @swagger
+ * /scale/destroyAndActive/{id}:
+ *   put:
+ *     summary: Activar/Desactivar balanza
+ *     tags: [Scales]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Estado de la balanza actualizado
+ */
 router.put('/destroyAndActive/:id', [
     validarJWT,
     validateDelete
-],activeInactiveScale );
+], activeInactiveScale);
 
 
 module.exports = router;

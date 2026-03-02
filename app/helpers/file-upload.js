@@ -2,7 +2,7 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require("fs");
 
-const fileMoveAndRemoveOld = (file, fileOldName, idFrom, directory = 'imgs', extensionsAccept = ['png', 'PNG', 'jpg', 'JPG', 'jpeg', 'JPEG']) => {
+const fileMoveAndRemoveOld = (file, fileOldName, idFrom, directory = 'imgs', extensionsAccept = ['png', 'PNG', 'jpg', 'JPG', 'jpeg', 'JPEG', 'webp', 'WEBP']) => {
     return new Promise((resolve, reject) => {
         const nameSplit = file.name.split('.');
         const ext = nameSplit[nameSplit.length - 1];
