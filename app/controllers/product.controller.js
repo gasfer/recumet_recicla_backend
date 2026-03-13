@@ -14,6 +14,9 @@ const { fileMoveAndRemoveOld, deleteFile } = require("../helpers/file-upload");
 const path = require("path");
 const { Op } = require("sequelize");
 
+const ExcelJS = require("exceljs");
+const PDFDocument = require("pdfkit");
+
 const getProductPaginate = async (req = request, res = response) => {
   try {
     let {
@@ -28,13 +31,17 @@ const getProductPaginate = async (req = request, res = response) => {
       id_storage,
       orderNew,
     } = req.query;
+
     const user = req.userAuth;
     withStock = withStock === "true" ? true : false;
+
     let idsProductBySucursal = await ProductSucursals.findAll({
       where: { status: true, id_sucursal },
     });
     idsProductBySucursal = idsProductBySucursal.map((resp) => resp.id_product);
+
     let isSearchPos = type === "pos" ? true : false;
+
     let optionsDb = {
       order: [orderNew],
       where: {
@@ -66,6 +73,17 @@ const getProductPaginate = async (req = request, res = response) => {
         },
       ],
     };
+
+    // ✅ Filtro múltiple por categoría — viene como '1,2,3'
+    if (type === 'id_category' && query) {
+      const ids = query.split(',').map(Number).filter(Boolean);
+      if (ids.length > 0) {
+        optionsDb.where.id_category = { [Op.in]: ids };
+        type  = ''; // ✅ evita que paginate lo procese
+        query = '';
+      }
+    }
+
     /* Search product, for POS */
     if (isSearchPos) type = null;
     if (isSearchPos)
@@ -74,8 +92,10 @@ const getProductPaginate = async (req = request, res = response) => {
         { name: { [Op.iLike]: `%${query}%` } },
         { description: { [Op.iLike]: `%${query}%` } },
       ];
+
     let products = await paginate(Product, page, limit, type, query, optionsDb);
-    // //*filterStockByUser by sucursal assignate*/
+
+    // filtro stock por sucursal asignada al usuario
     if (user.role != "ADMINISTRADOR") {
       products.data = products.data.map((product) => {
         const new_stock = product.stocks.filter((stock) =>
@@ -87,7 +107,8 @@ const getProductPaginate = async (req = request, res = response) => {
         return product;
       });
     }
-    // //*Suma stock by sucursal and storage*/
+
+    // suma stock por sucursal y almacén
     let stocksNew;
     if (stock && id_sucursal && id_storage) {
       products.data = products.data.map((product) => {
@@ -95,10 +116,9 @@ const getProductPaginate = async (req = request, res = response) => {
           (stock) =>
             stock.sucursal.id == id_sucursal && stock.storage.id == id_storage,
         );
-        product.dataValues.stocks = stocksNew;
+        product.dataValues.stocks      = stocksNew;
         product.dataValues.total_stock = stocksNew.reduce(
-          (sum, product) => Number(sum) + Number(product.stock),
-          0,
+          (sum, product) => Number(sum) + Number(product.stock), 0,
         );
         product.dataValues.price_select = product?.prices[0]?.price ?? 0;
         return product;
@@ -106,10 +126,9 @@ const getProductPaginate = async (req = request, res = response) => {
     } else {
       products.data.map((product) => (product.dataValues.total_stock = 0));
     }
-    return res.status(200).json({
-      ok: true,
-      products,
-    });
+
+    return res.status(200).json({ ok: true, products });
+
   } catch (error) {
     console.log(error);
     return res.status(500).json({
@@ -159,10 +178,12 @@ const getProductCostsSucursal = async (req = request, res = response) => {
   try {
     let { query, page, limit, type, id_sucursal, id_category, orderNew } =
       req.query;
+
     let idsProductBySucursal = await ProductSucursals.findAll({
       where: { status: true, id_sucursal },
     });
     idsProductBySucursal = idsProductBySucursal.map((resp) => resp.id_product);
+
     let optionsDb = {
       order: [orderNew],
       attributes: ["id", "cod", "name", "description", "costo"],
@@ -177,12 +198,17 @@ const getProductCostsSucursal = async (req = request, res = response) => {
         {
           association: "productCosts",
           required: false,
-          where: { status: true },
+          where: {
+            status: true,
+            id_sucursal, // ✅ filtra solo los costos de esta sucursal
+          },
           attributes: ["cost_two", "cost_tree"],
         },
       ],
     };
+
     let products = await paginate(Product, page, limit, type, query, optionsDb);
+
     products.data = products.data.map((product) => {
       if (product.dataValues.productCosts) {
         product.dataValues.productCosts = {
@@ -198,10 +224,8 @@ const getProductCostsSucursal = async (req = request, res = response) => {
       }
       return product;
     });
-    return res.status(200).json({
-      ok: true,
-      products,
-    });
+
+    return res.status(200).json({ ok: true, products });
   } catch (error) {
     console.log(error);
     return res.status(500).json({
@@ -519,6 +543,189 @@ const getProductsForSelect = async (req = request, res = response) => {
   }
 };
 
+/***
+ * reporte productos excel y pdf
+ * */
+const getReportProductCostExcel = async (req = request, res = response) => {
+  try {
+    let { id_category, id_sucursal, field_sort = 'id', order = 'DESC' } = req.query;
+
+    // ✅ Múltiples categorías — viene como '1,2,3'
+    const categoryFilter = id_category
+      ? { id_category: { [Op.in]: id_category.split(',').map(Number).filter(Boolean) } }
+      : {};
+
+    let idsProductBySucursal = await ProductSucursals.findAll({
+      where: { status: true, id_sucursal },
+    });
+    idsProductBySucursal = idsProductBySucursal.map((resp) => resp.id_product);
+
+    const products = await Product.findAll({
+      attributes: ['id', 'cod', 'name', 'description', 'costo'],
+      where: {
+        [Op.and]: [
+          categoryFilter, // ✅
+          { status: true },
+          { id: { [Op.in]: idsProductBySucursal } },
+        ],
+      },
+      include: [
+        {
+          association: 'productCosts',
+          required: false,
+          where: { status: true },
+          attributes: ['id', 'cost_two', 'cost_tree', 'id_sucursal'],
+        },
+      ],
+      order: [[field_sort, order]],
+    });
+
+    // ✅ Deduplicar por id_product + tomar solo el costo de esta sucursal
+    const seen = new Set();
+    const data = products
+      .filter(p => {
+        if (seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+      })
+      .map((p) => {
+        const allCosts = Array.isArray(p.productCosts) ? p.productCosts : (p.productCosts ? [p.productCosts] : []);
+        const cost = allCosts.find(c => String(c.id_sucursal) === String(id_sucursal));
+        return {
+          cod:         p.cod,
+          name:        p.name,
+          description: p.description ?? '',
+          cost:        p.costo        ?? 0,
+          cost_two:    cost?.cost_two  ?? 0,
+          cost_tree:   cost?.cost_tree ?? 0,
+        };
+      });
+
+    const workbook  = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Costos');
+    worksheet.columns = [
+      { header: 'COD',         key: 'cod',        width: 12 },
+      { header: 'NOMBRE',      key: 'name',        width: 30 },
+      { header: 'DESCRIPCION', key: 'description', width: 35 },
+      { header: 'EN RECUMET',  key: 'cost',        width: 15 },
+      { header: 'CON RECOJO',  key: 'cost_two',    width: 15 },
+      { header: 'OTRO',        key: 'cost_tree',   width: 15 },
+    ];
+    data.forEach(row => worksheet.addRow(row));
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=costos.xlsx');
+    await workbook.xlsx.write(res);
+    res.end();
+
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      ok: false,
+      errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }],
+    });
+  }
+};
+
+const getReportProductCostPdf = async (req = request, res = response) => {
+  try {
+    let { id_category, id_sucursal, field_sort = 'id', order = 'DESC' } = req.query;
+
+    // ✅ Múltiples categorías
+    const categoryFilter = id_category
+      ? { id_category: { [Op.in]: id_category.split(',').map(Number).filter(Boolean) } }
+      : {};
+
+    let idsProductBySucursal = await ProductSucursals.findAll({
+      where: { status: true, id_sucursal },
+    });
+    idsProductBySucursal = idsProductBySucursal.map((resp) => resp.id_product);
+
+    const products = await Product.findAll({
+      attributes: ['id', 'cod', 'name', 'description', 'costo'],
+      where: {
+        [Op.and]: [
+          categoryFilter, // ✅
+          { status: true },
+          { id: { [Op.in]: idsProductBySucursal } },
+        ],
+      },
+      include: [
+        {
+          association: 'productCosts',
+          required: false,
+          where: { status: true },
+          attributes: ['id', 'cost_two', 'cost_tree', 'id_sucursal'],
+        },
+      ],
+      order: [[field_sort, order]],
+    });
+
+    // ✅ Deduplicar + filtrar por sucursal
+    const seen = new Set();
+    const data = products
+      .filter(p => {
+        if (seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+      })
+      .map((p) => {
+        const allCosts = Array.isArray(p.productCosts) ? p.productCosts : (p.productCosts ? [p.productCosts] : []);
+        const cost = allCosts.find(c => String(c.id_sucursal) === String(id_sucursal));
+        return {
+          cod:         p.cod,
+          name:        p.name,
+          description: p.description ?? '',
+          cost:        p.costo        ?? '0',
+          cost_two:    cost?.cost_two  ?? '0',
+          cost_tree:   cost?.cost_tree ?? '0',
+        };
+      });
+
+    const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=costos.pdf');
+    doc.pipe(res);
+
+    doc.fontSize(14).text('REPORTE DE COSTOS', { align: 'center' });
+    doc.moveDown();
+
+    const headers   = ['COD', 'NOMBRE', 'DESCRIPCION', 'EN RECUMET', 'CON RECOJO', 'OTRO'];
+    const colWidths = [60, 150, 180, 80, 80, 80];
+    let x = 30;
+    const y = doc.y;
+
+    doc.fontSize(9).font('Helvetica-Bold');
+    headers.forEach((h, i) => {
+      doc.text(h, x, y, { width: colWidths[i], align: 'left' });
+      x += colWidths[i];
+    });
+
+    doc.moveDown(0.5);
+    doc.font('Helvetica').fontSize(8);
+
+    data.forEach((row) => {
+      x = 30;
+      const rowY = doc.y;
+      [row.cod, row.name, row.description, row.cost, row.cost_two, row.cost_tree]
+        .forEach((val, i) => {
+          doc.text(String(val), x, rowY, { width: colWidths[i], align: 'left' });
+          x += colWidths[i];
+        });
+      doc.moveDown(0.4);
+    });
+
+    doc.end();
+
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      ok: false,
+      errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }],
+    });
+  }
+};
+
 module.exports = {
   getProductPaginate,
   newProduct,
@@ -533,4 +740,6 @@ module.exports = {
   updateProductsCostos,
   getOneProduct,
   getProductsForSelect,
+  getReportProductCostExcel, // ✅
+  getReportProductCostPdf,
 };
