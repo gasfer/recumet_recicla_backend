@@ -13,16 +13,18 @@ const fileMoveAndRemoveOld = (file, fileOldName, idFrom, directory = 'imgs', ext
         const uploadPath = path.join(__dirname, '../../uploads/', directory, nameFileTempo);
         file.mv(uploadPath, (err) => {
             if (err) { reject(err); }
-            deleteFile(
-                path.join(__dirname, '../../uploads/', directory, fileOldName)
-            );
+            if (fileOldName && fileOldName !== 'NONE') {
+                deleteFile(
+                    path.join(__dirname, '../../uploads/', directory, fileOldName)
+                );
+            }
             resolve(nameFileTempo);
         })
     })
 }
 
 const deleteFile = (path) => {
-    if (fs.existsSync(path)) {
+    if (fs.existsSync(path) && fs.lstatSync(path).isFile()) {
         fs.unlinkSync(path);
     }
 };

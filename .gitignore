@@ -4,6 +4,7 @@ uploads/imgs/products/*
 !uploads/imgs/products/.gitkeep
 
 uploads/imgs/products/*
+uploads/vouchers/*
 !uploads/imgs/products/.gitkeep
 
 .idea/

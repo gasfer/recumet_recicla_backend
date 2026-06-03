@@ -4,6 +4,9 @@ const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
+const { fileMoveAndRemoveOld } = require('../helpers/file-upload');
+const path = require('path');
+const fs = require('fs');
 
 const getInputFindOne = async (req = request, res = response) => {
     try {
@@ -449,10 +452,48 @@ const anularInput = async (req = request, res = response) => {
     }
 }
 
+const uploadFileVoucher = async (req, res) => {
+    const { idInput } = req.query;
+    const { keyFile, file } = req;
+    
+    // Ensure uploads/vouchers directory exists
+    const uploadDirectory = path.join(__dirname, '../../uploads/vouchers');
+    if (!fs.existsSync(uploadDirectory)) {
+        fs.mkdirSync(uploadDirectory, { recursive: true });
+    }
+
+    try {
+        let inputDB = await Input.findByPk(idInput);
+        if (!inputDB) {
+            return res.status(404).json({
+                ok: false,
+                msg: `La compra con ID ${idInput} no existe`,
+            });
+        }
+        
+        const extensions = ['png', 'PNG', 'jpg', 'JPG', 'jpeg', 'JPEG', 'webp', 'WEBP', 'pdf', 'PDF'];
+        inputDB.payment_voucher = await fileMoveAndRemoveOld(file, inputDB.payment_voucher || '', idInput, 'vouchers', extensions);
+        await inputDB.save();
+        
+        return res.json({
+            ok: true,
+            msg: `Comprobante subido correctamente`,
+            payment_voucher: inputDB.payment_voucher
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(422).json({
+            ok: false,
+            errors: [{ msg: `No se pudo subir tu comprobante - ${error}` }]
+        });
+    }
+};
+
 module.exports = {
     getInputsPaginate,
     getInputFindOne,
     newInput,
     updateInput,
-    anularInput
+    anularInput,
+    uploadFileVoucher
 };
