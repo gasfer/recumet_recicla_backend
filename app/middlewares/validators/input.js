@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistScala, idExistStorage, idExistProvider, idExistSucursal, idExistBank, idExistProduct, idExistInput, registryNumberExist} = require('./database');
+const { idExistScala, idExistStorage, idExistProvider, idExistSucursal, idExistBank, idExistProduct, idExistInput, registryNumberExist, numberTransactionExist} = require('./database');
 
 const validationSchema =  {
     input_data: {
@@ -34,6 +34,26 @@ const validationSchema =  {
         isLength: {
             errorMessage: 'La cuenta debe tener máximo 20 caracteres',
             options: {  max: 20},
+        },
+    },
+    'input_data.number_transaction': {
+        custom: {
+            options: async (value, { req }) => {
+                const type_payment = req.body.input_data?.type_payment;
+                if (type_payment === 'TRANSFERENCIA' || type_payment === 'QR') {
+                    if (!value || String(value).trim() === '') {
+                        throw new Error('El Nro. de Transferencia es obligatorio para pagos con Transferencia o QR');
+                    }
+                }
+                if (value) {
+                    await numberTransactionExist(value, { req });
+                }
+                return true;
+            }
+        },
+        isLength: {
+            errorMessage: 'El número de transacción debe tener máximo 50 caracteres',
+            options: {  max: 50},
         },
     },
     'input_data.pay_to_credit': {
