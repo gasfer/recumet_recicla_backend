@@ -124,111 +124,283 @@ const getOutputsPaginate = async (req = request, res = response) => {
     }
 }
 
+
 const newOutput = async (req = request, res = response) => {
+
     const t = await sequelize.transaction();
+
     try {
+
         const { output_data, output_details, output_big } = req.body;
-        const { id_sucursal, id_storage, number_registry } = output_data;
+
         output_data.id_user = req.userAuth.id;
-        output_data.type_output = output_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
-        /**Crear venta y cod */
-        const output = await Output.create(output_data, { transaction: t });
-        const count_outputs = await Output.count({ where: {id_sucursal}, transaction: t });
-        const cod = get_num_request('V',count_outputs,5);
-        output.cod = cod;
-        await output.save({transaction: t});
-        const id_output = output.id;
-        /** Venta por mayor */
-        if(output_big && output_data.voucher != 'MENOR'){ //SOLO SI ES INDISTINTO A VENTA POR MENOR GUARDAMOS LO DE MAYOR
-            output_big.id_output = id_output;
-            await OutputBig.create(output_big, { transaction: t });
+
+        output_data.type_output = output_data.pay_to_credit
+            ? 'CREDITO'
+            : 'CONTADO';
+
+        const {
+            id_sucursal,
+            id_storage,
+            number_registry
+        } = output_data;
+
+        // GENERAR NUMERO AUTOMATICO SI ES "SIN FICHA"
+            if (
+            number_registry === 'SIN FICHA' ||
+            !number_registry ||
+            number_registry === ''
+        ) {
+
+            const lastOutput = await Output.findOne({
+                where: {
+                    number_registry: {
+                        [Op.like]: 'SFV-%'
+                    }
+                },
+                order: [['id', 'DESC']],
+                transaction: t
+            });
+
+            let nextNumber = 1;
+
+            if (
+                lastOutput &&
+                lastOutput.number_registry
+            ) {
+
+                const parts = lastOutput.number_registry.split('-');
+
+                const lastNumber = parseInt(parts[1]) || 0;
+
+                nextNumber = lastNumber + 1;
+            }
+
+            output_data.number_registry = get_num_request(
+                'SFV-',
+                nextNumber,
+                5
+            );
         }
+
+        /**Crear venta y cod */
+        const output = await Output.create(
+            output_data,
+            { transaction: t }
+        );
+
+        const count_outputs = await Output.count({
+            where: { id_sucursal },
+            transaction: t
+        });
+
+        const cod = get_num_request(
+            'V',
+            count_outputs,
+            5
+        );
+
+        output.cod = cod;
+
+        await output.save({ transaction: t });
+
+        const id_output = output.id;
+
+        /** Venta por mayor */
+        if (
+            output_big &&
+            output_data.voucher != 'MENOR'
+        ) {
+
+            output_big.id_output = id_output;
+
+            await OutputBig.create(
+                output_big,
+                { transaction: t }
+            );
+        }
+
         /*  detalles de la venta */
         let listProductNotStock = [];
+
         for (const detail of output_details) {
+
             detail.id_output = id_output;
-            await DetailsOutput.create(detail,{ transaction: t });        
+
+            await DetailsOutput.create(
+                detail,
+                { transaction: t }
+            );
+
             const stock = await Stock.findOne({
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                include: [{association:'product', required:true, attributes: ['name','cod']}],
+                where: {
+                    id_product: detail.id_product,
+                    id_sucursal,
+                    id_storage,
+                    status: true
+                },
+                include: [{
+                    association: 'product',
+                    required: true,
+                    attributes: ['name', 'cod']
+                }],
                 lock: true,
                 transaction: t
             });
-            //??ERROR STOCK INSUFICIENTE
-            if(Number(stock.stock) < Number(detail.quantity)){
-                listProductNotStock.push(
-                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`}
-                );
+
+            // ERROR STOCK INSUFICIENTE
+            if (
+                Number(stock.stock) <
+                Number(detail.quantity)
+            ) {
+
+                listProductNotStock.push({
+                    msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`
+                });
             }
-            stock.stock = Number(stock.stock) - Number(detail.quantity);
-            await stock.save({ transaction: t });
+
+            stock.stock =
+                Number(stock.stock) -
+                Number(detail.quantity);
+
+            await stock.save({
+                transaction: t
+            });
         }
-        //??MENSAJE DE STOCK INSUFICIENTE
-        if(listProductNotStock.length > 0) {
+
+        // MENSAJE DE STOCK INSUFICIENTE
+        if (listProductNotStock.length > 0) {
+
             await t.rollback();
+
             return res.status(422).json({
                 ok: false,
                 errors: listProductNotStock,
             });
-        } 
-         /* Ingreso si es venta a crédito */
-        let description_caja = `POR VENTA #${cod}`; 
-        if(output_data.pay_to_credit){//si es venta a crédito
-            const monto_restante = Number(output_data.total) - Number(output_data.on_account);
-            const output_credit = await AccountsReceivable.create({
-                id_output, id_client: output_data.id_client,
-                description: `POR VENTA #${cod}`,
-                date_credit: new Date(),
-                total: output_data.total,
-                monto_abonado: output_data.on_account,
-                status_account: monto_restante === 0 ? 'PAGADO' : 'PENDIENTE',
-                monto_restante,
-                id_sucursal,
-                status: true,
-            }, { transaction: t });
-            const count_accounts_receivable = await AccountsReceivable.count({ where: {id_sucursal}, transaction: t });
-            const cod_credit = get_num_request('CC',count_accounts_receivable,5);
-            output_credit.cod = cod_credit;
-            await output_credit.save({transaction: t});
-            let new_abono;
-            if(Number(output_data.on_account) > 0){
-                new_abono = await AbonosAccountsReceivable.create({
-                    id_account_receivable: output_credit.id,
-                    date_abono: new Date(),
-                    monto_abono: output_data.on_account,
-                    total_abonado: output_data.on_account,
-                    restante_credito: Number(output_data.total) - Number(output_data.on_account),
-                    id_user: req.userAuth.id,
-                    status:  true,
+        }
+
+        /* Ingreso si es venta a crédito */
+        let description_caja = `POR VENTA #${cod}`;
+
+        if (output_data.pay_to_credit) {
+
+            const monto_restante =
+                Number(output_data.total) -
+                Number(output_data.on_account);
+
+            const output_credit =
+                await AccountsReceivable.create({
+                    id_output,
+                    id_client: output_data.id_client,
+                    description: `POR VENTA #${cod}`,
+                    date_credit: new Date(),
+                    total: output_data.total,
+                    monto_abonado: output_data.on_account,
+                    status_account:
+                        monto_restante === 0
+                            ? 'PAGADO'
+                            : 'PENDIENTE',
+                    monto_restante,
+                    id_sucursal,
+                    status: true,
                 }, { transaction: t });
-                description_caja = `POR ABONO CREDITO #${output_credit.cod} ABONO #${new_abono.id}`;
+
+            const count_accounts_receivable =
+                await AccountsReceivable.count({
+                    where: { id_sucursal },
+                    transaction: t
+                });
+
+            const cod_credit = get_num_request(
+                'CC',
+                count_accounts_receivable,
+                5
+            );
+
+            output_credit.cod = cod_credit;
+
+            await output_credit.save({
+                transaction: t
+            });
+
+            let new_abono;
+
+            if (
+                Number(output_data.on_account) > 0
+            ) {
+
+                new_abono =
+                    await AbonosAccountsReceivable.create({
+                        id_account_receivable:
+                            output_credit.id,
+                        date_abono: new Date(),
+                        monto_abono:
+                            output_data.on_account,
+                        total_abonado:
+                            output_data.on_account,
+                        restante_credito:
+                            Number(output_data.total) -
+                            Number(output_data.on_account),
+                        id_user: req.userAuth.id,
+                        status: true,
+                    }, { transaction: t });
+
+                description_caja =
+                    `POR ABONO CREDITO #${output_credit.cod} ABONO #${new_abono.id}`;
             }
         }
-        //**INGRESO CAJA - ABRIR AUTO */
-        const caja_small = await validaOpenCajaSmall(id_sucursal,output_data.id_user);
+
+        // INGRESO CAJA - ABRIR AUTO
+        const caja_small =
+            await validaOpenCajaSmall(
+                id_sucursal,
+                output_data.id_user
+            );
+
         const data_detail_caja = {
             date: new Date(),
             type: 'INGRESO',
-            type_payment: output_data?.type_payment, 
+            type_payment: output_data?.type_payment,
             id_bank: output_data?.id_bank,
-            account_payment: output_data?.account_output, 
-            monto: output_data.pay_to_credit ? output_data.on_account : output_data.total,
+            account_payment: output_data?.account_output,
+            monto: output_data.pay_to_credit
+                ? output_data.on_account
+                : output_data.total,
             description: description_caja,
             status: true
+        };
+
+        if (caja_small) {
+
+            data_detail_caja.id_caja_small =
+                caja_small.id;
+
+            await DetailsCajaSmall.create(
+                data_detail_caja,
+                { transaction: t }
+            );
+
+        } else {
+
+            const new_open_caja =
+                await CajaSmall.create({
+                    date_apertura: new Date(),
+                    monto_apertura: 0,
+                    id_user: output_data.id_user,
+                    id_sucursal,
+                    status: 'ABIERTO'
+                }, { transaction: t });
+
+            data_detail_caja.id_caja_small =
+                new_open_caja.id;
+
+            await DetailsCajaSmall.create(
+                data_detail_caja,
+                { transaction: t }
+            );
         }
-        if(caja_small) { //caja abierta
-            data_detail_caja.id_caja_small = caja_small.id;
-            await DetailsCajaSmall.create(data_detail_caja, { transaction: t });
-        } else { //abrir caja
-            const new_open_caja = await CajaSmall.create({
-                date_apertura: new Date(),
-                monto_apertura: 0, id_user:output_data.id_user, id_sucursal,
-                status: 'ABIERTO'
-            }, { transaction: t });
-            data_detail_caja.id_caja_small = new_open_caja.id;
-            await DetailsCajaSmall.create(data_detail_caja, { transaction: t });
-        } 
-         /* Ingreso histórico */
+
+        /* Ingreso histórico */
         await History.create({
             id_user: req.userAuth.id,
             description: `CREO LA VENTA CON #${cod}`,
@@ -238,182 +410,469 @@ const newOutput = async (req = request, res = response) => {
             id_sucursal,
             id_reference: output.id,
             status: true
-        }, { transaction: t }); 
+        }, { transaction: t });
+
         await t.commit();
+
         return res.status(201).json({
             ok: true,
             msg: 'Venta creada correctamente',
             id_output,
         });
+
     } catch (error) {
+
         await t.rollback();
-        console.log('ERROR VENTA: ' + error);
+
+        console.log('ERROR VENTA:', error);
+
         return res.status(500).json({
-          ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+            ok: false,
+            errors: [{
+                msg: 'Ocurrió un imprevisto interno | hable con soporte'
+            }],
         });
     }
-}
+};
 
 const updateOutput = async (req = request, res = response) => {
+
     const t = await sequelize.transaction({
         isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
     });
+
     try {
+
         const { id_output } = req.params;
-        const { output_data, output_details, output_big } = req.body;
-        const { id_sucursal, id_storage, registry_number } = output_data;
+
+        const {
+            output_data,
+            output_details,
+            output_big
+        } = req.body;
+
+        const {
+            id_sucursal,
+            id_storage,
+            registry_number
+        } = output_data;
+
         output_data.id_user = req.userAuth.id;
-        output_data.type_output =  output_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
-        const output_old = await Output.findByPk(id_output,{
-            include: [ 
-                { association: 'detailsOutput'},
-                { association: 'accounts_receivable', include:[ {association: 'abonosAccountsReceivable', required:false,where: {status:true}}]},
-            ],
-            transaction: t
+
+        output_data.type_output =
+            output_data.pay_to_credit
+                ? 'CREDITO'
+                : 'CONTADO';
+
+        const output_old = await Output.findByPk(
+            id_output,
+            {
+                include:[
+                    { association:'detailsOutput' },
+                    {
+                        association:'accounts_receivable',
+                        include:[{
+                            association:'abonosAccountsReceivable',
+                            required:false,
+                            where:{ status:true }
+                        }]
+                    }
+                ],
+                transaction:t
+            }
+        );
+
+        // UPDATE OUTPUT
+        await Output.update(
+            output_data,
+            {
+                where:{ id:id_output },
+                transaction:t
+            }
+        );
+
+        // ELIMINAR DETALLES VIEJOS
+        await DetailsOutput.destroy({
+            where:{
+                id:[
+                    ...output_old.detailsOutput.map(
+                        resp=>resp.id
+                    )
+                ]
+            },
+            transaction:t
         });
-        //** Reset details and stock and update Output */
-        await Output.update(output_data,{where:{id: id_output}, transaction: t});
-        await DetailsOutput.destroy({where: {id: [...output_old.detailsOutput.map(resp=>resp.id)]}, transaction: t });   
-        //** Venta por mayor *//
-        await OutputBig.destroy({where: {id_output}, transaction: t });   
-        if(output_big && output_data.voucher != 'MENOR'){ //SOLO SI ES INDISTINTO A VENTA POR MENOR GUARDAMOS LO DE MAYOR
-            output_big.id_output = id_output;
-            await OutputBig.create(output_big, { transaction: t });
+
+        // OUTPUT BIG
+        await OutputBig.destroy({
+            where:{ id_output },
+            transaction:t
+        });
+
+        if(
+            output_big &&
+            output_data.voucher!='MENOR'
+        ){
+
+            output_big.id_output=id_output;
+
+            await OutputBig.create(
+                output_big,
+                { transaction:t }
+            );
         }
-        //*Descuento stock*/
-        for (const detail_old of output_old.detailsOutput){
-            const stock = await Stock.findOne({
-                order: [['id', 'DESC']],
-                where: { id_product:detail_old.id_product, id_sucursal:output_old.id_sucursal, id_storage:output_old.id_storage, status: true },
-                lock: true,
-                transaction: t
+
+        // DEVOLVER STOCK ANTIGUO
+        for(
+            const detail_old
+            of output_old.detailsOutput
+        ){
+
+            const stock =
+                await Stock.findOne({
+
+                order:[['id','DESC']],
+
+                where:{
+                    id_product:
+                        detail_old.id_product,
+
+                    id_sucursal:
+                        output_old.id_sucursal,
+
+                    id_storage:
+                        output_old.id_storage,
+
+                    status:true
+                },
+
+                lock:true,
+
+                transaction:t
             });
-            if(stock) {
-                stock.stock = Number(stock.stock) + Number(detail_old.quantity);
-                await stock.save({ transaction: t });
-            }
-        }
-        //*** New details and stock */
-        let listProductNotStock = [];
-        for (const detail of output_details) {
-            detail.id_output = id_output;
-            await DetailsOutput.create(detail,{ transaction: t });        
-            const stock = await Stock.findOne({
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                include: [{association:'product', required:true, attributes: ['name','cod']}],
-                lock: true,
-                transaction: t
-            });
-            //??ERROR STOCK INSUFICIENTE
-            if(Number(stock.stock) < Number(detail.quantity)){
-                listProductNotStock.push(
-                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`}
-                );
-            }
-            stock.stock = Number(stock.stock) - Number(detail.quantity);
-            await stock.save({ transaction: t });
-        }
-        //??MENSAJE DE STOCK INSUFICIENTE
-        if(listProductNotStock.length > 0) {
-            await t.rollback();
-            return res.status(422).json({
-                ok: false,
-                errors: listProductNotStock,
-            });
-        } 
-        //**Update abono input credit */
-        /** si la compra era a crédito
-         * Por ende validamos que no se tengan varios abonos. si son varios. no podemos editar o anular abonos.
-         */
-        if(output_old.type_output == 'CREDITO' && output_old?.accounts_receivable?.abonosAccountsReceivable?.length > 1) {
-            if(output_old.total != output_data.total ){
-                //**no se podría modificar la compra por que se tienen varios abonos.
-                await t.rollback();
-                return res.status(422).json({
-                    ok: false,
-                    errors: [
-                        { msg: `La venta no puede ser modificada, Se tienen varios abonos al crédito, y el total fue modificado` },
-                        { msg: `Anule los abonos a esta venta` },
-                    ],
+
+            if(stock){
+
+                stock.stock =
+                    Number(stock.stock)+
+                    Number(detail_old.quantity);
+
+                await stock.save({
+                    transaction:t
                 });
             }
-            //si modifico el monto a cuenta, pero como tiene varios abonos no editamos ni agregamos. //Función en cuentas por pagar
-        } else {
-            /** Buscamos el credito y si existe lo eliminamos y procedemos a crear otro, Si existe*/
-            const accountsReceivable_old = await AccountsReceivable.findByPk(output_old?.accounts_receivable?.id,{transaction: t });
-            if(accountsReceivable_old){
-                await AbonosAccountsReceivable.destroy({where: { id_account_receivable: accountsReceivable_old.id}, transaction: t });
-                await AccountsReceivable.destroy({where: { id: accountsReceivable_old.id }, transaction: t });
-            }
-            let description_caja = `POR VENTA #${output_old.cod}`; 
-            //**New input credit */
-            if(output_data.pay_to_credit){
-                const monto_restante = Number(output_data.total) - Number(output_data.on_account);
-                const output_credit = await AccountsReceivable.create({
-                    id_output, id_client: output_data.id_client,
-                    description: `POR VENTA #${output_old.cod}`,
-                    date_credit: new Date(),
-                    total: output_data.total,
-                    monto_abonado: output_data.on_account,
-                    status_account: monto_restante === 0 ? 'PAGADO' : 'PENDIENTE',
-                    monto_restante,
+        }
+
+        // NUEVOS DETALLES
+        let listProductNotStock=[];
+
+        for(
+            const detail
+            of output_details
+        ){
+
+            const stock =
+                await Stock.findOne({
+
+                where:{
+                    id_product:
+                        detail.id_product,
+
                     id_sucursal,
-                    status: true,
-                }, { transaction: t });
-                const count_accounts_receivable = await AccountsReceivable.count({ where: {id_sucursal}, transaction: t });
-                const cod_credit = get_num_request('CC',count_accounts_receivable,5);
-                output_credit.cod = cod_credit;
-                await output_credit.save({transaction: t});
-                let new_abono;
-                if(Number(output_data.on_account) > 0){
-                    new_abono = await AbonosAccountsReceivable.create({
-                        id_account_receivable: output_credit.id,
-                        date_abono: new Date(),
-                        monto_abono: output_data.on_account,
-                        total_abonado: output_data.on_account,
-                        restante_credito: Number(output_data.total) - Number(output_data.on_account),
-                        id_user: req.userAuth.id,
-                        status:  true,
-                    }, { transaction: t });
-                    description_caja = `POR ABONO CREDITO #${output_credit.cod} ABONO #${new_abono.id}`;
-                }
+
+                    id_storage,
+
+                    status:true
+                },
+
+                include:[{
+                    association:'product',
+                    required:true,
+                    attributes:[
+                        'name',
+                        'cod'
+                    ]
+                }],
+
+                lock:true,
+
+                transaction:t
+            });
+
+            if(!stock){
+
+                listProductNotStock.push({
+                    msg:
+                    'Producto sin stock registrado'
+                });
+
+                continue;
             }
-            const data_detail_caja = {
-                type_payment: output_data?.type_payment, 
-                id_bank: output_data?.id_bank,
-                account_payment: output_data?.account_output, 
-                monto: output_data.pay_to_credit ? output_data.on_account : output_data.total,
-                description: description_caja,
+
+            if(
+                Number(stock.stock) <
+                Number(detail.quantity)
+            ){
+
+                listProductNotStock.push({
+                    msg:
+                    `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`
+                });
+
+                continue;
             }
-            await DetailsCajaSmall.update(data_detail_caja, {
-                where: { description: output_old.type_output == 'CREDITO' && output_old?.accounts_receivable?.abonosAccountsReceivable[0]?.id ? `POR ABONO CREDITO #${accountsReceivable_old.cod} ABONO #${output_old?.accounts_receivable?.abonosAccountsReceivable[0].id}`  :`POR VENTA #${output_old.cod}`},
-                transaction: t
+
+            stock.stock =
+                Number(stock.stock) -
+                Number(detail.quantity);
+
+            await stock.save({
+                transaction:t
+            });
+
+            detail.id_output =
+                id_output;
+
+            await DetailsOutput.create(
+                detail,
+                { transaction:t }
+            );
+        }
+
+        if(
+            listProductNotStock.length>0
+        ){
+
+            await t.rollback();
+
+            return res.status(422).json({
+
+                ok:false,
+
+                errors:
+                    listProductNotStock
+
             });
         }
-         /* Ingreso historico */
+
+        // CREDITOS
+        if(
+            output_old.type_output==
+            'CREDITO' &&
+
+            output_old?.accounts_receivable
+            ?.abonosAccountsReceivable
+            ?.length>1
+        ){
+
+            if(
+                output_old.total !=
+                output_data.total
+            ){
+
+                await t.rollback();
+
+                return res.status(422).json({
+
+                    ok:false,
+
+                    errors:[
+                        {
+                            msg:
+                            'La venta no puede ser modificada, Se tienen varios abonos al crédito, y el total fue modificado'
+                        },
+                        {
+                            msg:
+                            'Anule los abonos a esta venta'
+                        }
+                    ]
+                });
+            }
+
+        }else{
+
+            const accountsReceivable_old =
+                await AccountsReceivable.findByPk(
+                    output_old?.accounts_receivable?.id,
+                    { transaction:t }
+                );
+
+            if(accountsReceivable_old){
+
+                await AbonosAccountsReceivable.destroy({
+
+                    where:{
+                        id_account_receivable:
+                        accountsReceivable_old.id
+                    },
+
+                    transaction:t
+                });
+
+                await AccountsReceivable.destroy({
+
+                    where:{
+                        id:
+                        accountsReceivable_old.id
+                    },
+
+                    transaction:t
+                });
+            }
+
+            let description_caja=
+                `POR VENTA #${output_old.cod}`;
+
+            if(
+                output_data.pay_to_credit
+            ){
+
+                const monto_restante=
+                    Number(output_data.total)-
+                    Number(output_data.on_account);
+
+                const output_credit=
+                    await AccountsReceivable.create({
+
+                    id_output,
+
+                    id_client:
+                    output_data.id_client,
+
+                    description:
+                    `POR VENTA #${output_old.cod}`,
+
+                    date_credit:
+                    new Date(),
+
+                    total:
+                    output_data.total,
+
+                    monto_abonado:
+                    output_data.on_account,
+
+                    status_account:
+                    monto_restante===0
+                    ?'PAGADO'
+                    :'PENDIENTE',
+
+                    monto_restante,
+
+                    id_sucursal,
+
+                    status:true
+
+                },{ transaction:t });
+
+                const count =
+                    await AccountsReceivable.count({
+
+                    where:{ id_sucursal },
+
+                    transaction:t
+
+                });
+
+                output_credit.cod =
+                    get_num_request(
+                        'CC',
+                        count,
+                        5
+                    );
+
+                await output_credit.save({
+                    transaction:t
+                });
+            }
+
+            await DetailsCajaSmall.update({
+
+                type_payment:
+                    output_data.type_payment,
+
+                id_bank:
+                    output_data.id_bank,
+
+                account_payment:
+                    output_data.account_output,
+
+                monto:
+                    output_data.pay_to_credit
+                    ?output_data.on_account
+                    :output_data.total,
+
+                description:
+                    description_caja
+
+            },{
+
+                where:{
+                    description:
+                    `POR VENTA #${output_old.cod}`
+                },
+
+                transaction:t
+
+            });
+        }
+
         await History.create({
-            id_user: req.userAuth.id,
-            description: `MODIFICO VENTA CON #${output_old.cod}`,
-            type: 'EDITO VENTA',
-            module: 'OUTPUT',
-            action: 'UPDATE',
+
+            id_user:
+                req.userAuth.id,
+
+            description:
+                `MODIFICO VENTA CON #${output_old.cod}`,
+
+            type:
+                'EDITO VENTA',
+
+            module:
+                'OUTPUT',
+
+            action:
+                'UPDATE',
+
             id_sucursal,
-            id_reference: id_output,
-            status: true
-        }, { transaction: t }); 
+
+            id_reference:
+                id_output,
+
+            status:true
+
+        },{ transaction:t });
+
         await t.commit();
+
         return res.status(201).json({
-            ok: true,
-            msg: 'Venta modificada correctamente',
+
+            ok:true,
+
+            msg:
+            'Venta modificada correctamente',
+
             id_output
+
         });
-    } catch (error) {
+
+    } catch(error){
+
         await t.rollback();
-        console.log('ERROR UPDATE VENTA: ' + error);
+
+        console.log(
+            'ERROR UPDATE VENTA:',
+            error
+        );
+
         return res.status(500).json({
-          ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+
+            ok:false,
+
+            errors:[{
+                msg:
+                'Ocurrió un imprevisto interno | hable con soporte'
+            }]
+
         });
     }
 }
