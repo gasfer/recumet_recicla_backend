@@ -208,9 +208,9 @@ const addTableInputAbonosMultiple = (tableData, footer, accountsPayable, abono_i
             columnGap: 2,
             columns: [
                 {
-                    width: '25%',
+                    width: '35%',
                     columns: [
-                        { text: `P/${accountsPayable.input.type_registry} NRO:`, bold: true, style: 'text', width: 75 },
+                        { text: `P/${accountsPayable.input.type_registry} NRO:`, bold: true, style: 'text', width: 95 },
                         {
                             table: {
                                 widths: ['*'],
@@ -235,7 +235,7 @@ const addTableInputAbonosMultiple = (tableData, footer, accountsPayable, abono_i
                     ]
                 },
                 {
-                    width: '25%',
+                    width: '15%',
                     columns: [
                         { text: 'Compra Nº', style: 'datos_person', bold: true, fontSize: 10, alignment: 'right', width: 60 },
                         { text: accountsPayable.input.cod, style: 'datos_person', fontSize: 10, alignment: 'left' }
@@ -370,58 +370,29 @@ const addFooterAbonosMultiple = (abono_account_payable,saldoTotal,decimal) => {
         },
         {
             margin: [0, 3, 0, 0],
-            columns: [
-              { 
-                  text: `ORIGEN:`,
-                  bold: true,
-                  style: 'text',
-                  width: 50,
-                  alignment: 'left'
-              },
-              {
-                  table: {
-                      widths: ['*'],
-                      body: [[
-                          {
-                              text: abono_account_payable.type_payment != 'EFECTIVO'
-                                ? `${abono_account_payable.abonosMultipleOrigin?.name ?? '-'} | Cuenta: ${abono_account_payable.account_origin ?? ''}`
-                                : '-',
-                              style: 'text',
-                              fontSize: 10,       
-                              alignment: 'left',
-                              margin: [0,0,0,0] 
-                          }
-                      ]]
-                  },
-                  layout: 'noBorders', 
-                  width: 200
-              },
-              { 
-                  text: `DESTINO:`,
-                  bold: true,
-                  style: 'text',
-                  width: 50,
-                  alignment: 'left'
-              },
-              {
-                  table: {
-                      widths: ['*'],
-                      body: [[
-                          {
-                              text: abono_account_payable.type_payment != 'EFECTIVO'
-                                ? `${abono_account_payable.abonosMultipleDestination.name} | Cuenta: ${abono_account_payable.account_output}` 
-                                : '-',
-                              style: 'text',
-                              fontSize: 10,       
-                              alignment: 'left',
-                              margin: [0,0,0,0]
-                          }
-                      ]]
-                  },
-                  layout: 'noBorders', 
-                  width: 200
-              }
-            ]
+            stack: [
+              abono_account_payable.type_payment != 'EFECTIVO' ? {
+                columns: [
+                  { text: 'ORIGEN:', bold: true, style: 'text', width: 60 },
+                  { text: `${abono_account_payable.abonosMultipleOrigin?.name ?? '-'} | Cuenta: ${abono_account_payable.account_origin ?? ''}`, style: 'text', fontSize: 9 }
+                ],
+                margin: [0, 2, 0, 0]
+              } : null,
+              abono_account_payable.type_payment != 'EFECTIVO' ? {
+                columns: [
+                  { text: 'DESTINO:', bold: true, style: 'text', width: 60 },
+                  { text: `${abono_account_payable.abonosMultipleDestination?.name ?? '-'} | Cuenta: ${abono_account_payable.account_output ?? ''}`, style: 'text', fontSize: 9 }
+                ],
+                margin: [0, 2, 0, 0]
+              } : null,
+              ((abono_account_payable.type_payment == 'TRANSFERENCIA' || abono_account_payable.type_payment == 'QR') && abono_account_payable.number_transaction) ? {
+                columns: [
+                  { text: 'TRANS. NRO:', bold: true, style: 'text', width: 75 },
+                  { text: `${abono_account_payable.number_transaction}`, style: 'text', fontSize: 9 }
+                ],
+                margin: [0, 2, 0, 0]
+              } : null
+            ].filter(x => x !== null)
         },
         {
             margin: [0,15,0,0],

@@ -1,0 +1,149 @@
+<!--Pos config modal-->
+<app-modal-config-input></app-modal-config-input> 
+<!--Pos Data modal save-->
+<app-modal-save-input [id_storage]="formReport.get('id_storage')?.value"></app-modal-save-input>
+<!--provider new modal-->
+<app-modal-provider></app-modal-provider>
+
+<div class="card bg-light m-0">
+    <div class="card-body shadow pt-2 pb-2">
+        <p-messages *ngIf="inputsService.isEdit" severity="warn" class="animated fadeInDown">
+            <ng-template pTemplate>
+                <ul class="mb-0 pb-0">
+                    <li>
+                        <b>PROCESO DE EDICIÓN COMPRA: {{inputsService.dataInputForEdit()?.cod}} <i class="fas fa-edit"></i></b>
+                    </li>
+                    <li>
+                        <p> ¡Advertencia! Al editar esta compra, podrías ocasionar alteraciones en el sistema. Por favor, procede con precaución.</p>
+                    </li>
+                </ul>
+            </ng-template>
+        </p-messages>
+        <h4>{{inputsService.isEdit ? 'EDITAR COMPRA' : 'REGISTRA TUS COMPRAS'}}</h4>
+        <div class="row">
+            <div class="col-sm-6 col-12 mt-0">
+                <app-input-search (onEnters)="suggestedProvider($event)" (onDebounce)="suggestedProvider($event)"
+                    (onBtnNew)="newProvider()" [icon]="'fa-solid fa-truck-moving'" [btnNew]="this.validatorsService.withPermission('PROVEEDORES','create')"
+                    [iconBtnNew]="'fa-solid fa-circle-plus'" [placeholder]="'Busque un proveedor aquí....'">
+                </app-input-search>
+                <div style="position: absolute; z-index: 999; width: 90%;">
+                    <ul *ngIf="loadingSearchProvider()" class="list-group shadow">
+                        <li class="list-group-item list-group-item-action">
+                            <span class='fw-bold'>Cargando....</span>
+                        </li>
+                    </ul>
+                    <ul class="list-group shadow">
+                        <li *ngFor="let provider of suggestedProviders()"
+                            class="list-group-item list-group-item-action cursor-pointer"
+                            (click)="selectProvider(provider)">
+                            <span class='fw-bold'>{{provider.full_names}}</span>
+                            <br>
+                            <span class="text-muted fw-normal align-content-end">NIT/CI:
+                                {{provider.number_document }}</span>
+                        </li>
+                    </ul>
+                    <ul *ngIf="suggestedProviders().length == 0 && txtSearchProvider() && !loadingSearchProvider()" class="list-group shadow">
+                        <li class="list-group-item list-group-item-action">
+                            <span class='fw-bold'> No se encontró el proveedor: "{{txtSearchProvider() | uppercase}}"</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-sm-5 col-12 mt-2 m-md-0">
+                <b>Proveedor:
+                    <p-tag [rounded]="true" icon="fa-solid fa-truck-moving"
+                        [severity]="providerSelect() ? 'info' : 'warning'"
+                        [value]="providerSelect() ? 'NIT-CI: ' + providerSelectName() : 'NIT-CI: 0 / SELECCIONE UN PROVEEDOR'">
+                        <p-badge *ngIf="providerSelect()" class="cursor-pointer" severity="danger"
+                            (click)="inputsService.providerSelect.set(undefined)" [value]="'X'" styleClass="mr-2"
+                            pTooltip="Quitar Proveedor" tooltipPosition="top">
+                        </p-badge>
+                    </p-tag>
+                </b>
+            </div>
+            <div class="col-sm-1 col-12">
+                <div class="d-flex justify-content-end">
+                    <i class="cursor-pointer fa-solid fa-gear" pTooltip="Config. Modo de compra" tooltipPosition="left"
+                        (click)="inputsService.showModalConfigInput = true">
+                    </i>
+                </div>
+            </div>
+        </div>
+        <div [formGroup]="formReport"  class="row mt-2">
+            <div class="col-12 col-sm-6">
+                <label class="block mb-0">Area / Almacén ingreso stock: &nbsp;</label>
+                <p-dropdown [options]="validatorsService.storages()" 
+                  placeholder="Selecciona un almacén" 
+                  optionLabel="name"
+                  optionValue="id"
+                  (onChange)="setSelectStorage()"
+                  (onHide)="this.componentService.clearInputSearch$.next(true)"
+                  appendTo="body" [filter]="true" filterBy="name"
+                  [virtualScrollItemSize]="38" [lazy]="true"
+                  formControlName="id_storage" 
+                  [class.ng-dirty]="validatorsService.inputValid('id_storage',formReport)"
+                ></p-dropdown>
+                <small *ngIf="validatorsService.inputValid('id_storage',formReport)" class="p-error block">
+                    {{ validatorsService.inputValidMessage("id_storage",formReport) }}
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="row mt-1">
+    <div class="col-sm-12 mb-2"
+        [ngClass]="{'col-md-7': inputsService._inputConfig.viewCardProducts, 'col-md-12': !inputsService._inputConfig.viewCardProducts}">
+        <div class="card">
+            <div class="card-body shadow m-0 p-0">
+                <div class="row m-1 mt-0">
+                    <div class="col-12">
+                        <p-messages severity="info">
+                            <ng-template pTemplate>
+                                <b>ITEMS A COMPRAR <i class="fa-solid fa-cart-arrow-down"></i></b>
+                                <i class="fa-solid fa-tags ms-5 p-text-secondary" pBadge style="font-size: 1.2rem;"
+                                    value="{{totalItems()}}"></i>
+                            </ng-template>
+                        </p-messages>
+                        <app-input-search *ngIf="!inputsService._inputConfig.viewCardProducts" (onEnters)="suggestedProduct($event)" (onDebounce)="suggestedProduct($event)"
+                            [icon]="'fa-solid fa-cart-plus'"
+                            [placeholder]="'Busque un producto aquí....'"></app-input-search>
+                        <div style="position: absolute; z-index: 999; width: 96%;">
+                            <ul *ngIf="loadingSearchProduct()" class="list-group shadow">
+                                <li class="list-group-item list-group-item-action">
+                                    <span class='fw-bold'>Cargando....</span>
+                                </li>
+                            </ul>
+                            <ul class="list-group shadow cursor-pointer">
+                                <li *ngFor="let product of suggestedProducts()"
+                                    class="list-group-item list-group-item-action" (click)="addItemCar(product)">
+                                    <span class='fw-bold'>{{product.cod}} - {{ product.name}}</span>
+                                    <br>
+                                    <span class="text-muted fw-normal align-content-end">{{product.description }} -
+                                        {{product.category.name}} / {{product.unit.siglas}}</span>
+                                </li>
+                            </ul>
+                            <ul *ngIf="suggestedProducts().length == 0 && txtSearchProduct() && !loadingSearchProduct()" class="list-group shadow">
+                                <li class="list-group-item list-group-item-action">
+                                    <span class='fw-bold'> No se encontró el producto: "{{txtSearchProduct() | uppercase}}"</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <app-table-input-details></app-table-input-details>
+        </div>
+    </div>
+    
+    <div *ngIf="inputsService._inputConfig.viewCardProducts" class="col-sm-12 col-md-5">
+        <app-dataview-products  
+            [typeFrom]="'INPUT'"
+            [isInput]="true"
+            [isViewQuantity]="true" 
+            [id_sucursal]="formReport.get('id_sucursal')?.value" 
+            [id_storage]="formReport.get('id_storage')?.value" 
+            (onProductSelect)="addItemCarByViewProduct($event)" 
+            (onProductByCod)="addItemCarByCodProduct($event)">
+        </app-dataview-products>
+    </div>
+</div>

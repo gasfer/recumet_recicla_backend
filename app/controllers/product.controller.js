@@ -15,7 +15,6 @@ const path = require("path");
 const { Op } = require("sequelize");
 
 const ExcelJS = require("exceljs");
-const PDFDocument = require("pdfkit");
 
 const getProductPaginate = async (req = request, res = response) => {
   try {
