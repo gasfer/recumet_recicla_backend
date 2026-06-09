@@ -79,7 +79,10 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
         }
 
         const optionsDb = {
-            order: [orderNew],
+            order: [
+                ['product', 'category', 'name', 'ASC'],
+                orderNew
+            ],
             attributes: [
                 'id_product',
                 [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
@@ -108,20 +111,42 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             group: ['id_product', 'product.id', 'product.unit.id', 'product.category.id', 'storage.id']
         };
         let kardexes = await paginate(ViewKardex, page, limit, type, query, optionsDb);
-        for (const kardex of kardexes.data) {
-            const where = {
-                [Op.and]: [
-                    id_sucursal ? { id_sucursal } : {},
-                    id_storage ? { id_storage } : {},
-                    { id_product: kardex.id_product },
-                    { date: whereDate },
-                ]
+        if (kardexes.data && kardexes.data.length > 0) {
+            const productIds = kardexes.data.map(k => k.id_product);
+            const firstMovements = await ViewKardex.findAll({
+                attributes: [
+                    'id_product',
+                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
+                ],
+                where: {
+                    [Op.and]: [
+                        id_sucursal ? { id_sucursal } : {},
+                        id_storage ? { id_storage } : {},
+                        { id_product: { [Op.in]: productIds } },
+                        { date: whereDate }
+                    ]
+                },
+                group: ['id_product'],
+                raw: true
+            });
+            const minIds = firstMovements.map(m => m.min_id).filter(Boolean);
+            const initialBalances = minIds.length > 0 ? await ViewKardex.findAll({
+                attributes: ['id_product', 'saldo_inicial'],
+                where: {
+                    id: { [Op.in]: minIds }
+                },
+                raw: true
+            }) : [];
+            const balanceMap = {};
+            for (const bal of initialBalances) {
+                balanceMap[bal.id_product] = bal.saldo_inicial;
             }
-            const kardex_inicial = await ViewKardex.findOne({ attributes: ['saldo_inicial'], where, order: [['id', 'ASC']] });
-            const quantity_inicial = kardex_inicial.saldo_inicial;
-            kardex.dataValues.quantity_inicial = quantity_inicial;
-            kardex.dataValues.quantity_input = Number(kardex.dataValues.quantity_input) + Number(quantity_inicial);
-            kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + Number(quantity_inicial);
+            for (const kardex of kardexes.data) {
+                const quantity_inicial = Number(balanceMap[kardex.id_product] || 0);
+                kardex.dataValues.quantity_inicial = quantity_inicial;
+                kardex.dataValues.quantity_input = Number(kardex.dataValues.quantity_input) + quantity_inicial;
+                kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + quantity_inicial;
+            }
         }
         return res.status(200).json({
             ok: true,

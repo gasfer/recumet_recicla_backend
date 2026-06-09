@@ -66,7 +66,7 @@ const paginate = async (model, pageSize, pageLimit, type, query, optionsDb = {})
         }
         // take in the model, take in the options
         let { count, rows } = await model.findAndCountAll(options);
-        let total = await model.count();
+        let total = typeof count === 'number' ? count : count.length;
         return {
             previousPage: getPreviousPage(page),
             currentPage: page,
