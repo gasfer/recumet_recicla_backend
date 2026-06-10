@@ -1,0 +1,126 @@
+<form [formGroup]="formReport">
+  <div class="card shadow mb-4 icon-box ">
+    <div class="card-body">
+      <div class="row text-center">
+        <h3 style="color: var(--bg-2665C);"><b>{{ title() }}</b></h3>
+      </div>
+      <p-accordion [activeIndex]="1">
+        <p-accordionTab header="Filtros">
+          <div class="p-fluid">
+            <div class="row">
+              <!-- Sucursales Multiselect -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Sucursales<span class="text-danger">*</span></label>
+                <p-multiSelect [options]="dropdownSucursales()" formControlName="id_sucursal"
+                  (onChange)="onSucursalesChange()" optionLabel="name" optionValue="id"
+                  placeholder="Selecciona sucursales" [style]="{'width':'100%'}" appendTo="body" [filter]="true"
+                  filterBy="name" [showClear]="true" display="chip">
+                </p-multiSelect>
+                <small *ngIf="validatorsService.inputValid('id_sucursal',formReport)" class="p-error block">
+                  {{ validatorsService.inputValidMessage("id_sucursal",formReport) }}
+                </small>
+              </div>
+
+              <!-- Área / Almacén -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Área / Almacén</label>
+                <p-multiSelect [options]="filteredStorages()" formControlName="id_storage"
+                  optionLabel="name" optionValue="id"
+                  placeholder="Selecciona almacenes" [style]="{'width':'100%'}" appendTo="body" [filter]="true"
+                  filterBy="name" [showClear]="true" display="chip">
+                </p-multiSelect>
+              </div>
+
+              <!-- Tipo Filtrado -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Tipo Filtrado<span class="text-danger">*</span></label>
+                <p-dropdown #dropdownFilterBy [options]="types_filtrado()" formControlName="filterBy" optionLabel="name"
+                  optionValue="code" appendTo="body" (onChange)="onChangeTypesFilter()">
+                </p-dropdown>
+              </div>
+
+              <!-- Fecha -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Fecha<span class="text-danger">*</span></label>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'MONTH'" formControlName="dates"
+                  view="month" dateFormat="mm/yy" placeholder="MM/YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'RANGE'" formControlName="dates"
+                  selectionMode="range" dateFormat="dd/mm/yy" placeholder="DD/MM/YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'YEAR'" formControlName="dates"
+                  view="year" dateFormat="yy" placeholder="YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'DAY'" formControlName="dates"
+                  dateFormat="dd/mm/yy" placeholder="DD/MM/YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <small *ngIf="validatorsService.inputValid('dates',formReport)" class="p-error block">
+                  {{ validatorsService.inputValidMessage("dates",formReport) }}
+                </small>
+              </div>
+            </div>
+
+            <div class="row mt-3">
+              <!-- Categorías Multiselect -->
+              <div class="col-12 col-md-6">
+                <label class="block mb-1">Categorías</label>
+                <p-multiSelect [options]="dropdownCategories()" [(ngModel)]="selectedCategoryValues"
+                  [ngModelOptions]="{standalone: true}"
+                  (onChange)="onCategoryChange($event.value)" optionLabel="name" optionValue="id"
+                  placeholder="Seleccione categorías..." [style]="{'width':'100%'}" appendTo="body" [filter]="true"
+                  filterBy="name" [loading]="loadingCategories()" [showClear]="true" display="chip">
+                </p-multiSelect>
+              </div>
+
+              <!-- Filtrar Saldos -->
+              <div class="col-12 col-md-6">
+                <label class="block mb-1">Filtrar Saldos</label>
+
+                <div class="d-flex align-items-center gap-3 mt-2">
+                  <p-inputSwitch #inputSwitchSaldo formControlName="showZeroSaldo">
+                  </p-inputSwitch>
+
+                  <p-tag *ngIf="formReport.get('showZeroSaldo')?.value" severity="info" icon="fas fa-check-circle"
+                    value="Incluir saldos en cero">
+                  </p-tag>
+
+                  <p-tag *ngIf="!formReport.get('showZeroSaldo')?.value" severity="success" icon="fas fa-filter"
+                    value="Excluir saldos en cero">
+                  </p-tag>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="text-end mt-3">
+            <p-button (click)="!loading() ? getAllAndSearchKardex(1,this.rows()) : null"
+              styleClass="p-button-rounded p-button-sm" label="Buscar" icon="fa-solid fa-magnifying-glass"
+              [loading]="loading()">
+            </p-button>
+
+            <p-splitButton *ngIf="validatorsService.withPermission('KARDEX','reports')" icon="fas fa-print"
+              label="Imprimir" [model]="this.buttonItems" [menuStyle]="{'width':'8em'}" [size]="'small'"
+              [rounded]="true" [severity]="'danger'" (onClick)="!loading() ? this.printPdfReport() : null"
+              styleClass="ms-1">
+            </p-splitButton>
+
+            <p-button (click)="clearInputs()"
+              styleClass="p-button-rounded ms-1 mt-2 mt-sm-0 mt-md-0 p-button-success p-button-sm" icon="fas fa-broom"
+              label="Limpiar" [pTooltip]="'Limpiar Campos'" [loading]="loading()">
+            </p-button>
+          </div>
+        </p-accordionTab>
+      </p-accordion>
+    </div>
+  </div>
+</form>
+
+<app-table [cols]="cols()" (customSort$)="customSort($event)" [sortOrder]="'ASC'" [sortField]="'product.cod'"
+  [includeSearch]="true" [searchFor]="[{name: 'Código o Detalle', code: 'query'}]" (rows$)="paginate($event)" (search$)="search($event)" [data]="kardexes()"
+  [groupRowsBy]="'product.category.name'" [loading]="loading()">
+</app-table>
