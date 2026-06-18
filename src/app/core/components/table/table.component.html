@@ -185,14 +185,16 @@
 
     <ng-template pTemplate="groupfooter" let-rowData let-columns="columns">
       <tr *ngIf="groupRowsBy && !loading" class="group-footer-row" style="background-color: #f8f9fa; font-weight: bold;">
-        <td *ngFor="let col of columns; let i = index" [style]="col.style" [style.text-align]="i === 0 ? 'left' : null" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;">
-          <span *ngIf="i === 0">
-            TOTAL {{ getGroupValue(rowData) | uppercase }}
-          </span>
-          <span *ngIf="col.isValueUpdate">
-            {{ formatGroupTotal(getGroupValue(rowData), col) }}
-          </span>
+        <td [attr.colspan]="getGroupFooterColspan(columns)" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6; text-align: left; padding-left: 1.5rem; font-size: 0.9rem;">
+          TOTAL {{ getGroupValue(rowData) | uppercase }}
         </td>
+        <ng-container *ngFor="let col of columns; let i = index">
+          <td *ngIf="i >= getGroupFooterColspan(columns)" [style]="col.style" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;">
+            <span *ngIf="col.isValueUpdate">
+              {{ formatGroupTotal(getGroupValue(rowData), col) }}
+            </span>
+          </td>
+        </ng-container>
       </tr>
     </ng-template>
 

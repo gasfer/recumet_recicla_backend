@@ -415,6 +415,112 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             }
         }
 
+        // Calculate totals by sucursal
+        const sucursalTotals = {};
+        const optionsDbSucursalProduct = {
+            attributes: [
+                'id_sucursal',
+                'id_product',
+                [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
+                [sequelize.literal('COALESCE(SUM(quantity_output), 0)'), 'quantity_output'],
+                [sequelize.literal('COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
+            ],
+            where: {
+                [Op.and]: [
+                    sucursalCond,
+                    storageCond,
+                    id_product ? { id_product } : {},
+                    { date: whereDate },
+                ]
+            },
+            include: [
+                {
+                    association: 'product',
+                    attributes: ['id_category'],
+                    where: whereProduct,
+                    include: [
+                        { association: 'category', attributes: ['name', 'type'], where: whereCategory }
+                    ]
+                },
+                {
+                    association: 'sucursal',
+                    attributes: ['name']
+                }
+            ],
+            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'sucursal.id'],
+            raw: true,
+            nest: true
+        };
+
+        const sucursalProductKardexes = await ViewKardex.findAll(optionsDbSucursalProduct);
+        if (sucursalProductKardexes && sucursalProductKardexes.length > 0) {
+            const productIds = sucursalProductKardexes.map(k => k.id_product);
+            const firstMovementsSP = await ViewKardex.findAll({
+                attributes: [
+                    'id_product',
+                    'id_sucursal',
+                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
+                ],
+                where: {
+                    [Op.and]: [
+                        sucursalCond,
+                        storageCond,
+                        { id_product: { [Op.in]: productIds } },
+                        { date: whereDate }
+                    ]
+                },
+                group: ['id_product', 'id_sucursal'],
+                raw: true
+            });
+
+            const minIdsSP = firstMovementsSP.map(m => m.min_id).filter(Boolean);
+            const initialBalancesSP = minIdsSP.length > 0 ? await ViewKardex.findAll({
+                attributes: ['id_product', 'id_sucursal', 'saldo_inicial'],
+                where: {
+                    id: { [Op.in]: minIdsSP }
+                },
+                raw: true
+            }) : [];
+
+            const balanceMapSP = {};
+            for (const bal of initialBalancesSP) {
+                balanceMapSP[`${bal.id_product}_${bal.id_sucursal}`] = bal.saldo_inicial;
+            }
+
+            for (const sp of sucursalProductKardexes) {
+                const key = `${sp.id_product}_${sp.id_sucursal}`;
+                const quantity_inicial = Number(balanceMapSP[key] || 0);
+                sp.quantity_saldo = Number(sp.quantity_saldo) + quantity_inicial;
+            }
+        }
+
+        const filteredSP = showZeroSaldo
+            ? sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) <= 0)
+            : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);
+
+        for (const sp of filteredSP) {
+            const sucursalId = sp.id_sucursal;
+            const sucursalName = sp.sucursal?.name || `Sucursal ${sucursalId}`;
+            const catType = sp.product?.category?.type;
+            const saldoVal = Number(sp.quantity_saldo || 0);
+
+            if (!sucursalTotals[sucursalId]) {
+                sucursalTotals[sucursalId] = {
+                    name: sucursalName,
+                    quantity_saldo: 0,
+                    quantity_saldo_mp: 0,
+                    quantity_saldo_pt: 0
+                };
+            }
+
+            sucursalTotals[sucursalId].quantity_saldo += saldoVal;
+            if (catType === 'RAW_MATERIAL') {
+                sucursalTotals[sucursalId].quantity_saldo_mp += saldoVal;
+            } else if (catType === 'FINISHED_PRODUCT') {
+                sucursalTotals[sucursalId].quantity_saldo_pt += saldoVal;
+            }
+        }
+
         const totals = {
             quantity_saldo: totalSaldo,
             quantity_saldo_mp: totalSaldoMp,
@@ -445,7 +551,8 @@ const getTotalStockRecumet = async (req = request, res = response) => {
                 to: getTo(pageNum, limitNum, total),
                 data: paginatedData,
                 totals,
-                categoryTotals
+                categoryTotals,
+                sucursalTotals
             }
         });
     } catch (error) {

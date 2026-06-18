@@ -203,13 +203,168 @@ const dataPdfReturnTotalStock = (auth) => {
 
 const generatePdfReportsTotalStock = async (req = request, res = response) => {
     try {
-        const { filterBy, date1, date2 } = req.query;
+        const { filterBy, date1, date2, query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, category_ids } = req.query;
         const decimal = await getNumberDecimal();
         const kardexes = await returnDataTotalStockRecumet(req.query);
         const auth = req.userAuth;
 
         let dataPdf = dataPdfReturnTotalStock(auth);
-        
+
+        // Compute sucursal totals
+        const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
+
+        let sucursalCond = {};
+        const targetSucursales = id_sucursales || id_sucursal;
+        if (targetSucursales) {
+            const sucursalIds = String(targetSucursales).split(',').map(id => id.trim()).filter(Boolean);
+            if (sucursalIds.length > 0) {
+                sucursalCond = { id_sucursal: { [Op.in]: sucursalIds } };
+            }
+        }
+
+        let storageCond = {};
+        const targetStorages = id_storages || id_storage;
+        if (targetStorages) {
+            const storageIds = String(targetStorages).split(',').map(id => id.trim()).filter(Boolean);
+            if (storageIds.length > 0) {
+                storageCond = { id_storage: { [Op.in]: storageIds } };
+            }
+        }
+
+        let whereProduct = {};
+        if (id_product) {
+            whereProduct = { id: id_product };
+        }
+        if (category_ids) {
+            let ids = [];
+            if (Array.isArray(category_ids)) {
+                ids = category_ids;
+            } else if (typeof category_ids === 'string') {
+                ids = category_ids.split(',').map(id => id.trim()).filter(Boolean);
+            }
+            if (ids.length > 0) {
+                whereProduct = {
+                    ...whereProduct,
+                    id_category: { [Op.in]: ids }
+                };
+            }
+        }
+
+        const category_types = ['RAW_MATERIAL', 'FINISHED_PRODUCT'];
+        let whereCategory = {
+            type: {
+                [Op.in]: category_types
+            }
+        };
+
+        const showZeroSaldo = req.query.showZeroSaldo === 'true' || req.query.showZeroSaldo === true;
+
+        const sucursalTotals = {};
+        const optionsDbSucursalProduct = {
+            attributes: [
+                'id_sucursal',
+                'id_product',
+                [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
+                [sequelize.literal('COALESCE(SUM(quantity_output), 0)'), 'quantity_output'],
+                [sequelize.literal('COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
+            ],
+            where: {
+                [Op.and]: [
+                    sucursalCond,
+                    storageCond,
+                    id_product ? { id_product } : {},
+                    { date: whereDate },
+                ]
+            },
+            include: [
+                {
+                    association: 'product',
+                    attributes: ['id_category'],
+                    where: whereProduct,
+                    include: [
+                        { association: 'category', attributes: ['name', 'type'], where: whereCategory }
+                    ]
+                },
+                {
+                    association: 'sucursal',
+                    attributes: ['name']
+                }
+            ],
+            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'sucursal.id'],
+            raw: true,
+            nest: true
+        };
+
+        const sucursalProductKardexes = await ViewKardex.findAll(optionsDbSucursalProduct);
+        if (sucursalProductKardexes && sucursalProductKardexes.length > 0) {
+            const productIds = sucursalProductKardexes.map(k => k.id_product);
+            const firstMovementsSP = await ViewKardex.findAll({
+                attributes: [
+                    'id_product',
+                    'id_sucursal',
+                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
+                ],
+                where: {
+                    [Op.and]: [
+                        sucursalCond,
+                        storageCond,
+                        { id_product: { [Op.in]: productIds } },
+                        { date: whereDate }
+                    ]
+                },
+                group: ['id_product', 'id_sucursal'],
+                raw: true
+            });
+
+            const minIdsSP = firstMovementsSP.map(m => m.min_id).filter(Boolean);
+            const initialBalancesSP = minIdsSP.length > 0 ? await ViewKardex.findAll({
+                attributes: ['id_product', 'id_sucursal', 'saldo_inicial'],
+                where: {
+                    id: { [Op.in]: minIdsSP }
+                },
+                raw: true
+            }) : [];
+
+            const balanceMapSP = {};
+            for (const bal of initialBalancesSP) {
+                balanceMapSP[`${bal.id_product}_${bal.id_sucursal}`] = bal.saldo_inicial;
+            }
+
+            for (const sp of sucursalProductKardexes) {
+                const key = `${sp.id_product}_${sp.id_sucursal}`;
+                const quantity_inicial = Number(balanceMapSP[key] || 0);
+                sp.quantity_saldo = Number(sp.quantity_saldo) + quantity_inicial;
+            }
+        }
+
+        const filteredSP = showZeroSaldo
+            ? sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) <= 0)
+            : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);
+
+        for (const sp of filteredSP) {
+            const sucursalId = sp.id_sucursal;
+            const sucursalName = sp.sucursal?.name || `Sucursal ${sucursalId}`;
+            const catType = sp.product?.category?.type;
+            const saldoVal = Number(sp.quantity_saldo || 0);
+
+            if (!sucursalTotals[sucursalId]) {
+                sucursalTotals[sucursalId] = {
+                    name: sucursalName,
+                    quantity_saldo: 0,
+                    quantity_saldo_mp: 0,
+                    quantity_saldo_pt: 0
+                };
+            }
+
+            sucursalTotals[sucursalId].quantity_saldo += saldoVal;
+            if (catType === 'RAW_MATERIAL') {
+                sucursalTotals[sucursalId].quantity_saldo_mp += saldoVal;
+            } else if (catType === 'FINISHED_PRODUCT') {
+                sucursalTotals[sucursalId].quantity_saldo_pt += saldoVal;
+            }
+        }
+
+        // Build main table body with category headers and footers
         const tableBody = [
             [
                 { text: "CÓDIGO", fontSize: 8, fillColor: "#eeeeee", bold: true },
@@ -222,6 +377,19 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         let totalSaldo = 0;
         let totalSaldoMp = 0;
         let totalSaldoPt = 0;
+
+        let currentCategoryName = "";
+        let categorySum = 0;
+
+        const addCategoryFooter = (catName, sumVal) => {
+            tableBody.push([
+                { text: `TOTAL ${catName.toUpperCase()}`, fontSize: 8, bold: true, fillColor: "#f8f9fa", colSpan: 3 },
+                {},
+                {},
+                { text: formatEuro(sumVal, decimal), fontSize: 8, bold: true, alignment: "right", fillColor: "#f8f9fa" }
+            ]);
+        };
+
         kardexes.forEach((kardex) => {
             const saldoVal = Number(kardex.dataValues.quantity_saldo || 0);
             totalSaldo += saldoVal;
@@ -233,6 +401,26 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
                 totalSaldoPt += saldoVal;
             }
 
+            const categoryName = kardex.product?.category?.name || "SIN CATEGORÍA";
+
+            if (categoryName !== currentCategoryName) {
+                if (currentCategoryName !== "") {
+                    addCategoryFooter(currentCategoryName, categorySum);
+                }
+                currentCategoryName = categoryName;
+                categorySum = 0;
+
+                // Add group header row
+                tableBody.push([
+                    { text: categoryName.toUpperCase(), fontSize: 8, bold: true, fillColor: "#e0f2fe", colSpan: 4 },
+                    {},
+                    {},
+                    {}
+                ]);
+            }
+
+            categorySum += saldoVal;
+
             tableBody.push([
                 { text: kardex.product.cod, fontSize: 8 },
                 { text: kardex.product.name, fontSize: 8 },
@@ -241,34 +429,68 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
             ]);
         });
 
-        tableBody.push([
-            { text: "TOTAL MATERIA PRIMA (MP)", fontSize: 8, bold: true, fillColor: "#E2E8F0" },
-            { text: "", fillColor: "#E2E8F0" },
-            { text: "", fillColor: "#E2E8F0" },
-            { text: formatEuro(totalSaldoMp, decimal), fontSize: 8, bold: true, alignment: "right", fillColor: "#E2E8F0" }
-        ]);
-        tableBody.push([
-            { text: "TOTAL PRODUCTOS TERMINADOS (PT)", fontSize: 8, bold: true, fillColor: "#E2E8F0" },
-            { text: "", fillColor: "#E2E8F0" },
-            { text: "", fillColor: "#E2E8F0" },
-            { text: formatEuro(totalSaldoPt, decimal), fontSize: 8, bold: true, alignment: "right", fillColor: "#E2E8F0" }
-        ]);
-        tableBody.push([
-            { text: "TOTAL GENERAL", fontSize: 8, bold: true, fillColor: "#CBD5E1" },
-            { text: "", fillColor: "#CBD5E1" },
-            { text: "", fillColor: "#CBD5E1" },
-            { text: formatEuro(totalSaldo, decimal), fontSize: 8, bold: true, alignment: "right", fillColor: "#CBD5E1" }
-        ]);
+        if (currentCategoryName !== "") {
+            addCategoryFooter(currentCategoryName, categorySum);
+        }
 
+        // Push main table
         dataPdf.push({
             style: "tableReport",
-            absolutePosition: { x: 20, y: 85 },
+            margin: [0, 25, 0, 10],
             table: {
                 headerRows: 1,
                 widths: ["auto", "*", "auto", "auto"],
                 body: tableBody
             },
             layout: "lightHorizontalLines",
+        });
+
+        // Build Sucursal Summary Table matching the HTML card
+        const sucursalTableBody = [
+            [
+                { text: "SUCURSAL", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99" },
+                { text: "TOTAL (MP)", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" },
+                { text: "TOTAL (PT)", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" },
+                { text: "TOTAL GENERAL", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" }
+            ]
+        ];
+
+        const sucursalesList = Object.values(sucursalTotals);
+        sucursalesList.forEach((st) => {
+            sucursalTableBody.push([
+                { text: st.name.toUpperCase(), fontSize: 8, bold: true, color: "#1e293b" },
+                { text: formatEuro(st.quantity_saldo_mp, decimal), fontSize: 8, color: "#64748b", alignment: "right" },
+                { text: formatEuro(st.quantity_saldo_pt, decimal), fontSize: 8, color: "#64748b", alignment: "right" },
+                { text: formatEuro(st.quantity_saldo, decimal), fontSize: 8, bold: true, color: "#1e293b", alignment: "right" }
+            ]);
+        });
+
+        // Add Consolidado General row
+        sucursalTableBody.push([
+            { text: "CONSOLIDADO GENERAL", fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc" },
+            { text: formatEuro(totalSaldoMp, decimal), fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc", alignment: "right" },
+            { text: formatEuro(totalSaldoPt, decimal), fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc", alignment: "right" },
+            { text: formatEuro(totalSaldo, decimal), fontSize: 9, bold: true, color: "#ffffff", fillColor: "#038b21", alignment: "right" }
+        ]);
+
+        dataPdf.push({
+            text: "RESUMEN POR SUCURSAL",
+            fontSize: 9,
+            bold: true,
+            color: "#0f3d99",
+            margin: [0, 15, 0, 5],
+            keepWithNext: true
+        });
+
+        dataPdf.push({
+            style: "tableReport",
+            table: {
+                headerRows: 1,
+                widths: ["*", "auto", "auto", "auto"],
+                body: sucursalTableBody
+            },
+            layout: "lightHorizontalLines",
+            margin: [0, 0, 0, 20]
         });
 
         const formatDate1 =
@@ -325,8 +547,163 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
 
 const generateExcelReportsTotalStock = async (req = request, res = response) => {
     try {
+        const { filterBy, date1, date2, query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, category_ids } = req.query;
         const kardexes = await returnDataTotalStockRecumet(req.query);
         const decimal = await getNumberDecimal();
+
+        // Compute sucursal totals
+        const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
+
+        let sucursalCond = {};
+        const targetSucursales = id_sucursales || id_sucursal;
+        if (targetSucursales) {
+            const sucursalIds = String(targetSucursales).split(',').map(id => id.trim()).filter(Boolean);
+            if (sucursalIds.length > 0) {
+                sucursalCond = { id_sucursal: { [Op.in]: sucursalIds } };
+            }
+        }
+
+        let storageCond = {};
+        const targetStorages = id_storages || id_storage;
+        if (targetStorages) {
+            const storageIds = String(targetStorages).split(',').map(id => id.trim()).filter(Boolean);
+            if (storageIds.length > 0) {
+                storageCond = { id_storage: { [Op.in]: storageIds } };
+            }
+        }
+
+        let whereProduct = {};
+        if (id_product) {
+            whereProduct = { id: id_product };
+        }
+        if (category_ids) {
+            let ids = [];
+            if (Array.isArray(category_ids)) {
+                ids = category_ids;
+            } else if (typeof category_ids === 'string') {
+                ids = category_ids.split(',').map(id => id.trim()).filter(Boolean);
+            }
+            if (ids.length > 0) {
+                whereProduct = {
+                    ...whereProduct,
+                    id_category: { [Op.in]: ids }
+                };
+            }
+        }
+
+        const category_types = ['RAW_MATERIAL', 'FINISHED_PRODUCT'];
+        let whereCategory = {
+            type: {
+                [Op.in]: category_types
+            }
+        };
+
+        const showZeroSaldo = req.query.showZeroSaldo === 'true' || req.query.showZeroSaldo === true;
+
+        const sucursalTotals = {};
+        const optionsDbSucursalProduct = {
+            attributes: [
+                'id_sucursal',
+                'id_product',
+                [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
+                [sequelize.literal('COALESCE(SUM(quantity_output), 0)'), 'quantity_output'],
+                [sequelize.literal('COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
+            ],
+            where: {
+                [Op.and]: [
+                    sucursalCond,
+                    storageCond,
+                    id_product ? { id_product } : {},
+                    { date: whereDate },
+                ]
+            },
+            include: [
+                {
+                    association: 'product',
+                    attributes: ['id_category'],
+                    where: whereProduct,
+                    include: [
+                        { association: 'category', attributes: ['name', 'type'], where: whereCategory }
+                    ]
+                },
+                {
+                    association: 'sucursal',
+                    attributes: ['name']
+                }
+            ],
+            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'sucursal.id'],
+            raw: true,
+            nest: true
+        };
+
+        const sucursalProductKardexes = await ViewKardex.findAll(optionsDbSucursalProduct);
+        if (sucursalProductKardexes && sucursalProductKardexes.length > 0) {
+            const productIds = sucursalProductKardexes.map(k => k.id_product);
+            const firstMovementsSP = await ViewKardex.findAll({
+                attributes: [
+                    'id_product',
+                    'id_sucursal',
+                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
+                ],
+                where: {
+                    [Op.and]: [
+                        sucursalCond,
+                        storageCond,
+                        { id_product: { [Op.in]: productIds } },
+                        { date: whereDate }
+                    ]
+                },
+                group: ['id_product', 'id_sucursal'],
+                raw: true
+            });
+
+            const minIdsSP = firstMovementsSP.map(m => m.min_id).filter(Boolean);
+            const initialBalancesSP = minIdsSP.length > 0 ? await ViewKardex.findAll({
+                attributes: ['id_product', 'id_sucursal', 'saldo_inicial'],
+                where: {
+                    id: { [Op.in]: minIdsSP }
+                },
+                raw: true
+            }) : [];
+
+            const balanceMapSP = {};
+            for (const bal of initialBalancesSP) {
+                balanceMapSP[`${bal.id_product}_${bal.id_sucursal}`] = bal.saldo_inicial;
+            }
+
+            for (const sp of sucursalProductKardexes) {
+                const key = `${sp.id_product}_${sp.id_sucursal}`;
+                const quantity_inicial = Number(balanceMapSP[key] || 0);
+                sp.quantity_saldo = Number(sp.quantity_saldo) + quantity_inicial;
+            }
+        }
+
+        const filteredSP = showZeroSaldo
+            ? sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) <= 0)
+            : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);
+
+        for (const sp of filteredSP) {
+            const sucursalId = sp.id_sucursal;
+            const sucursalName = sp.sucursal?.name || `Sucursal ${sucursalId}`;
+            const catType = sp.product?.category?.type;
+            const saldoVal = Number(sp.quantity_saldo || 0);
+
+            if (!sucursalTotals[sucursalId]) {
+                sucursalTotals[sucursalId] = {
+                    name: sucursalName,
+                    quantity_saldo: 0,
+                    quantity_saldo_mp: 0,
+                    quantity_saldo_pt: 0
+                };
+            }
+
+            sucursalTotals[sucursalId].quantity_saldo += saldoVal;
+            if (catType === 'RAW_MATERIAL') {
+                sucursalTotals[sucursalId].quantity_saldo_mp += saldoVal;
+            } else if (catType === 'FINISHED_PRODUCT') {
+                sucursalTotals[sucursalId].quantity_saldo_pt += saldoVal;
+            }
+        }
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Consolidado Stock");
@@ -336,6 +713,13 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             "Unidad",
             "Saldo",
         ];
+
+        const thinBorder = {
+            top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+            left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+            bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+            right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
+        };
         
         const headerRow = worksheet.addRow(headers);
         headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -346,12 +730,41 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                 fgColor: { argb: 'FF1A3FA8' } // Deep blue brand color
             };
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            cell.border = thinBorder;
         });
         headerRow.height = 24;
 
         let totalSaldo = 0;
         let totalSaldoMp = 0;
         let totalSaldoPt = 0;
+
+        let currentCategoryName = "";
+        let categorySum = 0;
+
+        const addCategoryFooterExcel = (catName, sumVal) => {
+            const catFooterRow = worksheet.addRow([
+                `TOTAL ${catName.toUpperCase()}`,
+                "",
+                "",
+                sumVal
+            ]);
+            catFooterRow.font = { name: 'Arial', size: 10, bold: true };
+            catFooterRow.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+            worksheet.mergeCells(`A${catFooterRow.number}:C${catFooterRow.number}`);
+            
+            for (let i = 1; i <= 4; i++) {
+                const cell = catFooterRow.getCell(i);
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFF8F9FA' }
+                };
+                cell.border = thinBorder;
+            }
+            catFooterRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+            catFooterRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+        };
+
         kardexes.forEach((kardex) => {
             const saldoVal = Number(kardex.dataValues.quantity_saldo || 0);
             totalSaldo += saldoVal;
@@ -363,6 +776,34 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                 totalSaldoPt += saldoVal;
             }
 
+            const categoryName = kardex.product?.category?.name || "SIN CATEGORÍA";
+
+            if (categoryName !== currentCategoryName) {
+                if (currentCategoryName !== "") {
+                    addCategoryFooterExcel(currentCategoryName, categorySum);
+                }
+                currentCategoryName = categoryName;
+                categorySum = 0;
+
+                // Add group header row in Excel
+                const catRow = worksheet.addRow([categoryName.toUpperCase()]);
+                catRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+                worksheet.mergeCells(`A${catRow.number}:D${catRow.number}`);
+                
+                for (let i = 1; i <= 4; i++) {
+                    const cell = catRow.getCell(i);
+                    cell.fill = {
+                        type: 'pattern',
+                        pattern: 'solid',
+                        fgColor: { argb: 'FFE0F2FE' }
+                    };
+                    cell.border = thinBorder;
+                }
+                catRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
+            }
+
+            categorySum += saldoVal;
+
             const row = worksheet.addRow([
                 kardex.product.cod,
                 kardex.product.name,
@@ -370,35 +811,101 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                 saldoVal,
             ]);
             row.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+            row.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+            for (let i = 1; i <= 4; i++) {
+                row.getCell(i).border = thinBorder;
+            }
         });
 
-        const rowMp = worksheet.addRow([
-            "TOTAL MATERIA PRIMA (MP)",
-            "",
-            "",
+        if (currentCategoryName !== "") {
+            addCategoryFooterExcel(currentCategoryName, categorySum);
+        }
+
+        // Add blank row
+        worksheet.addRow([]);
+
+        // Add Resumen por Sucursal Section
+        const subTitleRow = worksheet.addRow(["RESUMEN POR SUCURSAL"]);
+        subTitleRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+        worksheet.mergeCells(`A${subTitleRow.number}:D${subTitleRow.number}`);
+
+        const sucHeaderRow = worksheet.addRow([
+            "SUCURSAL",
+            "TOTAL (MP)",
+            "TOTAL (PT)",
+            "TOTAL GENERAL"
+        ]);
+        sucHeaderRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+        sucHeaderRow.eachCell((cell) => {
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFD2E2F7' }
+            };
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+            cell.border = thinBorder;
+        });
+        sucHeaderRow.height = 20;
+
+        const sucursalesList = Object.values(sucursalTotals);
+        sucursalesList.forEach((st) => {
+            const row = worksheet.addRow([
+                st.name.toUpperCase(),
+                st.quantity_saldo_mp,
+                st.quantity_saldo_pt,
+                st.quantity_saldo
+            ]);
+            row.font = { name: 'Arial', size: 10 };
+            row.getCell(2).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+            row.getCell(3).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+            row.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+            row.getCell(4).font = { name: 'Arial', size: 10, bold: true };
+            row.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
+            row.getCell(3).alignment = { horizontal: 'right', vertical: 'middle' };
+            row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+            for (let i = 1; i <= 4; i++) {
+                row.getCell(i).border = thinBorder;
+            }
+        });
+
+        // Add Consolidado General Row
+        const consRow = worksheet.addRow([
+            "CONSOLIDADO GENERAL",
             totalSaldoMp,
-        ]);
-        rowMp.font = { name: 'Arial', size: 10, bold: true };
-        rowMp.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-
-        const rowPt = worksheet.addRow([
-            "TOTAL PRODUCTOS TERMINADOS (PT)",
-            "",
-            "",
             totalSaldoPt,
+            totalSaldo
         ]);
-        rowPt.font = { name: 'Arial', size: 10, bold: true };
-        rowPt.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+        consRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+        for (let i = 1; i <= 3; i++) {
+            const cell = consRow.getCell(i);
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFF4F6FC' }
+            };
+            cell.border = thinBorder;
+        }
+        consRow.getCell(2).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+        consRow.getCell(3).numFormat = `#,##0.${'0'.repeat(decimal)}`;
 
-        const totalRow = worksheet.addRow([
-            "TOTAL GENERAL",
-            "",
-            "",
-            totalSaldo,
-        ]);
-        totalRow.font = { name: 'Arial', size: 10, bold: true };
-        totalRow.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-        
+        consRow.getCell(4).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FF038B21' } // Green background
+        };
+        consRow.getCell(4).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        consRow.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+        consRow.getCell(4).border = thinBorder;
+
+        consRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+        consRow.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
+        consRow.getCell(3).alignment = { horizontal: 'right', vertical: 'middle' };
+        consRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+
         // Auto-fit column widths
         worksheet.columns.forEach(column => {
             let maxLen = 0;

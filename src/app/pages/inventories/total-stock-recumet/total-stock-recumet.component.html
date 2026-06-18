@@ -24,10 +24,9 @@
               <!-- Área / Almacén -->
               <div class="col-12 col-md-3">
                 <label class="block mb-1">Área / Almacén</label>
-                <p-multiSelect [options]="filteredStorages()" formControlName="id_storage"
-                  optionLabel="name" optionValue="id"
-                  placeholder="Selecciona almacenes" [style]="{'width':'100%'}" appendTo="body" [filter]="true"
-                  filterBy="name" [showClear]="true" display="chip">
+                <p-multiSelect [options]="filteredStorages()" formControlName="id_storage" optionLabel="name"
+                  optionValue="id" placeholder="Selecciona almacenes" [style]="{'width':'100%'}" appendTo="body"
+                  [filter]="true" filterBy="name" [showClear]="true" display="chip">
                 </p-multiSelect>
               </div>
 
@@ -70,10 +69,9 @@
               <div class="col-12 col-md-6">
                 <label class="block mb-1">Categorías</label>
                 <p-multiSelect [options]="dropdownCategories()" [(ngModel)]="selectedCategoryValues"
-                  [ngModelOptions]="{standalone: true}"
-                  (onChange)="onCategoryChange($event.value)" optionLabel="name" optionValue="id"
-                  placeholder="Seleccione categorías..." [style]="{'width':'100%'}" appendTo="body" [filter]="true"
-                  filterBy="name" [loading]="loadingCategories()" [showClear]="true" display="chip">
+                  [ngModelOptions]="{standalone: true}" (onChange)="onCategoryChange($event.value)" optionLabel="name"
+                  optionValue="id" placeholder="Seleccione categorías..." [style]="{'width':'100%'}" appendTo="body"
+                  [filter]="true" filterBy="name" [loading]="loadingCategories()" [showClear]="true" display="chip">
                 </p-multiSelect>
               </div>
 
@@ -121,6 +119,73 @@
 </form>
 
 <app-table [cols]="cols()" (customSort$)="customSort($event)" [sortOrder]="'ASC'" [sortField]="'product.cod'"
-  [includeSearch]="true" [searchFor]="[{name: 'Código o Detalle', code: 'query'}]" (rows$)="paginate($event)" (search$)="search($event)" [data]="kardexes()"
-  [groupRowsBy]="'product.category.name'" [loading]="loading()">
+  [includeSearch]="true" [searchFor]="[{name: 'Código o Detalle', code: 'query'}]" (rows$)="paginate($event)"
+  (search$)="search($event)" [data]="kardexes()" [groupRowsBy]="'product.category.name'" [loading]="loading()">
 </app-table>
+
+<div class="card shadow border-0 mt-4 overflow-hidden animate__animated animate__fadeIn"
+  style="border-radius: 12px; background: #ffffff;" *ngIf="kardexes()?.sucursalTotals && !loading()">
+  <div class="table-responsive">
+    <table class="table m-0 align-middle" style="font-size: 0.95rem; border-collapse: collapse;">
+      <thead>
+        <tr
+          style="background: #d2e2f7; border-bottom: 2px solid #bfe2fd; color: #0f3d99; font-weight: bold; font-size: 0.85rem; text-transform: uppercase;">
+          <th class="py-3 text-start ps-4" style="font-weight: 700; width: 30%;">SUCURSAL</th>
+          <th class="py-3 text-end pe-5" style="font-weight: 700;">Total (MP)</th>
+          <th class="py-3 text-end pe-5" style="font-weight: 700;">Total (PT)</th>
+          <th class="py-3 pe-4 text-end" style="font-weight: 700; width: 250px;">Total General</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Branches Loop -->
+        <tr *ngFor="let st of getSucursalesList(); let idx = index" class="border-bottom"
+          style="border-color: #e2e8f0 !important; background: #ffffff;">
+          <td class="py-3 text-start ps-4 font-weight-bold text-dark"
+            style="font-weight: 700; color: #1e293b; font-size: 0.95rem;">
+            <i class="fa-solid fa-building text-primary me-2" style="color: #0f3d99 !important;"
+              *ngIf="st.name.toUpperCase().includes('MATRIZ')"></i>
+            <i class="fa-solid fa-store text-secondary me-2" *ngIf="!st.name.toUpperCase().includes('MATRIZ')"></i>
+            {{ st.name | uppercase }}
+          </td>
+          <td class="py-3 text-end pe-5 text-secondary" style="font-size: 0.95rem; color: #64748b;">
+            {{ pipeNumber.transform(st.quantity_saldo_mp, decimal()) }}
+          </td>
+          <td class="py-3 text-end pe-5 text-secondary" style="font-size: 0.95rem; color: #64748b;">
+            {{ pipeNumber.transform(st.quantity_saldo_pt, decimal()) }}
+          </td>
+          <td class="py-3 pe-4 text-end font-weight-bold text-dark"
+            style="font-weight: 700; color: #1e293b; font-size: 1.05rem;">
+            {{ pipeNumber.transform(st.quantity_saldo, decimal()) }}
+          </td>
+        </tr>
+
+        <!-- Consolidated Grand Total Row -->
+        <tr style="background: #f4f6fc;">
+          <td class="py-3 text-start ps-4 font-weight-bold"
+            style="font-weight: 800; color: #0f3d99; font-size: 1.05rem;">
+            <i class="fa-solid fa-building-columns text-primary me-2" style="color: #0f3d99 !important;"></i>
+            CONSOLIDADO GENERAL
+          </td>
+          <td class="py-3 text-end pe-5">
+            <div class="font-weight-bold" style="font-size: 1.15rem; font-weight: 800; color: #0f3d99;">
+              {{ pipeNumber.transform(kardexes()?.totals?.quantity_saldo_mp, decimal()) }}
+            </div>
+          </td>
+          <td class="py-3 text-end pe-5">
+            <div class="font-weight-bold" style="font-size: 1.15rem; font-weight: 800; color: #0f3d99;">
+              {{ pipeNumber.transform(kardexes()?.totals?.quantity_saldo_pt, decimal()) }}
+            </div>
+          </td>
+          <!-- Grand Total Cell with Dark Blue background -->
+          <td class="py-3 pe-4 text-end text-white"
+            style="background: #0f3d99 !important; font-weight: 800; font-size: 1.35rem; width: 250px; border: none !important;">
+            <div
+              style="font-size: 0.65rem; color: #93c5fd; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 2px;">
+              Grand Total</div>
+            {{ pipeNumber.transform(kardexes()?.totals?.quantity_saldo, decimal()) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

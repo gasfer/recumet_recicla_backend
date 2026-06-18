@@ -30,6 +30,14 @@ export interface Kardexes {
             quantity_saldo: number;
         }
     };
+    sucursalTotals?: {
+        [sucursalId: string]: {
+            name: string;
+            quantity_saldo: number;
+            quantity_saldo_mp: number;
+            quantity_saldo_pt: number;
+        }
+    };
 }
 
 export interface Kardex {

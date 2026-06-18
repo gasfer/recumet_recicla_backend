@@ -543,6 +543,15 @@ export class TableComponent implements OnInit, OnDestroy, OnChanges {
     return columns?.some(col => col.footer);
   }
 
+  getGroupFooterColspan(columns: ColsTable[]): number {
+    if (!columns) return 1;
+    const firstUpdateIdx = columns.findIndex(col => col.isValueUpdate);
+    if (firstUpdateIdx === -1) {
+      return columns.length;
+    }
+    return firstUpdateIdx > 0 ? firstUpdateIdx : 1;
+  }
+
   formatTooltip(value: any): string {
     try {
       if (!isNaN(Number(value))) return this.pipeNumber.transform(value, this.decimal()) || '';

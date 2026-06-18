@@ -242,31 +242,6 @@ export class TotalStockRecumetComponent implements OnInit {
         });
 
         this.kardexes.set(resp.kardexes);
-
-        // Update column footers with grand totals
-        const totals = resp.kardexes.totals;
-        if (totals) {
-          this.cols.update(cols => cols.map(col => {
-            if (col.field === 'product.cod') {
-              return { 
-                ...col, 
-                footer: 'TOTAL MP:\nTOTAL PT:\nTOTAL GENERAL',
-                style: 'min-width:100px;max-width:100px; white-space: pre-line !important;'
-              };
-            }
-            if (col.field === 'quantity_saldo') {
-              const mpStr = this.pipeNumber.transform(totals.quantity_saldo_mp, this.decimal()) || '0.0000';
-              const ptStr = this.pipeNumber.transform(totals.quantity_saldo_pt, this.decimal()) || '0.0000';
-              const genStr = this.pipeNumber.transform(totals.quantity_saldo, this.decimal()) || '0.0000';
-              return { 
-                ...col, 
-                footer: `${mpStr}\n${ptStr}\n${genStr}`,
-                style: 'min-width:100px;max-width:120px;text-align: center; white-space: pre-line !important;'
-              };
-            }
-            return { ...col, footer: '' };
-          }));
-        }
       },
       complete: () => this.loading.set(false),
       error: (err) => {
@@ -432,5 +407,9 @@ export class TotalStockRecumetComponent implements OnInit {
         });
       },
     });
+  }
+
+  getSucursalesList(): any[] {
+    return Object.values(this.kardexes()?.sucursalTotals || {});
   }
 }
