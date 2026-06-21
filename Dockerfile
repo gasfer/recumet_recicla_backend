@@ -7,7 +7,7 @@ WORKDIR /app
 
 COPY package*.json ./
 
-RUN npm ci --omit=dev
+RUN npm install --omit=dev --force
 
 # ==========================
 # Stage 2 - Runtime
@@ -34,8 +34,8 @@ RUN chown -R nodeuser:nodejs /app
 
 USER nodeuser
 
-EXPOSE 3001
+EXPOSE 3000
 
 ENTRYPOINT ["dumb-init", "--"]
 
-CMD ["sh", "-c", "npx sequelize-cli db:migrate && node src/index.js"]
+CMD ["sh", "-c", "npx sequelize-cli db:migrate && node app.js"]
