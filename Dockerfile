@@ -34,7 +34,7 @@ RUN chown -R nodeuser:nodejs /app
 
 USER nodeuser
 
-EXPOSE 3000
+EXPOSE 3001
 
 ENTRYPOINT ["dumb-init", "--"]
 
