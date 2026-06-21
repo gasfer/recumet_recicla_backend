@@ -1,22 +1,41 @@
-FROM node:12.22.9-slim
+# ==========================
+# Stage 1 - Dependencies
+# ==========================
+FROM node:20.11.1-alpine AS deps
 
-# Directorio de trabajo
-WORKDIR /usr/src/app
+WORKDIR /app
 
-# Copiar archivos de definición de dependencias
 COPY package*.json ./
 
-# Instalar dependencias para producción
-RUN npm install --only=production --force
+RUN npm ci --omit=dev
 
-# Copiar el código del proyecto
+# ==========================
+# Stage 2 - Runtime
+# ==========================
+FROM node:20.11.1-alpine
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV TZ=America/La_Paz
+
+RUN apk add --no-cache tzdata dumb-init \
+    && cp /usr/share/zoneinfo/${TZ} /etc/localtime \
+    && echo "${TZ}" > /etc/timezone
+
+COPY --from=deps /app/node_modules ./node_modules
+
 COPY . .
 
-# Entorno de producción
-ENV NODE_ENV=production
+RUN addgroup -S nodejs \
+    && adduser -S nodeuser -G nodejs
 
-# Puerto expuesto
-EXPOSE 3000
+RUN chown -R nodeuser:nodejs /app
 
-# Comando por defecto para correr migraciones y arrancar la aplicación
-CMD ["sh", "-c", "npx sequelize-cli db:migrate && npm start"]
+USER nodeuser
+
+EXPOSE 3001
+
+ENTRYPOINT ["dumb-init", "--"]
+
+CMD ["sh", "-c", "npx sequelize-cli db:migrate && node src/index.js"]
