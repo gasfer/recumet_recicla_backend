@@ -1,13 +1,22 @@
-FROM node:20.11.1 as builder
-WORKDIR /code
+FROM node:12.22.9-slim
 
-COPY package.json package.json
-RUN npm install
+# Directorio de trabajo
+WORKDIR /usr/src/app
 
-FROM node:20.11.1 as prod
-WORKDIR /code
-COPY --from=builder /code/node_modules ./node_modules
+# Copiar archivos de definición de dependencias
+COPY package*.json ./
 
+# Instalar dependencias para producción
+RUN npm install --only=production --force
+
+# Copiar el código del proyecto
 COPY . .
-ENV TZ=America/La_Paz
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Entorno de producción
+ENV NODE_ENV=production
+
+# Puerto expuesto
+EXPOSE 3000
+
+# Comando por defecto para correr migraciones y arrancar la aplicación
+CMD ["sh", "-c", "npx sequelize-cli db:migrate && npm start"]
