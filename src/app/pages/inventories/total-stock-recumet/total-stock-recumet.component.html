@@ -1,0 +1,191 @@
+<form [formGroup]="formReport">
+  <div class="card shadow mb-4 icon-box ">
+    <div class="card-body">
+      <div class="row text-center">
+        <h3 style="color: var(--bg-2665C);"><b>{{ title() }}</b></h3>
+      </div>
+      <p-accordion [activeIndex]="1">
+        <p-accordionTab header="Filtros">
+          <div class="p-fluid">
+            <div class="row">
+              <!-- Sucursales Multiselect -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Sucursales<span class="text-danger">*</span></label>
+                <p-multiSelect [options]="dropdownSucursales()" formControlName="id_sucursal"
+                  (onChange)="onSucursalesChange()" optionLabel="name" optionValue="id"
+                  placeholder="Selecciona sucursales" [style]="{'width':'100%'}" appendTo="body" [filter]="true"
+                  filterBy="name" [showClear]="true" display="chip">
+                </p-multiSelect>
+                <small *ngIf="validatorsService.inputValid('id_sucursal',formReport)" class="p-error block">
+                  {{ validatorsService.inputValidMessage("id_sucursal",formReport) }}
+                </small>
+              </div>
+
+              <!-- Área / Almacén -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Área / Almacén</label>
+                <p-multiSelect [options]="filteredStorages()" formControlName="id_storage" optionLabel="name"
+                  optionValue="id" placeholder="Selecciona almacenes" [style]="{'width':'100%'}" appendTo="body"
+                  [filter]="true" filterBy="name" [showClear]="true" display="chip">
+                </p-multiSelect>
+              </div>
+
+              <!-- Tipo Filtrado -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Tipo Filtrado<span class="text-danger">*</span></label>
+                <p-dropdown #dropdownFilterBy [options]="types_filtrado()" formControlName="filterBy" optionLabel="name"
+                  optionValue="code" appendTo="body" (onChange)="onChangeTypesFilter()">
+                </p-dropdown>
+              </div>
+
+              <!-- Fecha -->
+              <div class="col-12 col-md-3">
+                <label class="block mb-1">Fecha<span class="text-danger">*</span></label>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'MONTH'" formControlName="dates"
+                  view="month" dateFormat="mm/yy" placeholder="MM/YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'RANGE'" formControlName="dates"
+                  selectionMode="range" dateFormat="dd/mm/yy" placeholder="DD/MM/YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'YEAR'" formControlName="dates"
+                  view="year" dateFormat="yy" placeholder="YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <p-calendar #calendarDates *ngIf="formReport.get('filterBy')?.value == 'DAY'" formControlName="dates"
+                  dateFormat="dd/mm/yy" placeholder="DD/MM/YYYY" [showIcon]="true">
+                </p-calendar>
+
+                <small *ngIf="validatorsService.inputValid('dates',formReport)" class="p-error block">
+                  {{ validatorsService.inputValidMessage("dates",formReport) }}
+                </small>
+              </div>
+            </div>
+
+            <div class="row mt-3">
+              <!-- Categorías Multiselect -->
+              <div class="col-12 col-md-6">
+                <label class="block mb-1">Categorías</label>
+                <p-multiSelect [options]="dropdownCategories()" [(ngModel)]="selectedCategoryValues"
+                  [ngModelOptions]="{standalone: true}" (onChange)="onCategoryChange($event.value)" optionLabel="name"
+                  optionValue="id" placeholder="Seleccione categorías..." [style]="{'width':'100%'}" appendTo="body"
+                  [filter]="true" filterBy="name" [loading]="loadingCategories()" [showClear]="true" display="chip">
+                </p-multiSelect>
+              </div>
+
+              <!-- Filtrar Saldos -->
+              <div class="col-12 col-md-6">
+                <label class="block mb-1">Filtrar Saldos</label>
+
+                <div class="d-flex align-items-center gap-3 mt-2">
+                  <p-inputSwitch #inputSwitchSaldo formControlName="showZeroSaldo">
+                  </p-inputSwitch>
+
+                  <p-tag *ngIf="formReport.get('showZeroSaldo')?.value" severity="info" icon="fas fa-check-circle"
+                    value="Incluir saldos en cero">
+                  </p-tag>
+
+                  <p-tag *ngIf="!formReport.get('showZeroSaldo')?.value" severity="success" icon="fas fa-filter"
+                    value="Excluir saldos en cero">
+                  </p-tag>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="text-end mt-3">
+            <p-button (click)="!loading() ? getAllAndSearchKardex(1,this.rows()) : null"
+              styleClass="p-button-rounded p-button-sm" label="Buscar" icon="fa-solid fa-magnifying-glass"
+              [loading]="loading()">
+            </p-button>
+
+            <p-splitButton *ngIf="validatorsService.withPermission('KARDEX','reports')" icon="fas fa-print"
+              label="Imprimir" [model]="this.buttonItems" [menuStyle]="{'width':'8em'}" [size]="'small'"
+              [rounded]="true" [severity]="'danger'" (onClick)="!loading() ? this.printPdfReport() : null"
+              styleClass="ms-1">
+            </p-splitButton>
+
+            <p-button (click)="clearInputs()"
+              styleClass="p-button-rounded ms-1 mt-2 mt-sm-0 mt-md-0 p-button-success p-button-sm" icon="fas fa-broom"
+              label="Limpiar" [pTooltip]="'Limpiar Campos'" [loading]="loading()">
+            </p-button>
+          </div>
+        </p-accordionTab>
+      </p-accordion>
+    </div>
+  </div>
+</form>
+
+<app-table [cols]="cols()" (customSort$)="customSort($event)" [sortOrder]="'ASC'" [sortField]="'product.cod'"
+  [includeSearch]="true" [searchFor]="[{name: 'Código o Detalle', code: 'query'}]" (rows$)="paginate($event)"
+  (search$)="search($event)" [data]="kardexes()" [groupRowsBy]="'product.category.name'" [loading]="loading()">
+</app-table>
+
+<div class="card shadow border-0 mt-4 overflow-hidden animate__animated animate__fadeIn"
+  style="border-radius: 12px; background: #ffffff;" *ngIf="kardexes()?.sucursalTotals && !loading()">
+  <div class="table-responsive">
+    <table class="table m-0 align-middle" style="font-size: 0.95rem; border-collapse: collapse;">
+      <thead>
+        <tr
+          style="background: #d2e2f7; border-bottom: 2px solid #bfe2fd; color: #0f3d99; font-weight: bold; font-size: 0.85rem; text-transform: uppercase;">
+          <th class="py-3 text-start ps-4" style="font-weight: 700; width: 30%;">SUCURSAL</th>
+          <th class="py-3 text-end pe-5" style="font-weight: 700;">Total (MP)</th>
+          <th class="py-3 text-end pe-5" style="font-weight: 700;">Total (PT)</th>
+          <th class="py-3 pe-4 text-end" style="font-weight: 700; width: 250px;">Total General</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Branches Loop -->
+        <tr *ngFor="let st of getSucursalesList(); let idx = index" class="border-bottom"
+          style="border-color: #e2e8f0 !important; background: #ffffff;">
+          <td class="py-3 text-start ps-4 font-weight-bold text-dark"
+            style="font-weight: 700; color: #1e293b; font-size: 0.95rem;">
+            <i class="fa-solid fa-building text-primary me-2" style="color: #0f3d99 !important;"
+              *ngIf="st.name.toUpperCase().includes('MATRIZ')"></i>
+            <i class="fa-solid fa-store text-secondary me-2" *ngIf="!st.name.toUpperCase().includes('MATRIZ')"></i>
+            {{ st.name | uppercase }}
+          </td>
+          <td class="py-3 text-end pe-5 text-secondary" style="font-size: 0.95rem; color: #64748b;">
+            {{ pipeNumber.transform(st.quantity_saldo_mp, decimal()) }}
+          </td>
+          <td class="py-3 text-end pe-5 text-secondary" style="font-size: 0.95rem; color: #64748b;">
+            {{ pipeNumber.transform(st.quantity_saldo_pt, decimal()) }}
+          </td>
+          <td class="py-3 pe-4 text-end font-weight-bold text-dark"
+            style="font-weight: 700; color: #1e293b; font-size: 1.05rem;">
+            {{ pipeNumber.transform(st.quantity_saldo, decimal()) }}
+          </td>
+        </tr>
+
+        <!-- Consolidated Grand Total Row -->
+        <tr style="background: #f4f6fc;">
+          <td class="py-3 text-start ps-4 font-weight-bold"
+            style="font-weight: 800; color: #0f3d99; font-size: 1.05rem;">
+            <i class="fa-solid fa-building-columns text-primary me-2" style="color: #0f3d99 !important;"></i>
+            CONSOLIDADO GENERAL
+          </td>
+          <td class="py-3 text-end pe-5">
+            <div class="font-weight-bold" style="font-size: 1.15rem; font-weight: 800; color: #0f3d99;">
+              {{ pipeNumber.transform(kardexes()?.totals?.quantity_saldo_mp, decimal()) }}
+            </div>
+          </td>
+          <td class="py-3 text-end pe-5">
+            <div class="font-weight-bold" style="font-size: 1.15rem; font-weight: 800; color: #0f3d99;">
+              {{ pipeNumber.transform(kardexes()?.totals?.quantity_saldo_pt, decimal()) }}
+            </div>
+          </td>
+          <!-- Grand Total Cell with Dark Blue background -->
+          <td class="py-3 pe-4 text-end text-white"
+            style="background: #0f3d99 !important; font-weight: 800; font-size: 1.35rem; width: 250px; border: none !important;">
+            <div
+              style="font-size: 0.65rem; color: #93c5fd; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 2px;">
+              Grand Total</div>
+            {{ pipeNumber.transform(kardexes()?.totals?.quantity_saldo, decimal()) }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

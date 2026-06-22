@@ -23,6 +23,7 @@
     "jsonwebtoken": "^9.0.1",
     "mime-db": "^1.52.0",
     "moment": "^2.29.4",
+    "pdfkit": "^0.17.2",
     "pdfmake": "^0.2.7",
     "pg": "^8.11.2",
     "pg-hstore": "^2.3.4",

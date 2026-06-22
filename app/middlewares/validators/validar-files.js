@@ -27,7 +27,7 @@ const filesValidateSize = (req, res = response, next) => {
 }
 
 const validateCollection = async (type) => {
-  const valid_types = ['products'];
+  const valid_types = ['products', 'vouchers'];
   if (!valid_types.includes(type)) {
     throw new Error(
       `La colección tiene que ser una de los siguientes: '${valid_types}'`

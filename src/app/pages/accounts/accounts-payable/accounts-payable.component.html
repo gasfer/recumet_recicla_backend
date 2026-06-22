@@ -1,0 +1,116 @@
+<div [formGroup]="formReport">
+    <div class="card shadow mb-4 icon-box ">
+      <div class="card-body">
+        <div class="row text-center">
+          <h3 style="color: var(--bg-2665C);"><b>CONSULTA DE CUENTAS POR PAGAR</b></h3>
+        </div>
+        <p-accordion [activeIndex]="1">
+          <p-accordionTab header="Filtros">
+            <div class="p-fluid grid mb-2">
+              <div class="field col-12">
+                <div class="row mt-1">
+                  <div class="col-12 col-sm-6">
+                    <div class="row">
+                      <div class="col-12 col-sm-6">
+                        <label class="block mb-1">Tipo Filtrado<span class="text-danger">*</span></label>
+                        <p-dropdown [options]="types_filtrado()" formControlName="filterBy" optionLabel="name"
+                          optionValue="code" appendTo="body" (onChange)="onChangeTypesFilter()">
+                        </p-dropdown>
+                      </div>
+                      <div class="col-12 col-sm-6">
+                        <label class="block mb-1">Fecha<span class="text-danger">*</span>
+                        </label>
+                        <p-calendar *ngIf="formReport.get('filterBy')?.value == 'MONTH'" formControlName="dates"
+                            view="month" dateFormat="mm/yy" [readonlyInput]="true" inputId="monthpicker" placeholder="MM/YYYY"
+                            [class.ng-dirty]="validatorsService.inputValid('dates',formReport)" [showIcon]="true">
+                        </p-calendar>
+                        <p-calendar *ngIf="formReport.get('filterBy')?.value == 'RANGE'" formControlName="dates"
+                            selectionMode="range" dateFormat="dd/mm/yy" [readonlyInput]="true" inputId="range" placeholder="DD/MM/YYYY"
+                            [class.ng-dirty]="validatorsService.inputValid('dates',formReport)" [showIcon]="true">
+                        </p-calendar>
+                        <p-calendar *ngIf="formReport.get('filterBy')?.value == 'YEAR'" formControlName="dates"
+                            view="year" dateFormat="yy" inputId="yearpicker" [showIcon]="true" placeholder="YYYY"
+                            [class.ng-dirty]="validatorsService.inputValid('dates',formReport)">
+                        </p-calendar>
+                        <p-calendar *ngIf="formReport.get('filterBy')?.value == 'DAY'" formControlName="dates"
+                          inputId="basic" dateFormat="dd/mm/yy" [showIcon]="true" placeholder="DD/MM/YYYY"
+                          [class.ng-dirty]="validatorsService.inputValid('dates',formReport)">
+                        </p-calendar>
+                        <small *ngIf="validatorsService.inputValid('dates',formReport)" class="p-error block">
+                          {{ validatorsService.inputValidMessage("dates",formReport) }}
+                        </small>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-sm-6">
+                    <div class="row">
+                      <div class="col-12 col-sm-6">
+                        <label class="block mb-1">Tipo Registro</label>
+                        <p-dropdown [options]="types_registry()"
+                                    [showClear]="true"
+                                    placeholder="Selecciona una opción"
+                                    optionLabel="name"
+                                    optionValue="code"
+                                    appendTo="body"
+                                    formControlName="type_registry"
+                                    [class.ng-dirty]="validatorsService.inputValid('type_registry',formReport)"
+                        ></p-dropdown>
+                      </div>
+                      <div class="col-12 col-sm-6">
+                        <label class="block mb-1">Proveedor</label>
+                        <p-dropdown
+                            [options]="providers()"
+                            [showClear]="true"
+                            formControlName="id_provider"
+                            optionLabel="name"
+                            optionValue="code"
+                            appendTo="body"
+                            [filter]="true"
+                            filterBy="name"
+                            [virtualScroll]="true"
+                            [virtualScrollItemSize]="38"
+                            placeholder="SELECCIONA PROVEEDOR"
+                            [class.ng-dirty]="validatorsService.inputValid('id_provider', formReport)">
+                        </p-dropdown>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="text-end">
+              <p-button (click)="!loading() ? this.searchByFilters() : null" styleClass="p-button-rounded p-button-sm" label="Buscar"
+                icon="fa-solid fa-magnifying-glass" [loading]="loading()"></p-button>
+              <p-splitButton *ngIf="this.validatorsService.withPermission('CUENTAS POR PAGAR','reports')," icon="fas fa-file-pdf" label="Lista Pagos totalizados" [model]="this.buttonItems"
+                [menuStyle]="{'width':'20em'}"
+                [size]="'small'"
+                [rounded]="true"
+                [severity]="'danger'"
+                (onClick)="!loading() ? isTableAbonos() ? printPdfReportAbonos() :  printPdfReport() : null" styleClass="ms-1">
+              </p-splitButton>
+              <p-button (click)="clearInputs()" styleClass="p-button-rounded ms-1 mt-2 mt-sm-0 mt-md-0 p-button-success p-button-sm"
+                icon="fas fa-broom" label="Limpiar" [pTooltip]="'Limpiar Campos'" [loading]="loading()">
+              </p-button>
+            </div>
+          </p-accordionTab>
+        </p-accordion>
+      </div>
+      <p-tabMenu [model]="searchItems()" [styleClass]="loading() ? 'p-disabled' : ''"
+        [activeItem]="searchItems()[0]"></p-tabMenu>
+    </div>
+  </div>
+  @if (!isTableAbonos()) {
+    <app-table [cols]="cols()"  (customSort$)="customSort($event)" [searchTxt]="txtSearch()" [sortOrder]="'DESC'" [sortField]="'input.date_voucher'"
+      [searchFor]="searchFor()" (rows$)="paginate($event)" (search$)="search($event)"
+      [data]="accountsPayable()" [loading]="loading()">
+    </app-table>
+  } @else {
+    <app-table [cols]="colsAbonos()"  (customSort$)="customSort($event)" [sortOrder]="'DESC'" [sortField]="'date_abono'"
+      [searchFor]="searchForAbonos()" (rows$)="paginate($event)"  [includeSearch]="true"
+      [data]="abonosAccountsPayable()" [loading]="loading()" (search$)="search($event)">
+    </app-table>
+  }
+  <input type="file" #mainFileInput style="display: none" (change)="onMainFileSelected($event)" accept="image/*,application/pdf">
+  <app-modal-view-abonos-account-payable></app-modal-view-abonos-account-payable>
+  <app-modal-new-abono-account-payable></app-modal-new-abono-account-payable>
+  <app-modal-new-abonos-multiple-payable></app-modal-new-abonos-multiple-payable>

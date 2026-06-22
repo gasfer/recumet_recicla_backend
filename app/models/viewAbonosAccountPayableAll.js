@@ -23,7 +23,8 @@ module.exports = (sequelize, DataTypes) => {
     account_output: DataTypes.STRING,
     id_bank: DataTypes.INTEGER,
     id_sucursal:  DataTypes.INTEGER,
-    from_pay_multiple: DataTypes.BOOLEAN
+    from_pay_multiple: DataTypes.BOOLEAN,
+    payment_voucher: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'ViewAbonosAccountPayableAll',

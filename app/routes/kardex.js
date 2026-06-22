@@ -1,7 +1,8 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
-const { getKardexPaginate, getKardexFisicoPaginate } = require("../controllers/kardex.controller");
+const { getKardexPaginate, getKardexFisicoPaginate, getTotalStockRecumet } = require("../controllers/kardex.controller");
 const { generatePdfReports, generateExcelReports, generatePdfReportsKardexFisico, generateExcelReportsKardexFisico, generatePdfReportsExistencia, generateExcelReportsExistencia } = require('../controllers/reports/kardex.controller');
+const { generatePdfReportsTotalStock, generateExcelReportsTotalStock } = require('../controllers/reports/total-stock-recumet.controller');
 
 const router = Router();
 
@@ -12,6 +13,28 @@ const router = Router();
  *   name: Kardex
  *   description: Gestión de kardex de inventario
  */
+
+/**
+ * @swagger
+ * /kardex/total-stock-recumet:
+ *   get:
+ *     summary: Obtener el saldo total físico consolidado de materia prima y productos terminados agrupado por producto
+ *     tags: [Kardex]
+ *     responses:
+ *       200:
+ *         description: Lista consolidada de stock por producto
+ */
+router.get('/total-stock-recumet', [
+    validarJWT,
+], getTotalStockRecumet);
+
+router.get('/total-stock-recumet/pdf', [
+    validarJWT,
+], generatePdfReportsTotalStock);
+
+router.get('/total-stock-recumet/excel', [
+    validarJWT,
+], generateExcelReportsTotalStock);
 
 /**
  * @swagger

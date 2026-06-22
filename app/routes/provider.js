@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider } = require('../controllers/provider.controller');
+const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete } = require('../controllers/provider.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete, getValidateCreateSector, validateDeleteSector } = require('../middlewares/validators/provider');
 const { generateExcelProviders } = require('../controllers/reports/providers.controller');
 
@@ -28,6 +28,11 @@ const router = Router();
 router.get('/', [
     validarJWT,
 ], getProviderPaginate);
+
+router.get('/autocomplete', [
+    validarJWT,
+], getProviderAutocomplete);
+
 
 /**
  * @swagger

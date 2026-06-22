@@ -90,10 +90,28 @@ const newClassified = async (req = request, res = response ) => {
         const { id_sucursal, id_storage, number_registry, id_product, cost_product,quantity_product, type_registry } = classified_data;
         classified_data.id_user = req.userAuth.id;
 
-        if (type_registry === 'SIN FICHA') {
-            const count_classifieds = await Classified.count({ where: {type_registry:'SIN FICHA'}, transaction: t });
-            classified_data.number_registry = get_num_request('SF-',count_classifieds + 1,5);
-        }
+       if (type_registry === 'SIN FICHA') {
+    // ✅ Buscar el último número generado, no contar
+    const lastClassified = await Classified.findOne({
+        where: {
+            number_registry: {
+                [Op.like]: 'SFCL-%'
+            }
+        },
+        order: [['id', 'DESC']],
+        transaction: t
+    });
+
+    let nextNumber = 1;
+
+    if (lastClassified && lastClassified.number_registry) {
+        const parts = lastClassified.number_registry.split('-');
+        const lastNumber = parseInt(parts[1]) || 0;
+        nextNumber = lastNumber + 1;
+    }
+
+    classified_data.number_registry = get_num_request('SFCL-', nextNumber, 5);
+}
 
         /*Creación de clasificación*/
         const classified = await Classified.create(classified_data, { transaction: t });

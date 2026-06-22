@@ -1,10 +1,12 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable, getAccountAllProvider, payAccountMultiple, getAbonosAllPayablePaginate, deleteAbonoMultipleAccountPayable } = require('../controllers/accounts_payables.controller');
+const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable, getAccountAllProvider, payAccountMultiple, getAbonosAllPayablePaginate, deleteAbonoMultipleAccountPayable, uploadFileVoucherAbono } = require('../controllers/accounts_payables.controller');
 const { getValidateCreate, validateDelete, getValidateGetForProvider, getValidateGetForProviderGet, validateDeleteMultiple } = require('../middlewares/validators/accounts_payable');
 const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVoucher, printAccountPayableVoucher, generatePdfReportsAbonosAll, generateExcelReportsAbonosAll } = require('../controllers/reports/accounts_payables.controller');
 const { printAbonoMultipleAccountPayableVoucher } = require('../controllers/reports/accounts_payable/printBoletaAbonoMultiple');
+const expressfileUpload = require('express-fileupload');
+const { filesExist, filesValidateSize } = require('../middlewares/validators/validar-files');
 
 const router = Router();
 
@@ -89,6 +91,13 @@ router.post('/new-abono', [
     toUpperCaseConvert,
     getValidateCreate
 ], newAbonoAccountPayable);
+
+router.put('/upload/voucher', [
+    validarJWT,
+    expressfileUpload(),
+    filesExist,
+    filesValidateSize
+], uploadFileVoucherAbono);
 
 /**
  * @swagger

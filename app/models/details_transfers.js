@@ -17,6 +17,12 @@ module.exports = (sequelize, DataTypes) => {
         this.setDataValue('quantity', formattedDecimalQuantitySetter(value));
       }
     },
+    quantity_received: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('quantity_received', value !== null && value !== undefined ? formattedDecimalQuantitySetter(value) : null);
+      }
+    },
     cost: {
       type: DataTypes.DECIMAL,
       set(value) {
@@ -32,6 +38,7 @@ module.exports = (sequelize, DataTypes) => {
     id_transfer: DataTypes.INTEGER,
     id_product: DataTypes.INTEGER,
     status: DataTypes.BOOLEAN,
+    observation: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'DetailsTransfers',

@@ -222,26 +222,51 @@ const printTransferVoucher = async (req = request, res = response) =>{
         });
         let dataPdf = dataPdfReturnTransferVoucher(transfers); //PDF 
         let quantity_total = 0;
+        let quantity_received_total = 0;
         let units = [];
         transfers.detailsTransfers.forEach(detail => {
-            quantity_total+= Number(detail?.quantity);
+            const sentQty = Number(detail?.quantity || 0);
+            const receivedQty = Number(detail?.quantity_received !== null && detail?.quantity_received !== undefined ? detail?.quantity_received : detail?.quantity || 0);
+            quantity_total += sentQty;
+            quantity_received_total += receivedQty;
+
             if (!units.includes(detail?.product?.unit.siglas)) {
                 units.push(detail?.product?.unit.siglas);
             }
+            
+            let diffPctText = '-';
+            if (transfers.status === 'RECEIVED' && sentQty > 0) {
+                const diffPct = ((receivedQty - sentQty) / sentQty) * 100;
+                diffPctText = `${diffPct.toFixed(2)}%`;
+            }
+
             const tableData = [
                 {text:detail?.product?.cod, fontSize:8}, 
                 {text:detail?.product?.name, fontSize:8}, 
-                {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
                 {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
+                {text:sentQty, fontSize:8, alignment: 'center'}, 
+                {text:transfers.status === 'RECEIVED' ? receivedQty : '-', fontSize:8, alignment: 'center'}, 
+                {text:diffPctText, fontSize:8, alignment: 'center'}, 
+                {text:detail?.observation || '-', fontSize:8, alignment: 'center'}, 
             ];
             dataPdf[9].table.body.push(tableData);
         });
+        
+        let totalDiffPctText = '-';
+        if (transfers.status === 'RECEIVED' && quantity_total > 0) {
+            const totalDiffPct = ((quantity_received_total - quantity_total) / quantity_total) * 100;
+            totalDiffPctText = `${totalDiffPct.toFixed(2)}%`;
+        }
+
         dataPdf[9].table.body.push(
             [
                 {text:'',colSpan: 2, border:[false,false,false,false]},
                 '',
-                {text: quantity_total,  fontSize:8, alignment:'center'},
                 {text: units.join(','), fontSize:8, alignment:'center'},
+                {text: quantity_total,  fontSize:8, alignment:'center'},
+                {text: transfers.status === 'RECEIVED' ? quantity_received_total : '-', fontSize:8, alignment:'center'},
+                {text: totalDiffPctText, fontSize:8, alignment:'center'},
+                {text: '', border:[false,false,false,false]},
             ],
         );
         let docDefinition = {
@@ -299,13 +324,16 @@ const dataPdfReturnTransferVoucher = (transfer) => [
     {
         style: 'tableExample',
         table: {
-            widths: [55, '*', 50, 80],
+            widths: [40, '*', 25, 55, 70, 50, 85],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                     {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
+                    {text:'CANT. ENVIADO',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
+                    {text:'CANT. RECEPCIONADO',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
+                    {text:'PORCENTAJE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
+                    {text:'OBSERVACIÓN',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                 ]
             ]
         }

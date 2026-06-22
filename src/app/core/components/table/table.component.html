@@ -1,0 +1,740 @@
+<!-- ════════════════════════════════════════════════════
+     VIEW TOGGLE BAR
+     ════════════════════════════════════════════════════ -->
+<div class="view-toggle-bar" *ngIf="data?.data?.length && !loading">
+  <button [class.active]="viewMode === 'table'" (click)="viewMode = 'table'">
+    <i class="fas fa-table"></i> Tabla
+  </button>
+  <button [class.active]="viewMode === 'cards'" (click)="viewMode = 'cards'">
+    <i class="fas fa-id-card"></i> Cards
+  </button>
+  <button [class.active]="viewMode === 'grid'" (click)="viewMode = 'grid'">
+    <i class="fas fa-th-large"></i> Catálogo
+  </button>
+</div>
+
+<!-- ════════════════════════════════════════════════════
+     EMPTY STATE
+     ════════════════════════════════════════════════════ -->
+<app-card-empty
+  *ngIf="(data?.data?.length === 0 && !loading) || (!data && !loading)">
+</app-card-empty>
+
+<!-- ════════════════════════════════════════════════════
+     ① VISTA TABLA — 100% original
+     ════════════════════════════════════════════════════ -->
+<ng-container *ngIf="viewMode === 'table'">
+
+  <p-table #dt id="table"
+      [value]="data?.data"
+      styleClass="p-datatable-sm p-datatable-striped animated fadeIn"
+      [scrollHeight]="heightTable"
+      [resizableColumns]="true"
+      [rowHover]="true"
+      [rows]="50"
+      [columns]="cols"
+      responsiveLayout="stack"
+      [paginator]="customPagination"
+      [showCurrentPageReport]="true"
+      [sortField]="sortField"
+      [sortOrder]="sortOrder === 'DESC' ? 0 : 1"
+      sortMode="single"
+      (onLazyLoad)="customSort($event)"
+      [lazy]="isCustomSort"
+      currentPageReportTemplate="Mostrando del {first} al {last} total de {totalRecords}"
+      [rowsPerPageOptions]="[10, 50, 100, 200, 500]"
+      rowGroupMode="subheader"
+      [groupRowsBy]="groupRowsBy"
+      [globalFilterFields]="stringSearch">
+
+    <ng-template *ngIf="includeSearch" pTemplate="caption">
+      <div class="text-center">
+        <ng-content select="[extra-filters]"></ng-content>
+        <p-dropdown [options]="searchFor" [formControl]="searchSelect"
+            placeholder="Buscar por:" optionLabel="name" optionValue="code"
+            appendTo="body"></p-dropdown>
+        <span class="p-input-icon-right ms-2 mt-1">
+          <i (click)="clearSearch()" class="fa-solid fa-circle-xmark cursor-pointer"></i>
+          <input type="text" style="text-transform:uppercase" pInputText
+              placeholder="Escriba para filtrar..."
+              [formControl]="txtTermino" (keyup)="search()" />
+        </span>
+      </div>
+    </ng-template>
+
+    <ng-template *ngIf="!includeSearch && customPagination" pTemplate="caption">
+      <div class="text-center">
+        <span class="p-input-icon-left ml-auto">
+          <i class="fas fa-search"></i>
+          <input pInputText type="text" style="text-transform:uppercase"
+              (input)="applyFilterGlobal($event, 'contains')"
+              placeholder="Escriba para filtrar..." />
+        </span>
+      </div>
+    </ng-template>
+
+    <ng-template pTemplate="header" let-columns>
+      <ng-content *ngIf="!loading"></ng-content>
+      <tr *ngIf="!loading">
+        <th *ngFor="let col of columns" [style]="col.style"
+            style="background-color: var(--bg-primary)" class="text-white"
+            [pSortableColumn]="(col.activeSortable ?? true) && !col.isButton ? col.field : ''">
+          {{ col.header }}
+          <p-sortIcon [field]="col.field"
+              *ngIf="(col.activeSortable ?? true) && !col.isButton"></p-sortIcon>
+        </th>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="groupheader" let-rowData let-columns="columns">
+      <tr *ngIf="groupRowsBy && !loading" pRowGroupHeader class="group-header-row">
+        <td [attr.colspan]="columns.length">{{ getGroupValue(rowData) }}</td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-rowData let-columns="columns">
+      <tr *ngIf="!loading">
+        <td *ngFor="let col of columns" ngClass="tdwith" [style]="col.style"
+            style="text-align:left; white-space:normal"
+            [pTooltip]="col.tooltip ? (col.tooltipMsg ? col.tooltipMsg : formatTooltip(getRowData(rowData,col))) : null"
+            tooltipPosition="top">
+          <span class="p-column-title"><b>{{ col.header }}</b></span>
+
+          <div *ngIf="col.isArray">
+            <button pButton label="Ver" (click)="op.toggle($event)" pRipple
+                icon="fas fa-eye" class="p-button-rounded p-button-success p-button-sm"></button>
+            <p-overlayPanel #op [showCloseIcon]="true" [style]="{width: col.widthTable ?? '500px'}">
+              <ng-template pTemplate>
+                <p-table [value]="getRowData(rowData,col)" responsiveLayout="scroll"
+                    [scrollHeight]="'180px'" [columns]="col.colsChild"
+                    styleClass="p-datatable-sm p-datatable-striped animated fadeIn">
+                  <ng-template pTemplate="header" let-columns>
+                    <tr>
+                      <th *ngFor="let colC of columns"
+                          style="background-color:var(--primary-color)" class="text-white"
+                          [pSortableColumn]="colC.field">
+                        {{ colC.header }}<p-sortIcon></p-sortIcon>
+                      </th>
+                    </tr>
+                  </ng-template>
+                  <ng-template pTemplate="body" let-rowData let-columns="columns">
+                    <tr [pSelectableRow]="rowData">
+                      <td *ngFor="let colC of columns">{{ getRowData(rowData,colC) }}</td>
+                    </tr>
+                  </ng-template>
+                </p-table>
+              </ng-template>
+            </p-overlayPanel>
+          </div>
+
+          <div *ngIf="col.isButton">
+            <button *ngFor="let button of rowData[col.field]" pButton [label]="button.label"
+                [disabled]="getReturnDisable(button.disabled)"
+                [pTooltip]="button.tooltip" tooltipPosition="bottom"
+                (click)="!getReturnDisable(button.disabled) ? button.eventClick() : null"
+                pRipple [icon]="button.icon" [style]="button.style" [class]="button.class">
+            </button>
+          </div>
+
+          <div *ngIf="col.isTag">
+            <p-tag [style]="{'background':col.tagColor(getRowData(rowData,col)),'font-size':'10.5px'}"
+                styleClass="mr-2" [rounded]="true"
+                [severity]="col?.tagColor(getRowData(rowData,col)) || 'primary'"
+                [value]="col?.tagValue(getRowData(rowData,col))"
+                [icon]="col?.tagIcon(getRowData(rowData,col))">
+            </p-tag>
+          </div>
+
+          <div *ngIf="col.isImg">
+            <img [src]="rowData[col.field] | image : col.typeImg" width="50px"
+                class="cursor-pointer" style="border-radius:5px"
+                (click)="openViewImage(rowData)" alt="">
+          </div>
+
+          <div *ngIf="col.isText"><p>{{ getRowData(rowData,col) }}</p></div>
+
+          <div *ngIf="col.isTextArray">
+            <p style="white-space:pre-line">{{ getRowData(rowData,col) }}</p>
+          </div>
+
+          <div *ngIf="col.isLink">
+            <p class="badge text-bg-light text-primary p-2 cursor-pointer"
+                (click)="returnLink(col.link, getRowData2(rowData,col))">
+              {{ getRowData(rowData,col) }}
+            </p>
+          </div>
+
+          <div *ngIf="col.isDoubleValue">
+            <p *ngIf="!col.isTag" class="m-0 p-0">{{ getRowData(rowData,col) }}</p>
+            <div class="text-end">
+              <span class="badge text-bg-light">{{ getRowData2(rowData,col) }}</span>
+            </div>
+          </div>
+
+          <div *ngIf="col.isValueUpdate">
+            {{ col?.tagValue(getRowData(rowData,col)) }}
+          </div>
+
+          <div *ngIf="!col.isLink && !col.isDoubleValue && !col.isButton && !col.isArray
+                      && !col.isTag && !col.isImg && !col.isText && !col.isValueUpdate && !col.isTextArray">
+            {{ getRowData(rowData,col) }}
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="groupfooter" let-rowData let-columns="columns">
+      <tr *ngIf="groupRowsBy && !loading" class="group-footer-row" style="background-color: #f8f9fa; font-weight: bold;">
+        <td [attr.colspan]="getGroupFooterColspan(columns)" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6; text-align: left; padding-left: 1.5rem; font-size: 0.9rem;">
+          TOTAL {{ getGroupValue(rowData) | uppercase }}
+        </td>
+        <ng-container *ngFor="let col of columns; let i = index">
+          <td *ngIf="i >= getGroupFooterColspan(columns)" [style]="col.style" style="background-color: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;">
+            <span *ngIf="col.isValueUpdate">
+              {{ formatGroupTotal(getGroupValue(rowData), col) }}
+            </span>
+          </td>
+        </ng-container>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="footer" let-rowData let-columns>
+      <tr *ngIf="!loading && hasFooter(columns)">
+        @for (col of columns; track $index) {
+          <td ngClass="tdwith" [style]="col.style"
+              style="text-align:left; white-space:normal">{{ col.footer }}</td>
+        }
+      </tr>
+    </ng-template>
+
+  </p-table>
+
+  <app-table-loading *ngIf="loading" [cols]="cols"
+      [customPagination]="customPagination" [includeSearch]="includeSearch">
+  </app-table-loading>
+
+  <p-paginator *ngIf="!customPagination" [rows]="rows"
+      [rowsPerPageOptions]="[50,100,200,500]"
+      (onPageChange)="paginate($event)" [showCurrentPageReport]="true"
+      currentPageReportTemplate="Mostrando del {{from}} al {{to}} total de {{total}}"
+      [totalRecords]="total" #paginator [dropdownAppendTo]="'body'">
+  </p-paginator>
+
+</ng-container>
+
+
+<!-- ════════════════════════════════════════════════════
+     ② VISTA CARDS — p-table, body = card horizontal
+     ════════════════════════════════════════════════════ -->
+<ng-container *ngIf="viewMode === 'cards'">
+
+  <p-table #dt id="table"
+      [value]="data?.data"
+      styleClass="p-datatable-sm animated fadeIn cards-table-mode"
+      [scrollHeight]="heightTable"
+      [rows]="50"
+      [columns]="cols"
+      [paginator]="customPagination"
+      [showCurrentPageReport]="true"
+      [sortField]="sortField"
+      [sortOrder]="sortOrder === 'DESC' ? 0 : 1"
+      sortMode="single"
+      (onLazyLoad)="customSort($event)"
+      [lazy]="isCustomSort"
+      currentPageReportTemplate="Mostrando del {first} al {last} total de {totalRecords}"
+      [rowsPerPageOptions]="[10,50,100,200,500]"
+      rowGroupMode="subheader"
+      [groupRowsBy]="groupRowsBy"
+      [globalFilterFields]="stringSearch">
+
+    <ng-template *ngIf="includeSearch" pTemplate="caption">
+      <div class="text-center">
+        <ng-content select="[extra-filters]"></ng-content>
+        <p-dropdown [options]="searchFor" [formControl]="searchSelect"
+            placeholder="Buscar por:" optionLabel="name" optionValue="code"
+            appendTo="body"></p-dropdown>
+        <span class="p-input-icon-right ms-2 mt-1">
+          <i (click)="clearSearch()" class="fa-solid fa-circle-xmark cursor-pointer"></i>
+          <input type="text" style="text-transform:uppercase" pInputText
+              placeholder="Escriba para filtrar..."
+              [formControl]="txtTermino" (keyup)="search()" />
+        </span>
+      </div>
+    </ng-template>
+
+    <ng-template pTemplate="header">
+      <tr style="display:none"></tr>
+    </ng-template>
+
+    <ng-template pTemplate="groupheader" let-rowData let-columns="columns">
+      <tr *ngIf="groupRowsBy && !loading" pRowGroupHeader class="group-header-row-cards">
+        <td [attr.colspan]="columns.length">
+          <div class="group-header-content-cards">
+            <i [class]="getCategoryIcon(getGroupValue(rowData))"></i>
+            {{ getGroupValue(rowData) }}
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="body" let-rowData let-columns="columns">
+      <tr *ngIf="!loading" class="rc-row">
+        <td class="rc-cell">
+          <div class="rc">
+
+            <!-- Imagen -->
+            <ng-container *ngFor="let col of columns">
+              <div class="rc__img" *ngIf="col.isImg">
+                <img [src]="getImgSrc(rowData,col) | image : getTypeImg(col)"
+                     (click)="openDetailModal(rowData)" alt="" />
+              </div>
+            </ng-container>
+
+            <!-- Campos -->
+            <div class="rc__body">
+              <ng-container *ngFor="let col of columns">
+
+                <span class="rc__tag-wrap" *ngIf="col.isTag">
+                  <p-tag
+                    [style]="{'background': getTagColor(col,rowData), 'font-size':'10px'}"
+                    [rounded]="true"
+                    [value]="getTagValue(col,rowData)"
+                    [icon]="getTagIcon(col,rowData)">
+                  </p-tag>
+                </span>
+
+                <div class="rc__field"
+                     *ngIf="!col.isButton && !col.isTag && !col.isImg && !col.isArray">
+                  <span class="rc__label">{{ col.header }}</span>
+                  <span class="rc__value"
+                        *ngIf="!col.isLink && !col.isDoubleValue && !col.isValueUpdate
+                               && !col.isTextArray && !col.isText">
+                    {{ getRowData(rowData,col) }}
+                  </span>
+                  <span class="rc__value" *ngIf="col.isText || col.isTextArray"
+                        style="white-space:pre-line">
+                    {{ getRowData(rowData,col) }}
+                  </span>
+                  <span class="rc__value badge text-bg-light text-primary cursor-pointer"
+                        *ngIf="col.isLink"
+                        (click)="returnLink(getLink(col), getRowData2(rowData,col))">
+                    {{ getRowData(rowData,col) }}
+                  </span>
+                  <span class="rc__value d-flex flex-column align-items-end"
+                        *ngIf="col.isDoubleValue">
+                    <span>{{ getRowData(rowData,col) }}</span>
+                    <span class="badge text-bg-light" style="font-size:10px">
+                      {{ getRowData2(rowData,col) }}
+                    </span>
+                  </span>
+                  <span class="rc__value" *ngIf="col.isValueUpdate">
+                    {{ getTagValue(col,rowData) }}
+                  </span>
+                </div>
+
+                <div class="rc__field" *ngIf="col.isArray">
+                  <span class="rc__label">{{ col.header }}</span>
+                  <button pButton label="Ver" (click)="opC.toggle($event)" pRipple
+                      icon="fas fa-eye"
+                      class="p-button-rounded p-button-success p-button-sm"
+                      style="font-size:11px;padding:3px 8px">
+                  </button>
+                  <p-overlayPanel #opC [showCloseIcon]="true"
+                      [style]="{width: col.widthTable ?? '500px'}">
+                    <ng-template pTemplate>
+                      <p-table [value]="getRowData(rowData,col)" responsiveLayout="scroll"
+                          [scrollHeight]="'180px'" [columns]="col.colsChild"
+                          styleClass="p-datatable-sm p-datatable-striped animated fadeIn">
+                        <ng-template pTemplate="header" let-columns>
+                          <tr>
+                            <th *ngFor="let colC of columns"
+                                style="background-color:var(--primary-color)" class="text-white"
+                                [pSortableColumn]="colC.field">
+                              {{ colC.header }}<p-sortIcon></p-sortIcon>
+                            </th>
+                          </tr>
+                        </ng-template>
+                        <ng-template pTemplate="body" let-rd let-columns="columns">
+                          <tr [pSelectableRow]="rd">
+                            <td *ngFor="let colC of columns">{{ getRowData(rd,colC) }}</td>
+                          </tr>
+                        </ng-template>
+                      </p-table>
+                    </ng-template>
+                  </p-overlayPanel>
+                </div>
+
+              </ng-container>
+            </div>
+
+            <!-- Botones -->
+            <div class="rc__actions">
+              <ng-container *ngFor="let col of columns">
+                <ng-container *ngIf="col.isButton">
+                  <button *ngFor="let button of getButtons(rowData,col)"
+                      pButton [label]="button.label"
+                      [disabled]="getReturnDisable(button.disabled)"
+                      [pTooltip]="button.tooltip" tooltipPosition="bottom"
+                      (click)="!getReturnDisable(button.disabled) ? button.eventClick() : null"
+                      pRipple [icon]="button.icon"
+                      [style]="button.style" [class]="button.class">
+                  </button>
+                </ng-container>
+              </ng-container>
+            </div>
+
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template pTemplate="groupfooter" let-rowData let-columns="columns">
+      <tr *ngIf="groupRowsBy && !loading" class="group-footer-row-cards" style="background-color: #f8f9fa; font-weight: bold;">
+        <td [attr.colspan]="columns.length" style="padding: 12px 15px; background-color: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6;">
+          <div class="d-flex flex-wrap gap-4 justify-content-between align-items-center">
+            <span style="color: var(--primary-color);">TOTAL {{ getGroupValue(rowData) | uppercase }}</span>
+            <div class="d-flex gap-4">
+              <span *ngFor="let col of columns">
+                <span *ngIf="col.isValueUpdate">
+                  <span class="text-muted" style="font-size: 0.9em; margin-right: 5px;">{{ col.header }}:</span>
+                  <span style="color: #2d3748;">{{ formatGroupTotal(getGroupValue(rowData), col) }}</span>
+                </span>
+              </span>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+  </p-table>
+
+  <app-table-loading *ngIf="loading" [cols]="cols"
+      [customPagination]="customPagination" [includeSearch]="includeSearch">
+  </app-table-loading>
+
+  <p-paginator *ngIf="!customPagination" [rows]="rows"
+      [rowsPerPageOptions]="[50,100,200,500]"
+      (onPageChange)="paginate($event)" [showCurrentPageReport]="true"
+      currentPageReportTemplate="Mostrando del {{from}} al {{to}} total de {{total}}"
+      [totalRecords]="total" #paginator [dropdownAppendTo]="'body'">
+  </p-paginator>
+
+</ng-container>
+
+
+<!-- ════════════════════════════════════════════════════
+     ③ VISTA GRID — Catálogo Premium
+         6 cols · imagen dominante · código en badge · modal
+     ════════════════════════════════════════════════════ -->
+<ng-container *ngIf="viewMode === 'grid'">
+
+  <!-- Barra búsqueda -->
+  <div *ngIf="includeSearch && !loading"
+       style="background:#f7f8fc; padding:12px 18px 0; display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;">
+    <ng-content select="[extra-filters]"></ng-content>
+    <p-dropdown [options]="searchFor" [formControl]="searchSelect"
+        placeholder="Buscar por:" optionLabel="name" optionValue="code"
+        appendTo="body"></p-dropdown>
+    <span class="p-input-icon-right">
+      <i (click)="clearSearch()" class="fa-solid fa-circle-xmark cursor-pointer"></i>
+      <input type="text" style="text-transform:uppercase" pInputText
+          placeholder="Escriba para filtrar..."
+          [formControl]="txtTermino" (keyup)="search()" />
+    </span>
+  </div>
+
+  <div class="gc-wrapper">
+
+    <!-- Skeleton loading -->
+    <div class="gc-grid" *ngIf="loading">
+      <div class="gc-card" *ngFor="let s of [1,2,3,4,5,6,7,8,9,10,11,12]">
+        <div class="gc-card__img-wrap">
+          <p-skeleton width="100%" height="148px" borderRadius="0"></p-skeleton>
+        </div>
+        <div class="gc-card__body" style="display:flex;flex-direction:column;gap:8px;padding:12px 12px 10px">
+          <p-skeleton width="90%" height="14px" borderRadius="4px"></p-skeleton>
+          <p-skeleton width="65%" height="12px" borderRadius="4px"></p-skeleton>
+          <p-skeleton width="80%" height="11px" borderRadius="4px"></p-skeleton>
+          <p-skeleton width="55%" height="11px" borderRadius="4px"></p-skeleton>
+        </div>
+      </div>
+    </div>
+
+    <!-- Grid de cards -->
+    <div class="gc-grid" *ngIf="!loading">
+      <div class="gc-card" *ngFor="let rowData of data?.data">
+
+        <!-- ── Zona imagen: click abre modal ── -->
+        <div class="gc-card__img-wrap" (click)="openDetailModal(rowData)">
+
+          <!-- Badge código — SOLO aquí, una vez -->
+          <ng-container *ngFor="let col of cols">
+            <span class="gc-cod-badge" *ngIf="isCodField(col)">
+              {{ getRowData(rowData,col) }}
+            </span>
+          </ng-container>
+
+          <!-- Tags de estado (esquina der) -->
+          <div class="gc-tags-overlay">
+            <ng-container *ngFor="let col of cols">
+              <p-tag *ngIf="col.isTag"
+                [style]="{'background': getTagColor(col,rowData)}"
+                [rounded]="true"
+                [value]="getTagValue(col,rowData)"
+                [icon]="getTagIcon(col,rowData)">
+              </p-tag>
+            </ng-container>
+          </div>
+
+          <!-- Imagen del producto -->
+          <ng-container *ngFor="let col of cols">
+            <img *ngIf="col.isImg"
+                 [src]="getImgSrc(rowData,col) | image : getTypeImg(col)"
+                 class="gc-card__img" alt="" />
+          </ng-container>
+
+          <!-- Placeholder sin imagen -->
+          <div class="gc-no-img" *ngIf="!hasImgCol()">
+            <i class="fa-regular fa-image"></i>
+            <span>SIN IMAGEN</span>
+          </div>
+
+          <!-- Hint zoom (aparece en hover) -->
+          <div class="gc-zoom-hint"><i class="fas fa-expand-alt"></i></div>
+
+        </div><!-- /img-wrap -->
+
+        <!-- ── Cuerpo: nombre + hasta 5 campos ── -->
+        <div class="gc-card__body">
+          <ng-container *ngFor="let col of cols; let i = index">
+
+            <!-- Nombre/título (col 0, excluye cod/img/btn/tag/array) -->
+            <p class="gc-card__title"
+               *ngIf="i === 0 && !col.isButton && !col.isTag && !col.isImg && !col.isArray && !isCodField(col)">
+              {{ getRowData(rowData,col) }}
+            </p>
+
+            <!-- Campos extra (índices 1-5, excluye cod/img/btn/tag/array) -->
+            <ng-container *ngIf="i > 0 && i <= 5 && !col.isButton && !col.isTag && !col.isImg && !col.isArray && !isCodField(col)">
+              <div class="gc-fields-divider" *ngIf="i === 1"></div>
+              <div class="gc-field">
+                <span class="gc-field__label">{{ col.header }}</span>
+                <span class="gc-field__value gc-field__value--clamp"
+                      *ngIf="!col.isLink && !col.isDoubleValue && !col.isValueUpdate && !col.isTextArray && !col.isText"
+                      [pTooltip]="getRowData(rowData,col)" tooltipPosition="top">
+                  {{ getRowData(rowData,col) }}
+                </span>
+                <span class="gc-field__value gc-field__value--clamp"
+                      *ngIf="col.isText || col.isTextArray"
+                      [pTooltip]="getRowData(rowData,col)" tooltipPosition="top">
+                  {{ getRowData(rowData,col) }}
+                </span>
+                <span class="gc-field__value badge text-bg-light text-primary cursor-pointer"
+                      *ngIf="col.isLink"
+                      (click)="$event.stopPropagation(); returnLink(getLink(col), getRowData2(rowData,col))">
+                  {{ getRowData(rowData,col) }}
+                </span>
+                <span class="gc-field__value d-flex flex-column align-items-end" *ngIf="col.isDoubleValue">
+                  <span>{{ getRowData(rowData,col) }}</span>
+                  <span class="badge text-bg-light" style="font-size:9.5px">{{ getRowData2(rowData,col) }}</span>
+                </span>
+                <span class="gc-field__value" *ngIf="col.isValueUpdate">
+                  {{ getTagValue(col,rowData) }}
+                </span>
+              </div>
+            </ng-container>
+
+          </ng-container>
+
+          <!-- "Ver todo" si hay más de 6 campos -->
+          <div class="gc-more-hint" *ngIf="countDataCols(cols) > 6" (click)="openDetailModal(rowData)">
+            <i class="fas fa-ellipsis-h"></i>&nbsp;Ver todo
+          </div>
+
+        </div><!-- /gc-card__body -->
+
+        <!-- ── Botones al pie ── -->
+        <div class="gc-card__actions" *ngIf="hasButtonCol()">
+          <ng-container *ngFor="let col of cols">
+            <ng-container *ngIf="col.isButton">
+              <button *ngFor="let button of getButtons(rowData,col)"
+                  pButton [label]="button.label"
+                  [disabled]="getReturnDisable(button.disabled)"
+                  [pTooltip]="button.tooltip" tooltipPosition="top"
+                  (click)="$event.stopPropagation(); !getReturnDisable(button.disabled) ? button.eventClick() : null"
+                  pRipple [icon]="button.icon"
+                  [style]="button.style" [class]="button.class">
+              </button>
+            </ng-container>
+          </ng-container>
+        </div>
+
+      </div><!-- /gc-card -->
+    </div><!-- /gc-grid -->
+
+    <p-paginator *ngIf="!customPagination" [rows]="rows"
+        [rowsPerPageOptions]="[50,100,200,500]"
+        (onPageChange)="paginate($event)" [showCurrentPageReport]="true"
+        currentPageReportTemplate="Mostrando del {{from}} al {{to}} total de {{total}}"
+        [totalRecords]="total" #paginator [dropdownAppendTo]="'body'"
+        styleClass="mt-3">
+    </p-paginator>
+
+    <app-table-loading *ngIf="loading" [cols]="cols"
+        [customPagination]="customPagination" [includeSearch]="includeSearch">
+    </app-table-loading>
+
+  </div><!-- /gc-wrapper -->
+
+</ng-container>
+
+<!-- ════════════════════════════════════════════════════
+     MODAL DETALLE — se activa con openDetailModal()
+     ════════════════════════════════════════════════════ -->
+<p-dialog
+  [(visible)]="detailModalVisible"
+  [modal]="true"
+  [draggable]="false"
+  [resizable]="false"
+  [closeOnEscape]="true"
+  styleClass="gc-detail-dialog"
+  [style]="{ width: '680px', maxWidth: '96vw' }"
+  appendTo="body">
+
+  <ng-template pTemplate="header">
+    <div class="gc-dialog-header">
+      <!-- Título: primer campo texto del registro -->
+      <ng-container *ngIf="detailRow">
+        <ng-container *ngFor="let col of cols; let i = index">
+          <span *ngIf="i === 0 && !col.isButton && !col.isImg && !col.isTag && !col.isArray"
+                class="gc-dialog-title">
+            {{ getRowData(detailRow, col) }}
+          </span>
+        </ng-container>
+      </ng-container>
+    </div>
+  </ng-template>
+
+  <div class="gc-dialog-body" *ngIf="detailRow">
+
+    <!-- Imagen grande centrada -->
+    <div class="gc-dialog-img-wrap" *ngIf="hasImgCol()">
+      <ng-container *ngFor="let col of cols">
+        <img *ngIf="col.isImg"
+             [src]="getImgSrc(detailRow, col) | image : getTypeImg(col)"
+             class="gc-dialog-img"
+             alt="" />
+      </ng-container>
+      <!-- Botón ver imagen full (tu modal original) -->
+      <button pButton
+          icon="fas fa-expand"
+          label="Ver imagen completa"
+          class="p-button-sm p-button-outlined p-button-secondary gc-dialog-zoom-btn"
+          (click)="openViewImage(detailRow)">
+      </button>
+    </div>
+
+    <!-- Grilla de todos los campos -->
+    <div class="gc-dialog-fields">
+      <ng-container *ngFor="let col of cols; let i = index">
+        <div class="gc-dialog-field"
+             *ngIf="!col.isButton && !col.isImg && !col.isArray">
+
+          <span class="gc-dialog-field__label">{{ col.header }}</span>
+
+          <span class="gc-dialog-field__value" *ngIf="col.isTag">
+            <p-tag
+              [style]="{'background': getTagColor(col,detailRow)}"
+              [rounded]="true"
+              [value]="getTagValue(col,detailRow)"
+              [icon]="getTagIcon(col,detailRow)">
+            </p-tag>
+          </span>
+
+          <span class="gc-dialog-field__value"
+                *ngIf="!col.isTag && !col.isLink && !col.isDoubleValue
+                       && !col.isValueUpdate && !col.isTextArray && !col.isText">
+            {{ getRowData(detailRow, col) }}
+          </span>
+          <span class="gc-dialog-field__value" style="white-space:pre-line"
+                *ngIf="col.isText || col.isTextArray">
+            {{ getRowData(detailRow, col) }}
+          </span>
+          <span class="gc-dialog-field__value badge text-bg-light text-primary cursor-pointer"
+                *ngIf="col.isLink"
+                (click)="returnLink(getLink(col), getRowData2(detailRow,col))">
+            {{ getRowData(detailRow, col) }}
+          </span>
+          <span class="gc-dialog-field__value" *ngIf="col.isDoubleValue">
+            {{ getRowData(detailRow, col) }}
+            <span class="badge text-bg-light ms-1">{{ getRowData2(detailRow, col) }}</span>
+          </span>
+          <span class="gc-dialog-field__value" *ngIf="col.isValueUpdate">
+            {{ getTagValue(col, detailRow) }}
+          </span>
+
+        </div>
+
+        <!-- Array dentro del modal -->
+        <div class="gc-dialog-field gc-dialog-field--full" *ngIf="col.isArray">
+          <span class="gc-dialog-field__label">{{ col.header }}</span>
+          <button pButton label="Ver detalle" (click)="opDlg.toggle($event)" pRipple
+              icon="fas fa-eye"
+              class="p-button-rounded p-button-success p-button-sm"
+              style="font-size:11px;padding:3px 8px">
+          </button>
+          <p-overlayPanel #opDlg [showCloseIcon]="true"
+              [style]="{width: col.widthTable ?? '500px'}">
+            <ng-template pTemplate>
+              <p-table [value]="getRowData(detailRow,col)" responsiveLayout="scroll"
+                  [scrollHeight]="'180px'" [columns]="col.colsChild"
+                  styleClass="p-datatable-sm p-datatable-striped animated fadeIn">
+                <ng-template pTemplate="header" let-columns>
+                  <tr>
+                    <th *ngFor="let colC of columns"
+                        style="background-color:var(--primary-color)" class="text-white"
+                        [pSortableColumn]="colC.field">
+                      {{ colC.header }}<p-sortIcon></p-sortIcon>
+                    </th>
+                  </tr>
+                </ng-template>
+                <ng-template pTemplate="body" let-rd let-columns="columns">
+                  <tr [pSelectableRow]="rd">
+                    <td *ngFor="let colC of columns">{{ getRowData(rd,colC) }}</td>
+                  </tr>
+                </ng-template>
+              </p-table>
+            </ng-template>
+          </p-overlayPanel>
+        </div>
+
+      </ng-container>
+    </div>
+
+  </div>
+
+  <ng-template pTemplate="footer">
+    <div class="gc-dialog-footer">
+      <!-- Botones de acción del registro -->
+      <ng-container *ngFor="let col of cols">
+        <ng-container *ngIf="col.isButton && detailRow">
+          <button *ngFor="let button of getButtons(detailRow, col)"
+              pButton [label]="button.label"
+              [disabled]="getReturnDisable(button.disabled)"
+              [pTooltip]="button.tooltip" tooltipPosition="top"
+              (click)="!getReturnDisable(button.disabled) ? button.eventClick() : null"
+              pRipple [icon]="button.icon"
+              [style]="button.style" [class]="button.class">
+          </button>
+        </ng-container>
+      </ng-container>
+      <button pButton label="Cerrar" icon="fas fa-times"
+          class="p-button-sm p-button-secondary p-button-outlined"
+          (click)="detailModalVisible = false">
+      </button>
+    </div>
+  </ng-template>
+
+</p-dialog>
+
+<app-view-image></app-view-image>

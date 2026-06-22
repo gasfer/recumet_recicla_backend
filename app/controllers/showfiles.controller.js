@@ -5,7 +5,12 @@ const fs = require("fs");
 const showFile = async (req, res = response) => {
     try {
         const { type, name } = req.params;
-        const pathImagen = path.join(__dirname + "../../../uploads/imgs/", type, name);
+        let pathImagen;
+        if (type === 'vouchers') {
+            pathImagen = path.join(__dirname, '../../uploads/vouchers/', name);
+        } else {
+            pathImagen = path.join(__dirname + "../../../uploads/imgs/", type, name);
+        }
         if (fs.existsSync(pathImagen)) {
             return res.sendFile(pathImagen)
         } else {

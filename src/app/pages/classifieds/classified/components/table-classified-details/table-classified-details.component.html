@@ -1,0 +1,77 @@
+<div class="row animated fadeIn fast m-1"
+    *ngIf="classifiedService.detailSale().length === 0">
+    <div class="col-12">
+        <div class="alert alert-info text-center">
+            <h5 class="alert-heading">Sin productos</h5>
+            <i class="fa fa-spin fa-refresh fa-2x"></i>
+            <p class="mb-0">Agrega productos desde el buscador</p>
+        </div>
+    </div>
+</div>
+<p-table *ngIf="classifiedService.detailSale().length !== 0" [value]="classifiedService.detailSale()" styleClass="p-datatable-sm" responsiveLayout="scroll">
+    <ng-template pTemplate="header">
+        <tr>
+            <th class="text-white" style="min-width: 280px; background-color: var(--bg-primary)">Producto</th>
+            <th class="text-white text-center" style=" background-color: var(--bg-primary);">Cantidad</th>
+            <th class="text-white text-center" style="min-width: 60px; max-width: 60px;  background-color: var(--bg-primary)">Quitar</th>
+        </tr>
+    </ng-template>
+    <ng-template pTemplate="body" let-product>
+        <tr>
+            <td style="min-width: 280px; ">
+                <h5 class="m-0 p-0">{{product.name}}</h5>
+                <p style="font-size: 10px;" class="text-muted">{{product.description}} <br *ngIf="product.description"> <span class="text-black">{{product.cod}} / {{product.category.name}} / {{product.unit.name}}</span></p>
+            </td>
+            <td  class="text-center">
+                <p-inputNumber
+                    [style]="{'height': '38px'}"
+                    [size]="5"
+                    locale="en-US"
+                    mode="decimal"
+                    [minFractionDigits]="2"
+                    [showButtons]="true"
+                    decrementButtonClass="p-button-secondary"
+                    incrementButtonClass="p-button-primary"
+                    placeholder="0"
+                    [min]="0.1"
+                    [max]="99999999999999"
+                    [inputId]="product.id"
+                    [(ngModel)] = "product.quantity"
+                    (onInput)="updateQuantityProduct($event, product)">
+                </p-inputNumber>
+            </td>
+            <td class="text-center" style="min-width: 60px; max-width: 60px;">
+                <p-button
+                    (click)="deleteProductForDetailShopping(product.id)"
+                    icon="fa-regular fa-trash-can"
+                    styleClass=" p-button-sm p-button-danger p-button-rounded">
+                </p-button>
+            </td>
+        </tr>
+    </ng-template>
+    <ng-template pTemplate="footer">
+        <tr>
+            <th colspan="2" class="text-end text-white pt-1" style=" background-color: var(--bg-primary)"><h4>Cantidad total: &nbsp;</h4></th>
+            <th colspan="1" class="text-start text-white pt-1" style=" background-color: var(--bg-primary)"><h4>{{ totalQuantityItems() }}</h4></th>
+        </tr>
+        <tr>
+            <td colspan="2" class="text-end bg-white">
+                <p-button
+                    (click)="clearDetailShopping()"
+                    icon="fa-solid fa-ban"  pTooltip="Cancelar Clasificado"
+                    tooltipPosition="left"
+                    label="Cancelar"
+                    styleClass="p-button-danger p-button-sm p-button-rounded">
+                </p-button>
+            </td>
+            <td colspan="1" class="text-center bg-white">
+                <p-button
+                    styleClass="p-button-sm p-button-rounded"
+                    label="Registrar Clasificado"
+                    (click)="confirmClassified()"
+                    icon="fa-solid fa-floppy-disk">
+                </p-button>
+            </td>
+        </tr>
+    </ng-template>
+</p-table>
