@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistScala, idExistStorage, idExistProvider, idExistSucursal, idExistBank, idExistProduct, idExistInput } = require('./database');
+const { idExistScala, idExistStorage, idExistProvider, idExistSucursal, idExistBank, idExistProduct, idExistInput, registryNumberExist} = require('./database');
 
 const validationSchema =  {
     input_data: {
@@ -10,6 +10,7 @@ const validationSchema =  {
         },
         errorMessage: 'El objeto de input_data debe ser un objecto valido con datos de la compra'
     },
+    
     'input_data.date_voucher': {
         optional:{ options: {nullable: true}},
         isISO8601: {
@@ -27,9 +28,7 @@ const validationSchema =  {
         },
     },
     'input_data.registry_number': {
-        isEmpty: {
-            negated: true, errorMessage: "El numero de registro es obligatorio",
-        },
+        custom: { options: registryNumberExist },
     },
     'input_data.account_input': {
         isLength: {
@@ -164,9 +163,10 @@ const validateIdInput = [
 ]
 
 
+
 module.exports = {
     getValidateCreate,
     getValidateUpdate,
-    validateIdInput
+    validateIdInput,
 }
 

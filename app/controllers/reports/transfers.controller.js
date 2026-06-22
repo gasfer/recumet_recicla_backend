@@ -213,6 +213,7 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 {association: 'storage_received', attributes: ['name']},
                 {association: 'user_send', attributes: ['full_names']},
                 {association: 'user_received', attributes: ['full_names']},
+                {association: 'scale', attributes: ['name']},
                 { association: 'detailsTransfers', include: [
                         { association: 'product',  attributes: ['cod','name'], include: [{association:'unit', attributes: ['name','siglas']}]},
                     ]
@@ -325,6 +326,15 @@ const dataPdfReturnTransferVoucher = (transfer) => [
                 ]
             ]
         }
+    },
+    {
+        margin: [0,3,0,0],
+        columns: [
+            { text: `P/${transfer.type_registry} NRO:`, bold:true ,style: 'text',width: 65, },
+            { text: `${transfer.registry_number}`, style: 'text',  },
+            { text: `BALANZA:`, bold:true, style: 'text',width: 58,  },
+            { text: `${transfer?.scale?.name}`,  style: 'text',  },
+        ]
     },
     {
         margin: [0,40,0,0],

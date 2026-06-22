@@ -25,8 +25,10 @@ module.exports = {
         type: Sequelize.STRING
       },
       registry_number: {
-        type: Sequelize.STRING
-      },
+        type: Sequelize.STRING,
+        allowNull: false,          // No permite nulos
+        unique: true               // Índice único: no se permiten duplicados
+    },
       account_input: {
         type: Sequelize.STRING
       },

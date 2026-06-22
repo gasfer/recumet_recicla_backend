@@ -4,11 +4,13 @@
   "description": "Backend sistema recumet",
   "main": "app.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.js"
   },
   "author": "Ronald J Llusco 79746003",
   "license": "ISC",
   "dependencies": {
+    "sequelize-cli": "^6.6.1",
     "@jridgewell/sourcemap-codec": "^1.5.0",
     "backend_recumet": "file:",
     "bcrypt": "^5.1.0",
@@ -25,6 +27,8 @@
     "pg": "^8.11.2",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.32.1",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "uuid": "^9.0.0"
   }
 }

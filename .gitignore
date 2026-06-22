@@ -6,3 +6,4 @@ uploads/imgs/products/*
 uploads/imgs/products/*
 !uploads/imgs/products/.gitkeep
 
+.idea/

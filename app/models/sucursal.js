@@ -12,8 +12,6 @@ module.exports = (sequelize, DataTypes) => {
       Sucursal.hasMany(models.Provider,{as: 'provider', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.History,{as: 'history', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Stock,{as: 'stock', foreignKey:'id_sucursal'});
-      Sucursal.hasMany(models.Kardex,{as: 'kardex', foreignKey:'id_sucursal'});
-      Sucursal.hasMany(models.Kardex,{as: 'kardexOriginDestination', foreignKey:'id_sucursal_origin_destination'});
       Sucursal.hasMany(models.Input,{as: 'input', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Output,{as: 'outputs', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Classified,{as: 'classified', foreignKey:'id_sucursal'});

@@ -1,10 +1,42 @@
 const { response, request } = require('express');
-const {  sequelize, Classified, DetailsClassified, Kardex, Stock, History } = require('../database/config');
+const {  sequelize, Classified, DetailsClassified, Stock, History } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
-const { returnDataKardexOutput, returnDataKardexInput } = require('../helpers/kardex');
+
+const getClassifiedFindOne= async (req = request, res = response) => {
+    try {
+        const { id_classified } = req.params;
+        const optionsDb = {
+            include: [ 
+                { association: 'sucursal',attributes: ['name'] },
+                { association: 'storage',attributes: ['name'] },
+                { association: 'scale', attributes: ['name']},
+                { association: 'product',  attributes: [
+                    [sequelize.literal(`CONCAT("product"."cod",' - ' ,"product"."name")`), 'name'],
+                  ],
+                },
+                { association: 'user', attributes: ['full_names','number_document']},
+                { association: 'detailsClassified', attributes: {exclude: ['id','id_classified','id_product','status','createdAt','updatedAt']}, 
+                    include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
+                                attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
+                },
+            ]
+        };
+        let classified = await Classified.findByPk(id_classified, optionsDb); 
+        return res.status(200).json({
+            ok: true,
+            classified
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
 
 const getClassifiedsPaginate = async (req = request, res = response) => {
     try {
@@ -55,30 +87,21 @@ const newClassified = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
         const { classified_data, classified_details } = req.body;
-        const { id_sucursal, id_storage, number_registry, id_product, cost_product,quantity_product } = classified_data;
+        const { id_sucursal, id_storage, number_registry, id_product, cost_product,quantity_product, type_registry } = classified_data;
         classified_data.id_user = req.userAuth.id;
+
+        if (type_registry === 'SIN FICHA') {
+            const count_classifieds = await Classified.count({ where: {type_registry:'SIN FICHA'}, transaction: t });
+            classified_data.number_registry = get_num_request('SF-',count_classifieds + 1,5);
+        }
+
         /*Creación de clasificación*/
         const classified = await Classified.create(classified_data, { transaction: t });
         const count_classifieds = await Classified.count({ where: {id_sucursal}, transaction: t });
         const cod = get_num_request('CL',count_classifieds,5);
         classified.cod = cod;
-        classified.date_classified = new Date();
         await classified.save({transaction: t});
         const id_classified = classified.id;
-        /*Salida y Kardex y stock del producto a clasificar*/
-        const old_kardex = await Kardex.findOne({ 
-            order: [['id', 'DESC']],
-            where: { id_product, id_sucursal, id_storage, status: true },
-            lock: true,
-            transaction: t
-        });
-        const detail = {
-            cost: cost_product,
-            quantity: quantity_product,
-            id_product,
-        }
-        const data_new = returnDataKardexOutput(`CLASIFICACIÓN #${cod}`,null,null,null,number_registry,old_kardex,detail,null, id_sucursal, id_storage );
-        await Kardex.create(data_new,{ transaction: t });
         const stock = await Stock.findOne({
             where: { id_product, id_sucursal, id_storage, status: true },
             include: [{association:'product', required:true, attributes: ['name','cod']}],
@@ -101,14 +124,6 @@ const newClassified = async (req = request, res = response ) => {
         for (const detail of classified_details) {
             detail.id_classified = id_classified;
             await DetailsClassified.create(detail,{ transaction: t });        
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexInput(`CLASIFICACIÓN #${cod}`,id_product,null,number_registry, old_kardex,detail,null, null, id_sucursal, id_storage)
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 order: [['id', 'DESC']],
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
@@ -165,19 +180,6 @@ const destroyClassified = async (req = request, res = response) => {
         await classified_anular.save({transaction: t});
         const { id_sucursal, id_storage, id_product, cost_product, quantity_product} = classified_anular;
         /*ANULAR PRODUCTO CLASIFICADO*/
-        const old_kardex = await Kardex.findOne({ 
-            order: [['id', 'DESC']],
-            where: { id_product, id_sucursal, id_storage, status: true },
-            lock: true,
-            transaction: t
-        });
-        const detail = {
-            cost: cost_product,
-            quantity: quantity_product,
-            id_product,
-        }
-        const data_new = returnDataKardexInput(`ANULACIÓN CLASIFICADO #${classified_anular.cod}`, null,null ,null, old_kardex,detail,null, null, id_sucursal, id_storage)
-        await Kardex.create(data_new,{ transaction: t });
         const stock = await Stock.findOne({
             where: { id_product, id_sucursal, id_storage, status: true },
             lock: true,
@@ -187,14 +189,6 @@ const destroyClassified = async (req = request, res = response) => {
         await stock.save({ transaction: t });
         /*ANULAR DETALLE CLASIFICADO*/
         for (const detail of classified_anular.detailsClassified) {
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexOutput(`ANULACIÓN CLASIFICADO #${classified_anular.cod}`,null,null,null,null,old_kardex,detail,null, id_sucursal, id_storage );
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
                 lock: true,
@@ -230,6 +224,7 @@ const destroyClassified = async (req = request, res = response) => {
 
 module.exports = {
     getClassifiedsPaginate,
+    getClassifiedFindOne,
     newClassified,
     destroyClassified
 };

@@ -2,7 +2,7 @@ const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
 const { idExistCategory, nameExistCategory } = require('./database');
 
-const validationSchema =  {
+const validationSchema = {
     name: {
         isEmpty: {
             negated: true, errorMessage: "El nombre es obligatorio",
@@ -12,7 +12,7 @@ const validationSchema =  {
         },
         isLength: {
             errorMessage: 'El nombre debe tener mínimo a 2 caracteres y máximo 174 caracteres',
-            options: { min: 2, max: 174},
+            options: { min: 2, max: 174 },
         },
         custom: { options: nameExistCategory }
     },
@@ -25,12 +25,18 @@ const validationSchema =  {
         },
         isLength: {
             errorMessage: 'La descripcion debe tener mínimo a 4 caracteres y máximo 254 caracteres',
-            options: { min: 4, max: 254},
+            options: { min: 4, max: 254 },
         },
     },
     status: {
         isBoolean: {
             errorMessage: "El estado debe ser de tipo boolean [false, true]",
+        }
+    },
+    type: {
+        isIn: {
+            options: [['RAW_MATERIAL', 'FINISHED_PRODUCT', 'RESALE_ITEM']],
+            errorMessage: "El tipo debe ser uno de los siguientes: RAW_MATERIAL, FINISHED_PRODUCT, RESALE_ITEM"
         }
     }
 };
@@ -40,10 +46,10 @@ const getValidateCreate = [
     validatedResponse
 ];
 
-const getValidateUpdate= [
+const getValidateUpdate = [
     checkSchema({
         id: {
-            custom: { options: idExistCategory},
+            custom: { options: idExistCategory },
         },
         ...validationSchema
     }),
@@ -52,7 +58,7 @@ const getValidateUpdate= [
 
 const validateDelete = [
     checkSchema({
-        id: { custom: { options: idExistCategory} },
+        id: { custom: { options: idExistCategory } },
         status: {
             isBoolean: {
                 errorMessage: "El estado debe ser de tipo boolean [false, true]",

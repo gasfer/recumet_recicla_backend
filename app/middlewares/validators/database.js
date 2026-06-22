@@ -22,7 +22,9 @@ const {
   AccountsReceivable,
   AbonosAccountsReceivable,
   Transfers,
-  TypesProvider
+  TypesProvider,
+  AbonosAccountsPayableMultiple,
+  AbonosAccountsReceivableMultiple
 } = require("../../database/config");
 
 // ========================= USER VALIDATE ============================
@@ -214,10 +216,20 @@ const idExistProvider = async (id = "") => {
 }
 const nameExistProvider = async (full_names = "",{req}) => {
   const { id } = req.params;
+  if(!full_names) return;
   const existDB = await Provider.findOne({ where: { full_names } });
   if(!existDB) return;
   if (existDB.id != id) {
     throw new Error(`El proveedor con nombre: ${full_names}, ya existe`);
+  }
+};
+const numberDocumentExistProvider = async (number_document = "",{req}) => {
+  const { id } = req.params;
+  if(!number_document) return;
+  const existDB = await Provider.findOne({ where: { number_document } });
+  if(!existDB) return;
+  if (existDB.id != id) {
+    throw new Error(`El proveedor con numero CI / NIT: ${number_document}, ya existe`);
   }
 };
 // ========================== SCALA COMPANY =============================
@@ -282,6 +294,17 @@ const idExistInput = async (id = "") => {
   };
 }
 
+const registryNumberExist = async (registry_number = "",{req}) => {
+  if(!registry_number) return;
+  const { id_input } = req.params;
+  const { id_sucursal } = req.body.input_data;
+  const existDB = await Input.findOne({ where: { registry_number, id_sucursal } });
+  if(!existDB) return;
+  if (existDB.id != id_input) {
+    throw new Error(`El Nro. Pesaje: ${registry_number}, ya existe`);
+  }
+};
+
 //=========================== OUTPUT =============================
 const idExistOutput = async (id = "") => {
   const idExist = await Output.findOne({where: {id,status:'ACTIVE'}});
@@ -290,6 +313,16 @@ const idExistOutput = async (id = "") => {
   };
 }
 
+const registryNumberExistOutput = async (number_registry = "",{req}) => {
+  const { id_output } = req.params;
+  const { id_sucursal } = req.body.output_data;
+  const existDB = await Output.findOne({ where: { number_registry, id_sucursal } });
+  if(!existDB) return;
+  if (existDB.id != id_output) {
+    throw new Error(`El Nro. Pesaje: ${number_registry}, ya existe`);
+  }
+};
+
 //=========================== CLASSIFIED =============================
 const idExistClassified = async (id = "") => {
   const idExist = await Classified.findOne({where: {id,status:'ACTIVE'}});
@@ -297,6 +330,16 @@ const idExistClassified = async (id = "") => {
     throw new Error(`La clasificación con id: ${id}, no existe o esta inactiva`);
   };
 }
+
+const registryNumberExistClassified = async (number_registry = "",{req}) => {
+  const { id_classified } = req.params;
+  const { id_sucursal } = req.body.classified_data;
+  const existDB = await Classified.findOne({ where: { number_registry, id_sucursal } });
+  if(!existDB) return;
+  if (existDB.id != id_classified) {
+    throw new Error(`El Nro. Pesaje: ${number_registry}, ya existe`);
+  }
+};
 //=========================== ACCOUNTS PAYABLE =============================
 const idExistAccountPayable = async (id = "") => {
   const idExist = await AccountsPayable.findOne({where: {id,status:true}});
@@ -310,6 +353,13 @@ const idExistAbonoAccountPayable = async (id = "") => {
     throw new Error(`El abono con id: ${id}, no existe o esta inactiva`);
   };
 }
+
+const idExistAbonoAccountPayableMultiple = async (id = "") => {
+  const idExist = await AbonosAccountsPayableMultiple.findOne({where: {id,status:true}});
+  if (!idExist) {
+    throw new Error(`El abono multiple con id: ${id}, no existe o esta inactiva`);
+  };
+}
 //=========================== ACCOUNTS RECEIVABLE =============================
 const idExistAccountReceivable = async (id = "") => {
   const idExist = await AccountsReceivable.findOne({where: {id,status:true}});
@@ -319,6 +369,12 @@ const idExistAccountReceivable = async (id = "") => {
 }
 const idExistAbonoAccountReceivable = async (id = "") => {
   const idExist = await AbonosAccountsReceivable.findOne({where: {id,status:true}});
+  if (!idExist) {
+    throw new Error(`El abono con id: ${id}, no existe o esta inactiva`);
+  };
+}
+const idExistAbonoAccountReceivableMultiple = async (id = "") => {
+  const idExist = await AbonosAccountsReceivableMultiple.findOne({where: {id,status:true}});
   if (!idExist) {
     throw new Error(`El abono con id: ${id}, no existe o esta inactiva`);
   };
@@ -337,6 +393,17 @@ const idExistTransfer = async (id = "") => {
     throw new Error(`El traslado con id: ${id}, no existe`);
   };
 }
+
+const registryNumberExistTransfer = async (registry_number = "",{req}) => {
+  if(!registry_number) return;
+  const { id_transfer } = req.params;
+  const { id_sucursal_send } = req.body.transfer_data;
+  const existDB = await Transfers.findOne({ where: { registry_number, id_sucursal_send } });
+  if(!existDB) return;
+  if (existDB.id != id_transfer) {
+    throw new Error(`El Nro. Pesaje: ${registry_number}, ya existe`);
+  }
+};
 //=========================== TYPES PROVIDER =============================
 const idTypeProvider= async (id = "") => {
   const idExist = await TypesProvider.findByPk(id);
@@ -385,5 +452,12 @@ module.exports = {
   idExistAbonoAccountReceivable,
   idExistTransfer,
   idExistTransferPending,
-  idTypeProvider
+  idTypeProvider,
+  numberDocumentExistProvider,
+  idExistAbonoAccountPayableMultiple,
+  idExistAbonoAccountReceivableMultiple,
+  registryNumberExist,
+  registryNumberExistOutput,
+  registryNumberExistClassified,
+  registryNumberExistTransfer
 };

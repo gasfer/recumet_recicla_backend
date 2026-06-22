@@ -92,7 +92,7 @@ const dataPdfReturnCajaVoucher = (caja_small,total_movements,decimal) => [
     {   text: 'TELÉFONO:',bold:true, style: 'text',
         absolutePosition: { x:97, y: 45 }
     },
-    {   text: `${caja_small.sucursal.cellphone}`, style: 'text',
+    {   text: `${caja_small?.sucursal?.cellphone ?? '-'}`, style: 'text',
         absolutePosition: { x:155, y: 45 }
     },
     {   text: 'EMAIL:', bold:true, style: 'text',
@@ -121,7 +121,7 @@ const dataPdfReturnCajaVoucher = (caja_small,total_movements,decimal) => [
             { text: `${Number(caja_small.monto_apertura).toFixed(decimal)}`, style: 'text',  },
         ]
     },
-    { text: 'EGRESOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
+    { text: 'INGRESOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
     {
         style: 'tableExample',
         table: {
@@ -134,7 +134,7 @@ const dataPdfReturnCajaVoucher = (caja_small,total_movements,decimal) => [
             ]
         }
     },
-    { text: 'INGRESOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
+    { text: 'EGRESOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
     {
         style: 'tableExample',
         table: {

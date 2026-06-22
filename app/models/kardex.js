@@ -2,6 +2,8 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalSetter, formattedDecimalQuantitySetter } = require('../helpers/number-formatter');
+//TODO!: UNA VEZ MIGRADO LOS MOVIMIENTOS INICIALES, ELIMINAR ESTE MODELO
 module.exports = (sequelize, DataTypes) => {
   class Kardex extends Model {
     static associate(models) {
@@ -22,22 +24,87 @@ module.exports = (sequelize, DataTypes) => {
     detalle: DataTypes.TEXT,
     document: DataTypes.STRING,
 
-    quantity_inicial: DataTypes.DECIMAL,
-    price_u_inicial: DataTypes.DECIMAL,
-    cost_u_inicial: DataTypes.DECIMAL,
-    cost_total_inicial: DataTypes.DECIMAL,
+    quantity_inicial: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('quantity_inicial', formattedDecimalQuantitySetter(value));
+      }
+    },
+    price_u_inicial: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('price_u_inicial', formattedDecimalSetter(value));
+      }
+    },
+    cost_u_inicial: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_u_inicial', formattedDecimalSetter(value));
+      }
+    },
+    cost_total_inicial: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_total_inicial', formattedDecimalSetter(value));
+      }
+    },
 
-    quantity_input: DataTypes.DECIMAL,
-    cost_u_input: DataTypes.DECIMAL,
-    cost_total_input: DataTypes.DECIMAL,
+    quantity_input: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('quantity_input', formattedDecimalQuantitySetter(value));
+      }
+    },
+    cost_u_input: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_u_input', formattedDecimalSetter(value));
+      }
+    },
+    cost_total_input: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_total_input', formattedDecimalSetter(value));
+      }
+    },
     
-    quantity_output: DataTypes.DECIMAL,
-    cost_u_output: DataTypes.DECIMAL,
-    cost_total_output: DataTypes.DECIMAL,
+    quantity_output: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('quantity_output', formattedDecimalQuantitySetter(value));
+      }
+    },
+    cost_u_output: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_u_output', formattedDecimalSetter(value));
+      }
+    },
+    cost_total_output: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_total_output', formattedDecimalSetter(value));
+      }
+    },
 
-    quantity_saldo: DataTypes.DECIMAL,
-    cost_u_saldo: DataTypes.DECIMAL,
-    cost_total_saldo: DataTypes.DECIMAL,
+    quantity_saldo: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('quantity_saldo', formattedDecimalQuantitySetter(value));
+      }
+    },
+    cost_u_saldo: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_u_saldo', formattedDecimalSetter(value));
+      }
+    },
+    cost_total_saldo: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost_total_saldo', formattedDecimalSetter(value));
+      }
+    },
 
     id_product: DataTypes.INTEGER,
     id_product_classified: DataTypes.INTEGER,

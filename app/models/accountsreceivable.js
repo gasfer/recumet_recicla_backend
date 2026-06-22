@@ -2,6 +2,7 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class AccountsReceivable extends Model {
     static associate(models) {
@@ -17,9 +18,24 @@ module.exports = (sequelize, DataTypes) => {
     id_client: DataTypes.INTEGER,
     description: DataTypes.STRING,
     date_credit: DataTypes.DATE,
-    total: DataTypes.DECIMAL,
-    monto_abonado: DataTypes.DECIMAL,
-    monto_restante: DataTypes.DECIMAL,
+    total: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('total', formattedDecimalSetter(value));
+      }
+    },
+    monto_abonado: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('monto_abonado', formattedDecimalSetter(value));
+      }
+    },
+    monto_restante: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('monto_restante', formattedDecimalSetter(value));
+      }
+    },
     id_sucursal: DataTypes.INTEGER,
     status_account:  DataTypes.STRING,
     status: DataTypes.BOOLEAN

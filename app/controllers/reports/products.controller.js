@@ -134,7 +134,7 @@ const generateExcelReportsPricesProduct = async (req = request, res = response) 
         output_data.push({
           N: '',
           DESCRIPCION: '',
-          'EN EL PUESTO': '',
+          'EN RECUMET': '',
           'CON RECOJO': '',
           'OTRO': '',
         });
@@ -143,7 +143,7 @@ const generateExcelReportsPricesProduct = async (req = request, res = response) 
         const tableData = {
             N: product.num,
             DESCRIPCION: product.name,
-            'EN EL PUESTO': Number(product.productCosts?.cost),
+            'EN RECUMET': Number(product.productCosts?.cost),
             'CON RECOJO': Number(product.productCosts?.cost_two),
             'OTRO': Number(product.productCosts?.cost_tree),
         }

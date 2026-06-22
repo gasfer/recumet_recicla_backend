@@ -8,7 +8,7 @@ const getSucursalPaginate = async (req = request, res = response) => {
         const optionsDb = {
             order: [orderNew],
             where: { status },
-            include: [{association: 'storage'}]
+            include: [{association: 'storage', where: {status: true}, required:false}]
         };
         let sucursales = await paginate(Sucursal, page, limit, type, query, optionsDb); 
         return res.status(200).json({

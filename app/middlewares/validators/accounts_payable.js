@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistAccountPayable, idExistAbonoAccountPayable } = require('./database');
+const { idExistAccountPayable, idExistAbonoAccountPayable, idExistProvider, idExistSucursal, idExistAbonoAccountPayableMultiple } = require('./database');
 
 const validationSchema =  {
     id_account_payable: {
@@ -21,8 +21,43 @@ const validationSchema =  {
     },
 };
 
+const validationProviderGet =  {
+    id_provider: {
+        isEmpty: {
+            negated: true, errorMessage: "El proveedor es obligatorio",
+        },
+        custom: { options: idExistProvider }
+    }
+};
+
+const validationProvider =  {
+    id_provider: {
+        isEmpty: {
+            negated: true, errorMessage: "El proveedor es obligatorio",
+        },
+        custom: { options: idExistProvider }
+    },
+    id_sucursal: {
+        isEmpty: {
+            negated: true,
+            errorMessage: "El id sucursal es obligatorio",
+        },
+        custom: { options: idExistSucursal },
+    },
+};
+
 const getValidateCreate = [
     checkSchema(validationSchema),
+    validatedResponse
+];
+
+const getValidateGetForProvider = [
+    checkSchema(validationProvider),
+    validatedResponse
+];
+
+const getValidateGetForProviderGet = [
+    checkSchema(validationProviderGet),
     validatedResponse
 ];
 
@@ -33,9 +68,19 @@ const validateDelete = [
     validatedResponse
 ]
 
+const validateDeleteMultiple = [
+    checkSchema({
+        id_abono_multiple: { custom: { options: idExistAbonoAccountPayableMultiple} },
+    }),
+    validatedResponse
+]
+
 
 module.exports = {
     getValidateCreate,
-    validateDelete
+    validateDelete,
+    getValidateGetForProvider,
+    getValidateGetForProviderGet,
+    validateDeleteMultiple
 }
 

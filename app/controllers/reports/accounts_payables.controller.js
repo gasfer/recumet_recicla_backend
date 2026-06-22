@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { AccountsPayable, AbonosAccountsPayable } = require('../../database/config');
+const { AccountsPayable, AbonosAccountsPayable ,ViewAbonosAccountPayableAll} = require('../../database/config');
 const PdfPrinter = require('pdfmake');
 const fonts = require('../../helpers/generator-pdf/fonts');
 const styles = require('../../helpers/generator-pdf/styles');
@@ -20,19 +20,19 @@ const generatePdfReports = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2} = req.query;
         const accounts_payables = await returnDataAccountPayable(req.query);
-        let dataPdf = dataPdfReturn(req.userAuth); //PDF 
+        let dataPdf = dataPdfReturn(req.userAuth,accounts_payables[0]?.sucursal?.name ?? '-'); //PDF 
         const decimal = await getNumberDecimal();
         let total_abonados = 0, total_restante=0,total_account = 0;
         accounts_payables.forEach(account_payable => {
             const tableData = [
                 {text:account_payable?.input.cod, fontSize:8}, 
+                {text:account_payable?.provider?.full_names, fontSize:8}, 
+                {text:moment(account_payable?.input.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
                 {text:account_payable?.input?.type_registry, fontSize:8}, 
-                {text:moment(account_payable?.date_credit).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
+                {text:account_payable?.input?.registry_number, fontSize:8}, 
                 {text:Number(account_payable?.monto_abonado).toFixed(decimal), fontSize:8}, 
                 {text:Number(account_payable?.monto_restante).toFixed(decimal), fontSize:8}, 
                 {text:Number(account_payable?.total).toFixed(decimal), fontSize:8}, 
-                {text:account_payable?.provider?.full_names, fontSize:8}, 
-                {text:account_payable?.sucursal?.name, fontSize:8}, 
             ];
             total_abonados+=Number(account_payable?.monto_abonado);
             total_restante+=Number(account_payable?.monto_restante);
@@ -40,14 +40,14 @@ const generatePdfReports = async (req = request, res = response) => {
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            { colSpan: 3,text:'' },
+            { colSpan: 5,text:'' },
+            {},
+            {},
             {},
             {},
             {text: Number(total_abonados).toFixed(decimal),fontSize:9},
             {text: Number(total_restante).toFixed(decimal),fontSize:9},
             {text: Number(total_account).toFixed(decimal),fontSize:9},
-            { colSpan: 2,text:''},
-            {},
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
@@ -80,7 +80,7 @@ const generatePdfReports = async (req = request, res = response) => {
     }
 }
 
-const dataPdfReturn = (auth) => [
+const dataPdfReturn = (auth,sucursal) => [
     {
         image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
         width: 70,
@@ -93,23 +93,23 @@ const dataPdfReturn = (auth) => [
         absolutePosition: {  y: 27 }
     },
     { text: 'REPORTE DE CUENTAS POR PAGAR', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    { text: 'Reporte generados con los parámetros establecidos, SUCURSAL: '+sucursal, alignment:'center',absolutePosition: {  y: 73 } },
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [50,80,80,55,55,55,'*',70],
+            widths: [50,'*',80,80,55,55,55,55],
             body: [
                 [
-                    {text:'COMPRA', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TIPO DE REGISTRO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA CREDITO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO ABONADO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO RESTANTE', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TOTAL', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'COMPRA', fontSize:8 ,fillColor: '#eeeeee', bold:true},
                     {text:'PROVEEDOR', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'SUCURSAL', fontSize:8,fillColor: '#eeeeee', bold:true}, 
+                    {text:'FECHA REGISTRO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TIPO DE REGISTRO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'NUMERO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'A CUENTA', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'SALDO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TOTAL', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
                 ]
             ],
             layout: 'lightHorizontalLines'
@@ -120,28 +120,31 @@ const dataPdfReturn = (auth) => [
 const generateExcelReports = async (req = request, res = response) => {
   try {
         const accounts_payables = await returnDataAccountPayable(req.query);
+        const decimal = await getNumberDecimal();
         let accounts_payables_data = [];
         if(accounts_payables.length == 0) {
             accounts_payables_data.push({
                 COMPRA : '',
-                TIPO_DE_REGISTRO : '',
-                FECHA_CREDITO : '',
-                MONTO_ABONADO : '',
-                MONTO_RESTANTE : '',
-                TOTAL : '',
                 PROVEEDOR : '',
+                FECHA_REGISTRO : '',
+                TIPO_DE_REGISTRO : '',
+                NUMERO : '',
+                A_CUENTA : '',
+                SALDO : '',
+                TOTAL : '',
                 SUCURSAL : '', 
             });
         }
         accounts_payables.forEach(account_payable => {
             const tableData = {
                 COMPRA : account_payable?.input.cod,
-                TIPO_DE_REGISTRO : account_payable?.input?.type_registry,
-                FECHA_CREDITO : moment(account_payable?.date_credit).format('DD/MM/YYYY HH:mm:ss'),
-                MONTO_ABONADO :  Number(account_payable?.monto_abonado),
-                MONTO_RESTANTE : Number(account_payable?.monto_restante),
-                TOTAL :          Number(account_payable?.total),
                 PROVEEDOR : account_payable?.provider?.full_names,
+                FECHA_REGISTRO : moment(account_payable?.input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
+                TIPO_DE_REGISTRO : account_payable?.input?.type_registry,
+                NUMERO : account_payable?.input?.registry_number,
+                A_CUENTA :  Number(account_payable?.monto_abonado).toFixed(decimal),
+                SALDO : Number(account_payable?.monto_restante).toFixed(decimal),
+                TOTAL :   Number(account_payable?.total).toFixed(decimal),
                 SUCURSAL : account_payable?.sucursal?.name, 
             }
             accounts_payables_data.push(tableData);
@@ -188,7 +191,7 @@ const generateExcelReports = async (req = request, res = response) => {
 
 const returnDataAccountPayable = async (params) => {
     const {status_account, id_provider, id_sucursal,type_registry,filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"AccountsPayable"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
     const optionsDb = {
         order: [orderNew],
         where: {
@@ -197,7 +200,6 @@ const returnDataAccountPayable = async (params) => {
                 id_sucursal   ? { id_sucursal   } : {},
                 status_account ? { status_account   } : {},
                 { status: true },
-                { createdAt: whereDate }
             ]
         },
         include: [ 
@@ -206,6 +208,7 @@ const returnDataAccountPayable = async (params) => {
             { association: 'input',
                 where: { [Op.and]: [
                     type_registry ? { type_registry } : {},
+                    { date_voucher: whereDate }
                 ]} ,
                 include:[  
                     { association: 'scale', attributes: ['name']},
@@ -217,6 +220,192 @@ const returnDataAccountPayable = async (params) => {
     return await AccountsPayable.findAll(optionsDb);
 }
 
+const generatePdfReportsAbonosAll = async (req = request, res = response) => {
+    try {
+        const { filterBy, date1, date2} = req.query;
+        const accounts_payables_abonos_all = await returnDataAccountPayableAbonos(req.query);
+        let dataPdf = dataPdfReturnAbonosAll(req.userAuth,accounts_payables_abonos_all[0]?.sucursal?.name ?? '-'); //PDF 
+        const decimal = await getNumberDecimal();
+        let total_abonados = 0;
+        accounts_payables_abonos_all.forEach(account_payable_abono => {
+            const tableData = [
+                {text:moment(account_payable_abono?.date_abono).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
+                {text:account_payable_abono?.codes_input?.join(' \n '), fontSize:8}, 
+                {text:account_payable_abono?.provider?.full_names, fontSize:8}, 
+                {text:account_payable_abono?.type_payment, fontSize:8}, 
+                {text:Number(account_payable_abono?.monto_abono).toFixed(decimal), fontSize:8}, 
+                {text:account_payable_abono?.comments, fontSize:8}, 
+            ];
+            total_abonados+=Number(account_payable_abono?.monto_abono);
+            dataPdf[5].table.body.push(tableData);
+        });
+        dataPdf[5].table.body.push([
+            { colSpan: 4,text:'' },
+            {},
+            {},
+            {},
+            {text: Number(total_abonados).toFixed(decimal),fontSize:9},
+            {},
+        ]);
+        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
+        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
+        let docDefinition = {
+            content: dataPdf,
+            pageOrientation: 'landscape',
+            footer: function(currentPage, pageCount) { return [
+                {
+                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
+                    fontSize: 8,alignment: 'center', margin:[10,10,10,10]
+                }
+            ] },
+            styles: styles,
+        };
+        const printer = new PdfPrinter(fonts);
+        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
+        let chunks = [];
+        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
+        pdfDoc.on("end", () => {
+            const result = Buffer.concat(chunks);
+            res.setHeader('Content-Type', 'application/pdf;');
+            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
+            return res.send(result);
+        });
+        pdfDoc.end();
+    } catch (error) {
+        console.log(error);
+        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
+        return res.sendFile(pathImage);
+    }
+}
+
+const generateExcelReportsAbonosAll = async (req = request, res = response) => {
+    try {
+          const accounts_payables_abonos = await returnDataAccountPayableAbonos(req.query);
+          const decimal = await getNumberDecimal();
+          let accounts_payables_data = [];
+          if(accounts_payables_abonos.length == 0) {
+              accounts_payables_data.push({
+                FECHA: '',
+                COMPRAS: '',
+                PROVEEDOR: '',
+                TIPO: '',
+                PAGO: '',
+                CONCEPTO: '',
+              });
+          }
+          accounts_payables_abonos.forEach(account_payable => {
+              const tableData = {
+                FECHA : moment(account_payable?.date_abono).format('DD/MM/YYYY HH:mm:ss'),
+                COMPRAS : account_payable?.codes_input?.join(' \n '),
+                PROVEEDOR : account_payable.provider?.full_names,
+                TIPO : account_payable?.type_payment,
+                PAGO : Number(account_payable?.monto_abono).toFixed(decimal),
+                CONCEPTO :  account_payable.comments,
+              }
+              accounts_payables_data.push(tableData);
+          });
+          const workbook = new ExcelJS.Workbook();
+          const worksheet = workbook.addWorksheet(`Cuentas por pagar`);
+          // Agregar encabezados
+          const headers = Object.keys(accounts_payables_data[0]);
+          worksheet.addRow(headers);
+          // Agregar datos
+          accounts_payables_data.forEach(data => {
+              const row = [];
+              headers.forEach(header => {
+                  row.push(data[header]);
+              });
+              worksheet.addRow(row);
+          });
+          worksheet.getColumn('B').alignment = { wrapText: true };
+          worksheet.getColumn('A').width = 10; 
+          worksheet.getColumn('B').width = 20; 
+          worksheet.getColumn('C').width = 30; 
+          worksheet.getColumn('D').width = 20; 
+          worksheet.getColumn('E').width = 20; 
+          worksheet.getColumn('F').width = 20; 
+          worksheet.getColumn('G').width = 40; 
+          worksheet.getColumn('H').width = 30; 
+          res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+          res.setHeader('Content-Disposition', `attachment; filename=cuentas-por-pagar.xlsx`);
+          workbook.xlsx.write(res)
+          .then(() => {
+              res.end();
+          })
+          .catch(err => {
+              console.error('Error generar Excel:', err);
+              res.status(500).json({ error: 'Error al crear excel' });
+          })
+      } catch (error) {
+          console.log(error);
+          return res.status(500).json({
+              ok: false,
+              errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+          });
+      };
+  }
+
+const dataPdfReturnAbonosAll = (auth,sucursal) => [
+    {
+        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
+        width: 70,
+        absolutePosition: { x:25, y: 15 }
+    },
+    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
+        absolutePosition: { y: 16 },
+    },
+    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
+        absolutePosition: {  y: 27 }
+    },
+    { text: 'PAGOS REALIZADOS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
+    { text: 'Reporte generados con los parámetros establecidos, SUCURSAL: '+sucursal, alignment:'center',absolutePosition: {  y: 73 } },
+    {
+        style: 'tableReport',
+        absolutePosition: { x:20, y: 95 },
+        table: {
+            headerRows: 1,
+            widths: [50,80,200,80,80,'*'],
+            body: [
+                [
+                    {text:'FECHA', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'COMPRAS', fontSize:8 ,fillColor: '#eeeeee', bold:true},
+                    {text:'PROVEEDOR', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TIPO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'PAGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CONCEPTO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
+                ]
+            ],
+            layout: 'lightHorizontalLines'
+        }
+    }
+];
+
+const returnDataAccountPayableAbonos = async (params) => {
+    const {id_provider,query, id_sucursal, filterBy, date1, date2,orderNew} = params;
+    let {type} = params;
+    const whereDate = whereDateForType(filterBy,date1, date2, '"ViewAbonosAccountPayableAll"."date_abono"');
+    const where = {
+        [Op.and]: [
+            id_sucursal   ? { id_sucursal   } : {},
+            id_provider   ? { id_provider   } : {},
+            { date_abono: whereDate },
+            type == 'codes_input' ?   {codes_input: {
+                [Op.contains]: [query]
+              } }: {}
+        ]
+    }
+    if( type == 'codes_input') type = null;
+    const optionsDb = {
+        order: [orderNew],
+        where,
+        include: [ 
+            { association: 'sucursal',attributes: ['name'] },
+            { association: 'user',attributes: ['full_names'] },
+            { association: 'provider',attributes: ['full_names'] },
+        ]
+    };
+    return await ViewAbonosAccountPayableAll.findAll(optionsDb);
+}
 
 const printAbonoAccountPayableVoucher = async (req = request, res = response) =>{
     try {
@@ -237,6 +426,8 @@ const printAbonoAccountPayableVoucher = async (req = request, res = response) =>
                         
                     ]}
                 ]},
+                { association: 'bankOrigin' },
+                { association: 'bankDestination' },
             ]
         });
         const decimal = await getNumberDecimal();
@@ -262,13 +453,29 @@ const printAbonoAccountPayableVoucher = async (req = request, res = response) =>
             [
                 {text:'',colSpan: 2, border:[true,false,false,false]},
                 '',
-                {text: quantity_total,  fontSize:8, alignment:'center'},
+                {
+                    text: `${Number(quantity_total).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}`,
+                    fontSize: 8,
+                    alignment: 'center',
+                    bold: true,
+                    fillColor: '#eeeeee'
+                },                  
                 {text: units.join(','), fontSize:8, alignment:'center'},
-                {   border:[true,false,true,true],
-                    text: `SUB TOTAL: ${Number(abono_account_payable.accountsPayable.input.sumas).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
-                    bold:true,
-                },
+                {
+                    border: [true, false, true, true],
+                    text: `SUB TOTAL: ${Number(abono_account_payable.accountsPayable.input.sumas).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}`,
+                    colSpan: 2,
+                    fontSize: 8,
+                    fillColor: '#eeeeee',
+                    alignment: 'right',
+                    bold: true
+                },                  
             ],
             [
                 {text:'',colSpan: 4, border:[true,false,false,false]},
@@ -289,11 +496,19 @@ const printAbonoAccountPayableVoucher = async (req = request, res = response) =>
                 '',
                 '',
                 '',
-                {   border:[true,false,true,true],
-                    text: `TOTAL: ${Number(abono_account_payable.accountsPayable.input.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
-                    bold:true,
-                },
+                {
+                    border: [true, false, true, true],
+                    text: `TOTAL: ${Number(abono_account_payable.accountsPayable.input.total).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}`,
+                    colSpan: 2,
+                    fontSize: 8,
+                    fillColor: '#eeeeee',
+                    alignment: 'right',
+                    bold: true
+                  }
+                  
             ]
         );
         let docDefinition = {
@@ -336,7 +551,7 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
     {   text: 'TELÉFONO:',bold:true, style: 'text',
         absolutePosition: { x:97, y: 45 }
     },
-    {   text: `${accountsPayable.sucursal.cellphone}`, style: 'text',
+    {   text: `${accountsPayable?.sucursal?.cellphone ?? '-'}`, style: 'text',
         absolutePosition: { x:155, y: 45 }
     },
     {   text: 'EMAIL:', bold:true, style: 'text',
@@ -363,7 +578,39 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
         margin: [0,3,0,0],
         columns: [
             { text: `La suma de:`, bold:true ,style: 'text',width: 60, },
-            { text: `Bs. ${Number(abono_account_payable.monto_abono).toFixed(decimal)} -  ${NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(decimal))}`, style: 'text',  },
+            { 
+                stack: [
+                  {
+                    table: {
+                      widths: ['*'],
+                      body: [[
+                        {
+                          text: `Bs. ${Number(abono_account_payable.monto_abono).toLocaleString('es-BO', {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}`,
+                          style: 'text',
+                          fontSize: 10,
+                          margin: [0, 0, 0, 0],
+                          fillColor: '#eeeeee'
+                        }
+                      ]]
+                    },
+                    layout: {
+                      hLineColor: () => 'black',
+                      vLineColor: () => 'black',
+                      hLineWidth: () => 1,
+                      vLineWidth: () => 1
+                    }
+                  },
+                  {
+                    text: NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(2)),
+                    style: 'text',
+                    fontSize: 9,
+                    margin: [0, 2, 0, 0]
+                  }
+                ]
+              },              
             { text: `Por concepto de:`, bold:true, style: 'text',width: 85,  },
             { text: `Abono crédito ${accountsPayable.cod} - Compra ${accountsPayable.input.cod}, en fecha: ` + moment(abono_account_payable.date_abono).format('DD/MM/YYYY HH:mm:ss'),  style: 'text',  },
         ]
@@ -388,13 +635,136 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
     {
         margin: [0,3,0,0],
         columns: [
-            { text: `P/${accountsPayable.input.type_registry} NRO:`, bold:true ,style: 'text',width: 80, },
-            { text: `${accountsPayable.input.registry_number}`, style: 'text',  },
-            { text: `A CUENTA:`, bold:true, style: 'text',width: 58,  },
-            { text: `${Number(abono_account_payable.total_abonado).toFixed(decimal)}`,  style: 'text',  },
-            { text: `SALDO:`, bold:true, style: 'text',width: 70,  },
-            { text: `${Number(abono_account_payable.restante_credito).toFixed(decimal)}`,  style: 'text',  },
+            { text: `P/${accountsPayable.input.type_registry} NRO:`, bold:true, style: 'text',width: 80,alignment: 'left'  },
+            { 
+                table: {
+                  widths: ['*'],
+                  body: [[
+                    {
+                      text: `${accountsPayable.input.registry_number}`,
+                      bold: true,
+                      style: 'text',
+                      fontSize: 10,
+                      fillColor: '#eeeeee',
+                      alignment: 'left',
+                      margin: [0,0,0,0]
+                    }
+                  ]]
+                },
+                layout: {
+                  hLineColor: () => 'black',
+                  vLineColor: () => 'black',
+                  hLineWidth: () => 1,
+                  vLineWidth: () => 1
+                }
+            },              
+            { text: `A CUENTA:`, bold:true, style: 'text',width: 58,alignment: 'left'  },
+            { 
+                table: {
+                  widths: ['*'],
+                  body: [[
+                    {
+                      text: `${Number(accountsPayable.monto_abonado).toLocaleString('es-BO', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}`,
+                      style: 'text',
+                      fontSize: 10,
+                      fillColor: '#eeeeee',
+                      alignment: 'left',
+                      margin: [0,0,0,0]
+                    }
+                  ]]
+                },
+                layout: {
+                  hLineColor: () => 'black',
+                  vLineColor: () => 'black',
+                  hLineWidth: () => 1,
+                  vLineWidth: () => 1
+                }
+              },              
+            { text: `SALDO:`, bold:true, style: 'text',width: 70,alignment: 'left' },
+            { 
+                table: {
+                  widths: ['*'],
+                  body: [[
+                    {
+                      text: `${Number(accountsPayable.monto_restante).toLocaleString('es-BO', {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2
+                      })}`,
+                      style: 'text',
+                      fontSize: 10,
+                      fillColor: '#eeeeee',
+                      alignment: 'left',
+                      margin: [0,0,0,0]
+                    }
+                  ]]
+                },
+                layout: {
+                  hLineColor: () => 'black',
+                  vLineColor: () => 'black',
+                  hLineWidth: () => 1,
+                  vLineWidth: () => 1
+                }
+              }
+              
         ]
+    },
+    {
+      margin: [0, 3, 0, 0],
+      columns: [
+        { 
+            text: `ORIGEN:`,
+            bold: true,
+            style: 'text',
+            width: 50,
+            alignment: 'left'
+        },
+        {
+            table: {
+                widths: ['*'],
+                body: [[
+                    {
+                        text: abono_account_payable.type_payment != 'EFECTIVO'
+                          ? `${abono_account_payable.bankOrigin?.name ?? '-'} | Cuenta: ${abono_account_payable.account_origin ?? ''}`
+                          : '-',
+                        style: 'text',
+                        fontSize: 10,       
+                        alignment: 'left',
+                        margin: [0,0,0,0] 
+                    }
+                ]]
+            },
+            layout: 'noBorders', 
+            width: 200
+        },
+        { 
+            text: `DESTINO:`,
+            bold: true,
+            style: 'text',
+            width: 50,
+            alignment: 'left'
+        },
+        {
+            table: {
+                widths: ['*'],
+                body: [[
+                    {
+                        text: abono_account_payable.type_payment != 'EFECTIVO'
+                          ? `${abono_account_payable.bankDestination.name} | Cuenta: ${abono_account_payable.account_output}` 
+                          : '-',
+                        style: 'text',
+                        fontSize: 10,       
+                        alignment: 'left',
+                        margin: [0,0,0,0]
+                    }
+                ]]
+            },
+            layout: 'noBorders', 
+            width: 200
+        }
+      ]
     },
     {
         margin: [0,40,0,0],
@@ -455,7 +825,7 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
             const tableData = [
                 {text:detail?.product?.cod, fontSize:8}, 
                 {text:detail?.product?.name, fontSize:8}, 
-                {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
+                {text:detail?.quantity, fontSize:8, alignment: 'right'}, 
                 {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
                 {text:Number(detail?.cost).toFixed(decimal), fontSize:8, alignment: 'right'},  
                 {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
@@ -466,13 +836,26 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
             [
                 {text:'',colSpan: 2, border:[true,false,false,false]},
                 '',
-                {text: quantity_total,  fontSize:8, alignment:'center'},
-                {text: units.join(','), fontSize:8, alignment:'center'},
-                {   border:[true,false,true,true],
-                    text: `SUB TOTAL: ${Number(account_payable.input.sumas).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
-                    bold:true,
+                {
+                    text: quantity_total,
+                    fontSize: 8,
+                    alignment: 'center',
+                    bold: true,
+                    fillColor: '#eeeeee', // Relleno gris
                 },
+                {text: units.join(','), fontSize:8, alignment:'center'},
+                {
+                    border: [true, false, true, true],
+                    text: `SUB TOTAL: ${Number(account_payable.input.sumas).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`,
+                    colSpan: 2,
+                    fontSize: 8,
+                    fillColor: '#eeeeee',
+                    alignment: 'right',
+                    bold: true,
+                  }
             ],
             [
                 {text:'',colSpan: 4, border:[true,false,false,false]},
@@ -488,16 +871,23 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
             [
                 {
                     text:'SON: ' + NumeroALetras(Number(account_payable.input.total).toFixed(decimal)),
-                    style: 'sonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
+                    style: 'SonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
                 },
                 '',
                 '',
                 '',
-                {   border:[true,false,true,true],
-                    text: `TOTAL: ${Number(account_payable.input.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
-                    bold:true,
-                },
+                {
+                    border: [true, false, true, true],
+                    text: `TOTAL: ${Number(account_payable.input.total).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`,
+                    colSpan: 2,
+                    fontSize: 8,
+                    fillColor: '#eeeeee',
+                    alignment: 'right',
+                    bold: true,
+                  }
             ]
         );
         account_payable.abonosAccountsPayable.forEach(abono => {
@@ -532,131 +922,305 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
     }
 }
 
-const dataPdfReturnAccountPayableVoucher = (accountsPayable,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
+const dataPdfReturnAccountPayableVoucher = (accountsPayable, decimal) => [
+  {
+    image: "data:image/png;base64," + fs.readFileSync(imagePath, "base64"),
+    width: 60,
+    absolutePosition: { x: 30, y: 15 },
+  },
+  {
+    text: accountsPayable.sucursal.name,
+    style: "text",
+    absolutePosition: { x: 97, y: 25 },
+  },
+  {
+    text: "NIT:",
+    bold: true,
+    style: "text",
+    absolutePosition: { x: 97, y: 35 },
+  },
+  {
+    text: `${accountsPayable.sucursal.company.nit}`,
+    style: "text",
+    absolutePosition: { x: 120, y: 35 },
+  },
+  {
+    text: "TELÉFONO:",
+    bold: true,
+    style: "text",
+    absolutePosition: { x: 97, y: 45 },
+  },
+  {
+    text: `${accountsPayable.sucursal.cellphone}`,
+    style: "text",
+    absolutePosition: { x: 155, y: 45 },
+  },
+  {
+    text: "EMAIL:",
+    bold: true,
+    style: "text",
+    absolutePosition: { x: 97, y: 55 },
+  },
+  {
+    text: `${accountsPayable.sucursal.email}`,
+    style: "text",
+    absolutePosition: { x: 133, y: 55 },
+  },
+  {
+    text: "CUENTA: " + accountsPayable.cod,
+    style: "fechaDoc",
+    absolutePosition: { y: 30 },
+  },
+  {
+    text: moment(accountsPayable.date_credit).format("DD/MM/YYYY HH:mm:ss"),
+    style: "fechaDoc",
+    absolutePosition: { y: 40 },
+  },
+  {
+    text: `ESTADO DE CUENTA DE CREDITO - ${accountsPayable.cod}`,
+    style: "title",
+    bold: true,
+    fontSize: 16,
+  },
+  { text: "DATOS:", style: "datos_person", bold: true, fontSize: 10 },
+  {
+    columns: [
+      { text: `Descripción:`, bold: true, style: "text", width: 60 },
+      { text: `${accountsPayable.description ?? "-"}`, style: "text" },
+      { text: `Proveedor:`, bold: true, style: "text", width: 85 },
+      {
+        text: `${accountsPayable.provider?.number_document ?? ""} ${
+          accountsPayable?.provider?.full_names
+        }`,
+        style: "text",
+      },
+    ],
+  },
+  {
+    margin: [0, 1, 0, 0],
+    columns: [
+      { text: `Fecha:`, bold: true, style: "text", width: 60 },
+      {
+        text: moment(accountsPayable.date_credit).format("DD/MM/YYYY HH:mm:ss"),
+        style: "text",
+      },
+      { text: `Monto de crédito:`, bold: true, style: "text", width: 85 },
+      {
+        text: new Intl.NumberFormat("es-BO", {
+          style: "currency",
+          currency: "BOB",
+        }).format(accountsPayable.total),
+        fontSize: 11,
+        bold: true,
+      },
+    ],
+  },
+  {
+    margin: [0, 0, 0, 0],
+    columns: [
+      { text: `Estado:`, bold: true, style: "text", width: 60 },
+      {
+        text: `CREDITO ${accountsPayable.status_account}`,
+        fontSize: 11,
+        bold: true,
+      },
+    ],
+  },
+  { text: "DETALLE:", style: "datos_person", bold: true, fontSize: 10 },
+  {
+    style: "tableExample",
+    table: {
+      widths: [55, "*", 50, 50, 50, 50],
+      body: [
+        [
+          { text: "CÓDIGO", fontSize: 8, fillColor: "#eeeeee", bold: true },
+          { text: "DETALLE", fontSize: 8, fillColor: "#eeeeee", bold: true },
+          {
+            text: "CANT.",
+            alignment: "center",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+          {
+            text: "UND",
+            alignment: "center",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+          {
+            text: "P.U.",
+            alignment: "center",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+          {
+            text: "IMPORTE",
+            alignment: "center",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+        ],
+      ],
     },
-    {   text: accountsPayable.sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
+  },
+  { text: "ABONOS:", style: "datos_person", bold: true, fontSize: 10 },
+  {
+    style: "tableExample",
+    table: {
+      widths: [90, 70, "*", 70, 70],
+      body: [
+        [
+          {
+            text: "FECHA, HORA ABONO",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+          {
+            text: "MONTO ABONADO",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+          {
+            text: "ABONADO POR",
+            alignment: "center",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+          {
+            text: "RESTANTE HASTA FECHA",
+            alignment: "center",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+          {
+            text: "TOTAL ABONADO HASTA FECHA",
+            alignment: "center",
+            fontSize: 8,
+            fillColor: "#eeeeee",
+            bold: true,
+          },
+        ],
+      ],
     },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${accountsPayable.sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${accountsPayable.sucursal.cellphone}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${accountsPayable.sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'CUENTA: ' + accountsPayable.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: moment(accountsPayable.date_credit).format('DD/MM/YYYY HH:mm:ss'),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: `ESTADO DE CUENTA DE CREDITO ${accountsPayable.cod}`, style: 'title',bold:true , fontSize:16},
-    { text: 'DATOS:', style: 'datos_person', bold:true ,fontSize:10 },
-    {
-        columns: [
-            { text: `Descripcion:`, bold:true ,style: 'text',width: 60, },
-            { text: `${accountsPayable.description ?? '-'}`, style: 'text',  },
-            { text: `Proveedor:`, bold:true ,style: 'text',width: 85, },
-            { text: `${accountsPayable.provider?.number_document ?? ''} ${accountsPayable?.provider?.full_names}`, style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,1,0,0],
-        columns: [
-            { text: `Fecha:`, bold:true ,style: 'text',width: 60, },
-            { text:  moment(accountsPayable.date_credit).format('DD/MM/YYYY HH:mm:ss'), style: 'text',  },
-            { text: `Monto de crédito:`, bold:true, style: 'text',width: 85,  },
-            { text: `${accountsPayable.total}`,  fontSize:11, bold: true  },
-        ]
-    },
-    {
-        margin: [0,1,0,0],
-        columns: [
-            { text: `Estado:`, bold:true ,style: 'text' ,width: 60, },
-            { text:  `CREDITO ${accountsPayable.status_account}`, fontSize:11, bold: true  },
-        ]
-    },
-    { text: 'DETALLE:', style: 'datos_person',bold:true ,fontSize:10 },
-    {
-        style: 'tableExample',
+  },
+  {
+    margin: [0, 0, 0, 0],
+    columns: [
+      { text: `TOTAL ABONADO:`, bold: true, style: "text", width: 120 },
+      {
         table: {
-            widths: [55, '*', 50, 50,50,50],
-            body: [
-                [
-                    {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'P.U.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'IMPORTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                ]
-            ]
-        }
-    },
-    { text: 'ABONOS:', style: 'datos_person',bold:true ,fontSize:10 },
-    {
-        style: 'tableExample',
+          body: [
+            [
+                {
+                    text: `Bs. ${Number(accountsPayable.monto_abonado).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`,
+                    fontSize: 10,
+                    fillColor: '#eeeeee',
+                    border: [true, true, true, true],
+                  }
+            ],
+          ],
+        },
+        layout: {
+          hLineColor: () => 'black',
+          vLineColor: () => 'black',
+          hLineWidth: () => 1,
+          vLineWidth: () => 1,
+        },
+        margin: [0, 0, 0, 0],
+      },
+      { text: `TOTAL RESTANTE:`, bold: true, style: "text", width: 130 },
+      {
         table: {
-            widths: [90, 70, '*', 70,70],
-            body: [
-                [
-                    {text:'FECHA, HORA ABONO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO ABONADO', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'ABONADO POR',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'RESTANTE HASTA FECHA',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'TOTAL ABONADO HASTA FECHA',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                ]
-            ]
-        }
-    },
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `TOTAL ABONADO:`, bold:true ,style: 'text',width: 120, },
-            { text: `${Number(accountsPayable.monto_abonado).toFixed(decimal)}`, fontSize:10,  },
-            { text: `TOTAL RESTANTE:`, bold:true, style: 'text',width: 130,  },
-            { text: `${Number(accountsPayable.monto_restante).toFixed(decimal)}`,  fontSize:10,  },
-        ]
-    },
-    {
-        margin: [0,40,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-            { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `${accountsPayable.provider?.full_names}` , style: 'text',alignment: 'center' },
-            { text: `${accountsPayable.sucursal.name}`,style: 'text',alignment: 'center' },
-        ]
-    },
+          body: [
+            [
+                {
+                    text: `${Number(accountsPayable.monto_restante).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}`,
+                    fontSize: 10,
+                    fillColor: '#eeeeee',
+                    border: [true, true, true, true],
+                  }
+            ],
+          ],
+        },
+        layout: {
+          hLineColor: () => 'black',
+          vLineColor: () => 'black',
+          hLineWidth: () => 1,
+          vLineWidth: () => 1,
+        },
+      },
+    ],
+  },  
+  {
+    margin: [0, 40, 0, 0],
+    columns: [
+      {
+        text: `-----------------------------------------`,
+        bold: true,
+        style: "text",
+        alignment: "center",
+      },
+      {
+        text: `-----------------------------------------`,
+        bold: true,
+        style: "text",
+        alignment: "center",
+      },
+    ],
+  },
+  {
+    margin: [0, -5, 0, 0],
+    columns: [
+      {
+        text: `Recibí conforme`,
+        bold: true,
+        style: "text",
+        alignment: "center",
+      },
+      {
+        text: `Entregue conforme`,
+        bold: true,
+        style: "text",
+        alignment: "center",
+      },
+    ],
+  },
+  {
+    margin: [0, -2, 0, 0],
+    columns: [
+      {
+        text: `${accountsPayable.provider?.full_names}`,
+        style: "text",
+        alignment: "center",
+      },
+      {
+        text: `${accountsPayable.sucursal.name}`,
+        style: "text",
+        alignment: "center",
+      },
+    ],
+  },
 ];
 
 module.exports = {
     generatePdfReports,
     generateExcelReports,
     printAbonoAccountPayableVoucher,
-    printAccountPayableVoucher
+    printAccountPayableVoucher,
+    generatePdfReportsAbonosAll,
+    generateExcelReportsAbonosAll
 }

@@ -25,25 +25,36 @@ const generatePdfReports = async (req = request, res = response) => {
         const outputs = await returnDataOutput(req.query);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
         let total = 0;
+        let total_quantity = 0;
         outputs.forEach(output => {
             total += Number(output.total);
+            total_quantity += Number(output.total_quantity);
             const tableData = [
                 {text:output?.cod, fontSize:9}, 
-                {text:moment(output?.createdAt).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
+                {text:moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:output?.type_registry, fontSize:9}, 
                 {text:output?.number_registry, fontSize:9}, 
                 {text:output?.client?.full_names, fontSize:8}, 
-                {text:output?.user?.full_names, fontSize:8}, 
+                {
+                    text: output.detailsOutput
+                        .map(detail => {
+                            const productName = detail.product.name;
+                            const quantity = detail.quantity;
+                            const unit = detail.product.unit.siglas;
+                            return `${productName} [${quantity} ${unit}]`;
+                        })
+                        .join(', '), 
+                    fontSize: 9,
+                }, 
                 {text:output?.comments, fontSize:9}, 
                 {text:output?.type_output, fontSize:9}, 
-                {text:Number(output?.sub_total).toFixed(decimal), fontSize:9, alignment: 'right'},  
-                {text:Number(output.discount).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+                {text:Number(output?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(output.total).toFixed(decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            {colSpan: 8, text:`TOTAL: ${NumeroALetras(total)}`},
+            {colSpan: 8, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10,},
             {text:''},
             {text:''},
             {text:''},
@@ -51,8 +62,7 @@ const generatePdfReports = async (req = request, res = response) => {
             {text:''},
             {text:''},
             {text:''},
-            {text:''},
-            {text:''},
+            {text:`Kg. ${Number(total_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'},
             {text: `Bs. ${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
@@ -105,19 +115,18 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,70,50,55,'*',80,'*',45,60,55,60],
+            widths: [60,40,45,55,'*','*','*',45,60,60],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA VENTA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'FECHA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'NRO. DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'CLIENTE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'POR USUARIO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'COMENTARIOS', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'SUBTOTAL', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DESCUENTO',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CANT. KG',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                 ]
             ]   ,
@@ -129,6 +138,7 @@ const dataPdfReturn = (auth) => [
 const generateExcelReports = async (req = request, res = response) => {
   try {
     const outputs = await returnDataOutput(req.query);
+    const decimal = await getNumberDecimal();
     let output_data = [];
     if (outputs.length == 0) {
       output_data.push({
@@ -136,33 +146,52 @@ const generateExcelReports = async (req = request, res = response) => {
         FECHA_VENTA: '',
         TIPO_DOCUMENTO: '',
         NRO_DOCUMENTO: '',
-        FECHA_DOCUMENTO: '',
         CLIENTE: '',
-        USUARIO: '',
+        DETALLE: '',
         COMENTARIOS: '',
         TIPO: '',
-        SUBTOTAL: '',
-        DESCUENTO: '',
+        TOTAL_KG: '',
         TOTAL: '',
       });
     }
+    let total = 0;
+    let total_quantity = 0;
     outputs.forEach(output => {
+      total +=Number(output.total);
+      total_quantity +=Number(output.total_quantity);
       const tableData = {
         CÓDIGO: output.cod,
-        FECHA_VENTA: moment(output?.createdAt).format('DD/MM/YYYY HH:mm:ss'),
+        FECHA_VENTA: moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'),
         TIPO_DOCUMENTO: output.type_registry,
-        NRO_DOCUMENTO: output.registry_number,
-        FECHA_DOCUMENTO: moment(output?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
+        NRO_DOCUMENTO: output.number_registry,
         CLIENTE: output?.client?.full_names ?? '',
-        USUARIO: output.user.full_names,
+        DETALLE: output.detailsOutput
+            .map(detail => {
+                const productName = detail.product.name;
+                const quantity = detail.quantity;
+                const unit = detail.product.unit.siglas;
+                return `${productName} [${quantity} ${unit}]`;
+            })
+            .join(', \n '), 
         COMENTARIOS: output.comments,
         TIPO: output.type_output,
-        SUBTOTAL: Number(output.sub_total),
-        DESCUENTO: Number(output.discount),
-        TOTAL: Number(output.total),
+        TOTAL_KG: Number(output.total_quantity).toFixed(decimal),
+        TOTAL: Number(output.total).toFixed(decimal),
       }
       output_data.push(tableData);
     });
+    output_data.push({
+        CÓDIGO: '',
+        FECHA_VENTA: '',
+        TIPO_DOCUMENTO: '',
+        NRO_DOCUMENTO: '',
+        CLIENTE: '',
+        DETALLE: '',
+        COMENTARIOS: '',
+        TIPO: '',
+        TOTAL_KG:  Number(total_quantity).toFixed(decimal),
+        TOTAL: Number(total).toFixed(decimal),
+      });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(`Ventas totales`);
     // Agregar encabezados
@@ -179,11 +208,12 @@ const generateExcelReports = async (req = request, res = response) => {
     worksheet.getColumn('A').width = 15; 
     worksheet.getColumn('B').width = 20; 
     worksheet.getColumn('C').width = 25; 
-    worksheet.getColumn('D').width = 25; 
+    worksheet.getColumn('D').width = 20; 
     worksheet.getColumn('E').width = 20; 
-    worksheet.getColumn('F').width = 50; 
+    worksheet.getColumn('F').width = 100; 
+    worksheet.getColumn('F').alignment = { wrapText: true };
     worksheet.getColumn('G').width = 50; 
-    worksheet.getColumn('H').width = 50; 
+    worksheet.getColumn('H').width = 20; 
     worksheet.getColumn('I').width = 15; 
     worksheet.getColumn('J').width = 15; 
     worksheet.getColumn('K').width = 15; 
@@ -209,7 +239,7 @@ const generateExcelReports = async (req = request, res = response) => {
 
 const returnDataOutput = async (params) => {
     const {type_pay, type_registry, id_client,id_sucursal,id_storage, status, filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."date_output"');
     const optionsDb = {
         order: [orderNew],
         where: {
@@ -220,7 +250,7 @@ const returnDataOutput = async (params) => {
                 type_registry ? { type_registry } : {},
                 id_client   ? { id_client   } : {},
                 { status },
-                { createdAt: whereDate }
+                { date_output: whereDate }
             ]
         },
         include: [ 
@@ -230,9 +260,30 @@ const returnDataOutput = async (params) => {
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
             { association: 'bank'},
+            { 
+                association: 'detailsOutput', 
+                attributes: ['quantity'],
+                include: [
+                    { 
+                        association: 'product', 
+                        attributes: ['cod', 'name'],
+                        include: [
+                            {
+                                association: 'unit', 
+                                attributes: ['name', 'siglas']
+                            }
+                        ]
+                    },
+                    
+                ]
+            }
         ]
     };
-    return await Output.findAll(optionsDb);
+    const outputs = await Output.findAll(optionsDb);
+    for (const output of outputs) {
+        output.total_quantity = output.detailsOutput.reduce((acc, item) => acc + Number(item.quantity), 0);
+    }
+    return outputs;
 }
 
 const generatePdfDetailsReports = async (req = request, res = response) => {
@@ -387,7 +438,7 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
 
 const returnDataDetailsOutput = async (params) => {
     const {type_pay, type_registry, id_client,id_sucursal,id_storage, status, filterBy, date1, date2} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"output"."createdAt"');
+    const whereDate = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
     const optionsDb = {
         attributes: [
             'price',
@@ -410,7 +461,7 @@ const returnDataDetailsOutput = async (params) => {
                             type_registry ? { type_registry } : {},
                             id_client   ? { id_client   } : {},
                             status ? { status } : {},
-                            { createdAt: whereDate }
+                            { date_output: whereDate }
                         ]
                 }, 
             }
@@ -589,7 +640,7 @@ const dataPdfReturnOutputVoucher = (output,sucursal,decimal) => [
     { text: 'VENTA: ' + output.cod, style: 'fechaDoc',
       absolutePosition: {  y: 30 }
     },
-    { text: new Date(output.createdAt).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
+    { text: new Date(output.date_output).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
     { text: output.voucher === 'MENOR' ? 'NOTA DE VENTA' : 'NOTA DE DESPACHO', style: 'title',bold:true , fontSize:12},
     { text: 'DATOS CLIENTE:', style: 'datos_person', bold:true ,fontSize:9 },
     {
@@ -718,7 +769,7 @@ const dataPdfReturnOutputVoucher = (output,sucursal,decimal) => [
                 [
                     {text:output?.outputBig.number_factura, fontSize:8}, 
                     {text:output?.outputBig.number_precinto, fontSize:8}, 
-                    {text:output?.outputBig.number_container, fontSize:8}, 
+                    {text:output?.outputBig.number_contenedor, fontSize:8}, 
                     {text:output?.outputBig.type_container, fontSize:8}, 
                 ]
             ]

@@ -1,44 +1,165 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable } = require('../controllers/accounts_payables.controller');
-const { getValidateCreate, validateDelete } = require('../middlewares/validators/accounts_payable');
-const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVoucher, printAccountPayableVoucher } = require('../controllers/reports/accounts_payables.controller');
+const { getAccountsPayablePaginate, newAbonoAccountPayable, deleteAbonoAccountPayable, getAccountAllProvider, payAccountMultiple, getAbonosAllPayablePaginate, deleteAbonoMultipleAccountPayable } = require('../controllers/accounts_payables.controller');
+const { getValidateCreate, validateDelete, getValidateGetForProvider, getValidateGetForProviderGet, validateDeleteMultiple } = require('../middlewares/validators/accounts_payable');
+const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVoucher, printAccountPayableVoucher, generatePdfReportsAbonosAll, generateExcelReportsAbonosAll } = require('../controllers/reports/accounts_payables.controller');
+const { printAbonoMultipleAccountPayableVoucher } = require('../controllers/reports/accounts_payable/printBoletaAbonoMultiple');
 
 const router = Router();
 
 
-router.get('/',[
-    validarJWT,
-],getAccountsPayablePaginate );
+/**
+ * @swagger
+ * tags:
+ *   name: AccountsPayable
+ *   description: Gestión de cuentas por pagar
+ */
 
+/**
+ * @swagger
+ * /accounts_payable:
+ *   get:
+ *     summary: Obtener cuentas por pagar paginadas
+ *     tags: [AccountsPayable]
+ *     responses:
+ *       200:
+ *         description: Lista de cuentas por pagar
+ */
+router.get('/', [
+    validarJWT,
+], getAccountsPayablePaginate);
+
+/**
+ * @swagger
+ * /accounts_payable/forProvider:
+ *   get:
+ *     summary: Obtener cuentas por pagar por proveedor
+ *     tags: [AccountsPayable]
+ *     responses:
+ *       200:
+ *         description: Cuentas del proveedor
+ */
+router.get('/forProvider', [
+    validarJWT,
+    getValidateGetForProviderGet
+], getAccountAllProvider);
+
+/**
+ * @swagger
+ * /accounts_payable/abonos/all:
+ *   get:
+ *     summary: Obtener historial de abonos
+ *     tags: [AccountsPayable]
+ *     responses:
+ *       200:
+ *         description: Historial de abonos
+ */
+router.get('/abonos/all', [
+    validarJWT,
+], getAbonosAllPayablePaginate);
+
+/**
+ * @swagger
+ * /accounts_payable/payMultiProvider:
+ *   post:
+ *     summary: Pagar múltiples cuentas a proveedor
+ *     tags: [AccountsPayable]
+ *     responses:
+ *       200:
+ *         description: Pago realizado
+ */
+router.post('/payMultiProvider', [
+    validarJWT,
+    getValidateGetForProvider
+], payAccountMultiple);
+
+/**
+ * @swagger
+ * /accounts_payable/new-abono:
+ *   post:
+ *     summary: Registrar nuevo abono
+ *     tags: [AccountsPayable]
+ *     responses:
+ *       201:
+ *         description: Abono registrado
+ */
 router.post('/new-abono', [
     validarJWT,
     toUpperCaseConvert,
     getValidateCreate
-],newAbonoAccountPayable );
+], newAbonoAccountPayable);
 
+/**
+ * @swagger
+ * /accounts_payable/destroy-abono/{id_abono}:
+ *   delete:
+ *     summary: Eliminar un abono
+ *     tags: [AccountsPayable]
+ *     parameters:
+ *       - in: path
+ *         name: id_abono
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Abono eliminado
+ */
 router.delete('/destroy-abono/:id_abono', [
     validarJWT,
     validateDelete
-],deleteAbonoAccountPayable );
+], deleteAbonoAccountPayable);
+
+/**
+ * @swagger
+ * /accounts_payable/destroy-abono-multiple/{id_abono_multiple}:
+ *   delete:
+ *     summary: Eliminar abono múltiple
+ *     tags: [AccountsPayable]
+ *     parameters:
+ *       - in: path
+ *         name: id_abono_multiple
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Abono múltiple eliminado
+ */
+router.delete('/destroy-abono-multiple/:id_abono_multiple', [
+    validarJWT,
+    validateDeleteMultiple
+], deleteAbonoMultipleAccountPayable);
 
 //reports
-router.get('/pdf',[
+router.get('/pdf', [
     validarJWT,
-], generatePdfReports );
+], generatePdfReports);
 
-router.get('/excel',[
+router.get('/pdf/abonos', [
     validarJWT,
-], generateExcelReports );
+], generatePdfReportsAbonosAll);
 
-router.get('/pdf/voucher-abono/:id_abono_account_payable',[
+router.get('/excel', [
     validarJWT,
-], printAbonoAccountPayableVoucher );
+], generateExcelReports);
 
-router.get('/pdf/voucher-account-payable/:id_account_payable',[
+router.get('/excel/abonos', [
     validarJWT,
-], printAccountPayableVoucher );
+], generateExcelReportsAbonosAll);
+
+router.get('/pdf/voucher-abono/:id_abono_account_payable', [
+    validarJWT,
+], printAbonoAccountPayableVoucher);
+
+router.get('/pdf/voucher-abono-multiple/:id_abono_account_payable_multiple', [
+    validarJWT,
+], printAbonoMultipleAccountPayableVoucher);
+
+router.get('/pdf/voucher-account-payable/:id_account_payable', [
+    validarJWT,
+], printAccountPayableVoucher);
 
 
 module.exports = router;

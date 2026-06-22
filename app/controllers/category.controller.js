@@ -1,15 +1,19 @@
 const { response, request } = require('express');
 const { Category, sequelize } = require('../database/config');
+const { Op } = require('sequelize');
 const paginate = require('../helpers/paginate');
 
 const getCategoryPaginate = async (req = request, res = response) => {
     try {
-        const {query, page, limit, type, status,orderNew} = req.query;
+        const { query, page, limit, type, status, orderNew, category_type } = req.query;
         const optionsDb = {
             order: [orderNew],
             where: { status },
         };
-        let categories = await paginate(Category, page, limit, type, query, optionsDb); 
+        if (category_type) {
+            optionsDb.where.type = category_type;
+        }
+        let categories = await paginate(Category, page, limit, type, query, optionsDb);
         return res.status(200).json({
             ok: true,
             categories
@@ -18,12 +22,12 @@ const getCategoryPaginate = async (req = request, res = response) => {
         console.log(error);
         return res.status(500).json({
             ok: false,
-            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
     }
 }
 
-const newCategory = async (req = request, res = response ) => {
+const newCategory = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
         const body = req.body;
@@ -37,8 +41,8 @@ const newCategory = async (req = request, res = response ) => {
         await t.rollback();
         console.log(error);
         return res.status(500).json({
-          ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
     }
 }
@@ -54,13 +58,13 @@ const updateCategory = async (req = request, res = response) => {
         return res.status(201).json({
             ok: true,
             msg: 'Categoría modificada exitosamente'
-        });   
+        });
     } catch (error) {
         await t.rollback();
         console.log(error);
         return res.status(500).json({
-          ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
     }
 }
@@ -70,16 +74,43 @@ const activeInactiveCategory = async (req = request, res = response) => {
         const { id } = req.params;
         const { status } = req.body;
         const category = await Category.findByPk(id);
-        await category.update({status});
+        await category.update({ status });
         return res.status(201).json({
             ok: true,
             msg: status ? 'Categoría activada exitosamente' : 'Categoría inactiva exitosamente'
-        });   
+        });
     } catch (error) {
         console.log(error);
         return res.status(500).json({
-          ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
+        });
+    }
+}
+
+const getCategoriesForSelect = async (req = request, res = response) => {
+    try {
+        const { category_type } = req.query;
+        const where = { status: true };
+
+        if (category_type) {
+            where.type = category_type;
+        }
+
+        const categories = await Category.findAll({
+            where,
+            attributes: ['id', 'name']
+        });
+
+        return res.status(200).json({
+            ok: true,
+            categories
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
     }
 }
@@ -88,5 +119,6 @@ module.exports = {
     getCategoryPaginate,
     newCategory,
     updateCategory,
-    activeInactiveCategory
+    activeInactiveCategory,
+    getCategoriesForSelect
 };

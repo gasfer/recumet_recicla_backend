@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistStorage, idExistSucursal, idExistProduct, idExistTransfer, idExistTransferPending } = require('./database');
+const { idExistStorage, idExistSucursal, idExistProduct, idExistTransfer, idExistTransferPending, registryNumberExistTransfer } = require('./database');
 
 const validationSchema =  {
     transfer_data: {
@@ -30,6 +30,14 @@ const validationSchema =  {
     },
     'transfer_data.id_sucursal_received': {
         custom: { options: idExistSucursal },
+    },
+    'transfer_data.type_registry': {
+        isEmpty: {
+            negated: true, errorMessage: "El tipo de registro es obligatorio",
+        },
+    },
+    'transfer_data.registry_number': {
+        custom: { options: registryNumberExistTransfer },
     },
     transfer_details: {
         isArray: true,

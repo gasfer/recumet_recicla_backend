@@ -2,6 +2,7 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalQuantitySetter, formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class DetailsOutput extends Model {
     static associate(models) {
@@ -10,10 +11,30 @@ module.exports = (sequelize, DataTypes) => {
     }
   }
   DetailsOutput.init({
-    quantity: DataTypes.DECIMAL,
-    cost: DataTypes.DECIMAL,
-    price: DataTypes.DECIMAL,
-    total: DataTypes.DECIMAL,
+    quantity: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('quantity', formattedDecimalQuantitySetter(value));
+      }
+    },
+    cost: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('cost', formattedDecimalSetter(value));
+      }
+    },
+    price: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('price', formattedDecimalSetter(value));
+      }
+    },
+    total: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('total', formattedDecimalSetter(value));
+      }
+    },
     id_output: DataTypes.INTEGER,
     id_product: DataTypes.INTEGER,
     status: DataTypes.STRING

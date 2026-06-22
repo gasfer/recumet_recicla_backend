@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistAccountReceivable, idExistAbonoAccountReceivable } = require('./database');
+const { idExistAccountReceivable, idExistAbonoAccountReceivable, idExistClient, idExistSucursal, idExistAbonoAccountReceivableMultiple } = require('./database');
 
 const validationSchema =  {
     id_account_receivable: {
@@ -21,8 +21,44 @@ const validationSchema =  {
     },
 };
 
+const validationClientGet =  {
+    id_client: {
+        isEmpty: {
+            negated: true, errorMessage: "El cliente es obligatorio",
+        },
+        custom: { options: idExistClient }
+    }
+};
+
+const validationClient =  {
+    id_client: {
+        isEmpty: {
+            negated: true, errorMessage: "El cliente es obligatorio",
+        },
+        custom: { options: idExistClient }
+    },
+    id_sucursal: {
+        isEmpty: {
+            negated: true,
+            errorMessage: "El id sucursal es obligatorio",
+        },
+        custom: { options: idExistSucursal },
+    },
+};
+
+
 const getValidateCreate = [
     checkSchema(validationSchema),
+    validatedResponse
+];
+
+const getValidateGetForClient = [
+    checkSchema(validationClient),
+    validatedResponse
+];
+
+const getValidateGetForClientGet = [
+    checkSchema(validationClientGet),
     validatedResponse
 ];
 
@@ -33,9 +69,19 @@ const validateDelete = [
     validatedResponse
 ]
 
+const validateDeleteMultiple = [
+    checkSchema({
+        id_abono_multiple: { custom: { options: idExistAbonoAccountReceivableMultiple} },
+    }),
+    validatedResponse
+]
+
 
 module.exports = {
     getValidateCreate,
-    validateDelete
+    validateDelete,
+    getValidateGetForClient,
+    getValidateGetForClientGet,
+    validateDeleteMultiple
 }
 

@@ -2,10 +2,10 @@
 const {
   Model
 } = require('sequelize');
+const { formattedDecimalSetter } = require('../helpers/number-formatter');
 module.exports = (sequelize, DataTypes) => {
   class Input extends Model {
     static associate(models) {
-      Input.hasMany(models.Kardex,{as: 'kardex', foreignKey:'id_input'});
       Input.hasMany(models.DetailsInput,{as: 'detailsInput', foreignKey:'id_input'});
       Input.hasOne(models.AccountsPayable,{as: 'accounts_payable', foreignKey:'id_input'});
       Input.belongsTo(models.Scale,{as: 'scale', foreignKey:'id_scales'});
@@ -25,9 +25,24 @@ module.exports = (sequelize, DataTypes) => {
     registry_number: DataTypes.STRING,
     account_input: DataTypes.STRING,
     comments: DataTypes.TEXT,
-    sumas: DataTypes.DECIMAL,
-    discount: DataTypes.DECIMAL,
-    total: DataTypes.DECIMAL,
+    sumas: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('sumas', formattedDecimalSetter(value));
+      }
+    },
+    discount: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('discount', formattedDecimalSetter(value));
+      }
+    },
+    total: {
+      type: DataTypes.DECIMAL,
+      set(value) {
+        this.setDataValue('total', formattedDecimalSetter(value));
+      }
+    },
     is_paid: DataTypes.STRING,
     id_scales: DataTypes.INTEGER,
     id_storage: DataTypes.INTEGER,
@@ -35,7 +50,10 @@ module.exports = (sequelize, DataTypes) => {
     id_bank: DataTypes.INTEGER,
     id_user: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,
-    status: DataTypes.STRING
+    status: DataTypes.STRING,
+    referral_sources: DataTypes.STRING,
+    old_customer: DataTypes.BOOLEAN,
+    with_pickup: DataTypes.BOOLEAN,
   }, {
     sequelize,
     modelName: 'Input',

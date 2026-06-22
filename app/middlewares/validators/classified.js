@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistScala, idExistSucursal, idExistStorage, idExistProduct, idExistClassified } = require('./database');
+const { idExistScala, idExistSucursal, idExistStorage, idExistProduct, idExistClassified, registryNumberExistClassified } = require('./database');
 
 const validationSchema =  {
     classified_data: {
@@ -28,10 +28,8 @@ const validationSchema =  {
         },
     },
     'classified_data.number_registry': {
-        isEmpty: {
-            negated: true, errorMessage: "El numero de registro es obligatorio",
-        },
         optional:{ options: {nullable: true}},
+        custom: { options: registryNumberExistClassified },
     },
     'classified_data.comments': {
         optional:{ options: {nullable: true}},

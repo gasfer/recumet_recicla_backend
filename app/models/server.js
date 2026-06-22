@@ -3,6 +3,9 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { sequelize } = require('../database/config');
+const { loadDecimals } = require('../helpers/decimals-value');
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('../config/swagger');
 
 class Server {
     static _instance;
@@ -15,28 +18,31 @@ class Server {
     static get instance() {
         return this._instance || (this._instance = new Server());
     }
-    middlewares() { 
-        this.app.use( cors() ); 
+    middlewares() {
+        this.app.use(cors());
         this.app.use(express.json());
         this.app.use(express.static('public'));
     }
 
     routes() {
+        this.app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
         const dirname = path.join(__dirname, '../routes');
         fs.readdirSync(dirname)
             .filter(file => {
                 return (file.indexOf('.') !== 0) && (file.slice(-3) === '.js');
             })
             .forEach(file => {
-                this.app.use(`/api/v1/${file.slice(0,-3)}`, require(`../routes/${file.slice(0,-3)}`));
+                this.app.use(`/api/v1/${file.slice(0, -3)}`, require(`../routes/${file.slice(0, -3)}`));
             });
     }
 
-    listen() {
-        this.app.listen(this.port, ()=> {
+    async listen() {
+        this.app.listen(this.port, () => {
             console.log('Ejecuto en puerto : ', this.port);
+            console.log(`📚 Swagger Documentation: http://localhost:${this.port}/api-docs`);
         });
-        sequelize.sync({force: false}).then( ()=> {
+        await loadDecimals();
+        sequelize.sync({ force: false }).then(() => {
             console.log('Conexión exitosa a la base de datos');
         });
     }

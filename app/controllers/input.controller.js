@@ -1,29 +1,14 @@
 const { response, request } = require('express');
-const { Input, sequelize, History ,Stock, Kardex,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
+const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
-const { returnDataKardexInput, returnDataKardexOutput, returnDataAfterUpdateKardex } = require('../helpers/kardex');
 
-const getInputsPaginate = async (req = request, res = response) => {
+const getInputFindOne = async (req = request, res = response) => {
     try {
-        const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
-                id_provider, status, filterBy, date1, date2, orderNew} = req.query;
-        const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."createdAt"');
+        const { id_input } = req.params;
         const optionsDb = {
-            order: [orderNew],
-            where: {
-                [Op.and]: [
-                    id_sucursal   ? { id_sucursal   } : {},
-                    id_storage    ? { id_storage    } : {},
-                    type_pay      ? { type:type_pay } : {},
-                    type_registry ? { type_registry } : {},
-                    id_provider   ? { id_provider   } : {},
-                    { status },
-                    { createdAt: whereDate }
-                ]
-            },
             include: [ 
                 { association: 'provider' },
                 { association: 'sucursal',attributes: ['name'] },
@@ -38,10 +23,100 @@ const getInputsPaginate = async (req = request, res = response) => {
                 { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
             ]
         };
-        let inputs = await paginate(Input, page, limit, type, query, optionsDb); 
+        let input = await Input.findByPk(id_input, optionsDb); 
         return res.status(200).json({
             ok: true,
-            inputs
+            input,
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+        });
+    }
+}
+
+const getInputsPaginate = async (req = request, res = response) => {
+    try {
+        const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
+                id_provider, status, filterBy, date1, date2, orderNew, referral_sources, id_type_provider,
+                old_customer, with_pickup
+            } = req.query;
+        const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
+        const whereDateSum = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
+        const where = {
+            [Op.and]: [
+                id_sucursal   ? { id_sucursal   } : {},
+                id_storage    ? { id_storage    } : {},
+                type_pay      ? { type:type_pay } : {},
+                type_registry ? { type_registry } : {},
+                id_provider   ? { id_provider   } : {},
+                { status },
+                { date_voucher: whereDate },
+                referral_sources ? { referral_sources } : {},
+                old_customer ? { old_customer: old_customer == 'SI' } : {},
+                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
+            ]
+        };
+        const whereSum = {
+            [Op.and]: [
+                id_sucursal   ? { id_sucursal   } : {},
+                id_storage    ? { id_storage    } : {},
+                type_pay      ? { type:type_pay } : {},
+                type_registry ? { type_registry } : {},
+                id_provider   ? { id_provider   } : {},
+                { status },
+                { date_voucher: whereDateSum },
+                referral_sources ? { referral_sources } : {},
+                old_customer ? { old_customer: old_customer == 'SI' } : {},
+                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
+            ]
+        };
+        const optionsDb = {
+            order: [orderNew],
+            where,
+            include: [ 
+                {
+                    association: 'provider',
+                    where: id_type_provider ? { id_type_provider } : {},
+                    include: [{association: 'type', attributes: ['name']}],
+                },
+                  
+                { association: 'sucursal',attributes: ['name'] },
+                { association: 'storage',attributes: ['name'] },
+                { association: 'scale', attributes: ['name']},
+                { association: 'user', attributes: ['full_names','number_document']},
+                { association: 'bank'},
+                { association: 'detailsInput', attributes: {exclude: ['id','id_input','id_product','status','createdAt','updatedAt']}, 
+                    include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
+                                attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
+                },
+                { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
+            ]
+        };
+        let inputs = await paginate(Input, page, limit, type, query, optionsDb); 
+        for (const input of inputs.data) {
+            input.dataValues.total_quantity = input.detailsInput.reduce((acc, item) => acc + Number(item.quantity), 0);
+        }
+        const totalInput = await Input.sum('total', {where});
+        
+        const totalQuantity = await DetailsInput.sum('quantity', {
+            include: [
+                {
+                    attributes: [],
+                    association: 'input',
+                    where: whereSum
+                }
+            ]
+        });
+        inputs.totals = {
+            totalInput,
+            totalQuantity
+        }
+        return res.status(200).json({
+            ok: true,
+            inputs,
         });
     } catch (error) {
         console.log(error);
@@ -56,7 +131,25 @@ const newInput = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
         const { input_data, input_details } = req.body;
-        const { id_sucursal, id_provider, id_storage, registry_number } = input_data;
+        const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
+        //number default, not ficha
+        if(type_registry === 'SIN FICHA') {
+            const lastInput = await Input.findOne({
+                where: { 
+                    type_registry: 'SIN FICHA',
+                    registry_number: { [Op.like]: 'SF-%'}
+                },
+                order: [['registry_number', 'DESC']],
+                transaction: t
+            });
+            let nextNumber = 1;
+            if (lastInput && lastInput.registry_number) {
+                const lastNumber = parseInt(lastInput.registry_number.split('-')[1]);
+                nextNumber = lastNumber + 1;
+            }
+            input_data.registry_number = get_num_request('SF-',nextNumber,5);
+        }
+
         input_data.id_user = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         const input = await Input.create(input_data, { transaction: t });
@@ -70,16 +163,8 @@ const newInput = async (req = request, res = response) => {
             detail.id_input = id_input;
             await DetailsInput.create(detail,{ transaction: t });
             //**ACTUALIZAR COSTO PRODUCTO */
-            await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});
-            //**KARDEX */        
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexInput(`COMPRA #${cod}`,null,null,registry_number, old_kardex,detail,id_input, id_provider, id_sucursal, id_storage)
-            await Kardex.create(data_new,{ transaction: t });
+            //await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});
+            //**ACTUALIZAR STOCK */
             const stock = await Stock.findOne({
                 order: [['id', 'DESC']],
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
@@ -161,7 +246,7 @@ const updateInput = async (req = request, res = response) => {
     try {
         const { id_input } = req.params;
         const { input_data, input_details } = req.body;
-        const { id_sucursal, id_provider, id_storage, registry_number } = input_data;
+        const { id_sucursal, id_provider, id_storage, registry_number, type_registry } = input_data;
         input_data.id_user = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         const input_old = await Input.findByPk(id_input,{
@@ -171,25 +256,35 @@ const updateInput = async (req = request, res = response) => {
                 { association: 'user'},
                 { association: 'bank'},
                 { association: 'detailsInput'},
-                { association: 'kardex'},
                 { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
             ],
             transaction: t
         });
-        //** Reset details and kardex and stock and update input */
+        if (type_registry === 'SIN FICHA') {
+            if (!input_old.registry_number || input_old.type_registry != 'SIN FICHA') {
+                const lastInput = await Input.findOne({
+                    where: { 
+                        type_registry: 'SIN FICHA',
+                        registry_number: { [Op.like]: 'SF-%'}
+                    },
+                    order: [['registry_number', 'DESC']],
+                    transaction: t
+                });
+                
+                let nextNumber = 1;
+                if (lastInput && lastInput.registry_number) {
+                    const lastNumber = parseInt(lastInput.registry_number.split('-')[1]);
+                    nextNumber = lastNumber + 1;
+                }
+                
+                input_data.registry_number = get_num_request('SF-',nextNumber,5);
+            } else {
+                input_data.registry_number = input_old.registry_number;
+            }
+        }
+        //** Reset details and stock and update input */
         await Input.update(input_data,{where:{id: id_input}, transaction: t});
         await DetailsInput.destroy({where: {id: [...input_old.detailsInput.map(resp=>resp.id)]}, transaction: t });   
-        //* Destroy kardex */
-        const kardexIdes = [...input_old.kardex.map(resp => resp.id)];
-        const minKardexId = Math.min(...kardexIdes);
-        await Kardex.destroy({where: {id: kardexIdes}, transaction: t });   
-        //**Eliminar y Agregar los kardex nuevamente que son mayores al del primer kardex eliminado*/
-        const kardex_afters = await Kardex.findAll({
-            where: { id: { [Op.gt]: minKardexId }, status: true },// Filtrar por IDs mayores que el de la fila kardex encontrada
-            transaction: t
-        }); 
-        //**Elimino los demas ya que se modifican los saldos */
-        await Kardex.destroy({ where: { id: { [Op.gte]: minKardexId },status: true }, transaction: t }); 
         //*Descuento stock*/
         for (const detail_old of input_old.detailsInput){
             const stock = await Stock.findOne({
@@ -203,20 +298,12 @@ const updateInput = async (req = request, res = response) => {
                 await stock.save({ transaction: t });
             }
         }
-        //*** New details and kardex and stock */
+        //*** New details and stock */
         for (const detail of input_details) {
             detail.id_input = id_input;
             await DetailsInput.create(detail,{ transaction: t });   
              //**ACTUALIZAR COSTO PRODUCTO */
-            await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});     
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexInput(`COMPRA #${input_old.cod}`,null,null,registry_number, old_kardex,detail,id_input, id_provider, id_sucursal, id_storage);
-            await Kardex.create(data_new,{ transaction: t });
+            // await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});     
             const stock = await Stock.findOne({
                 order: [['id', 'DESC']],
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
@@ -233,17 +320,6 @@ const updateInput = async (req = request, res = response) => {
                 stock.stock = Number(stock.stock) + Number(detail.quantity);
                 await stock.save({ transaction: t });
             }
-        }
-        //**Agregar los kardex nuevamente los eliminados*/
-        for (const kardex_after of kardex_afters){
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:kardex_after.id_product, id_sucursal:kardex_after.id_sucursal, id_storage:kardex_after.id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_kardex = returnDataAfterUpdateKardex(kardex_after,old_kardex);
-            await Kardex.create(data_kardex,{ transaction: t });
         }
         //**Update abono input credit */
         /** si la compra era a crédito
@@ -339,14 +415,6 @@ const anularInput = async (req = request, res = response) => {
         await input_anular.save({transaction: t});
         const { id_sucursal, id_storage, } = input_anular;
         for (const detail of input_anular.detailsInput) {
-            const old_kardex = await Kardex.findOne({ 
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
-            });
-            const data_new = returnDataKardexOutput(`ANULACIÓN COMPRA #${input_anular.cod}`,null,null,null,null, old_kardex,detail,null, id_sucursal, id_storage, id_input);
-            await Kardex.create(data_new,{ transaction: t });
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
                 lock: true,
@@ -383,6 +451,7 @@ const anularInput = async (req = request, res = response) => {
 
 module.exports = {
     getInputsPaginate,
+    getInputFindOne,
     newInput,
     updateInput,
     anularInput

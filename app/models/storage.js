@@ -7,7 +7,6 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       Storage.belongsTo(models.Sucursal,{as: 'sucursal', foreignKey:'id_sucursal'});
       Storage.hasMany(models.Stock,{as: 'stock', foreignKey:'id_storage'});
-      Storage.hasMany(models.Kardex,{as: 'kardex', foreignKey:'id_storage'});
       Storage.hasMany(models.Input,{as: 'input', foreignKey:'id_storage'});
       Storage.hasMany(models.Output,{as: 'outputs', foreignKey:'id_storage'});
       Storage.hasMany(models.Classified,{as: 'classified', foreignKey:'id_storage'});
