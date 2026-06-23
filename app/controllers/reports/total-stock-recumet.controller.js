@@ -154,7 +154,7 @@ const returnDataTotalStockRecumet = async (queryReq) => {
 
     const showZeroSaldo = queryReq.showZeroSaldo === 'true' || queryReq.showZeroSaldo === true;
     const filteredAllKardexes = showZeroSaldo
-        ? allKardexes.filter(k => Number(k.dataValues.quantity_saldo) <= 0)
+        ? allKardexes
         : allKardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
     return filteredAllKardexes;
@@ -338,7 +338,7 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         }
 
         const filteredSP = showZeroSaldo
-            ? sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) <= 0)
+            ? sucursalProductKardexes
             : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);
 
         for (const sp of filteredSP) {
@@ -679,7 +679,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         }
 
         const filteredSP = showZeroSaldo
-            ? sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) <= 0)
+            ? sucursalProductKardexes
             : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);
 
         for (const sp of filteredSP) {

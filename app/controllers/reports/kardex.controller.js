@@ -166,7 +166,7 @@ const generatePdfReportsKardexFisico = async (
         // Apply showZeroSaldo filter to match what is visible in the frontend table
         const showZeroSaldo = req.query.showZeroSaldo === 'true';
         const filteredKardexes = showZeroSaldo
-            ? kardexes.filter(k => Number(k.dataValues.quantity_saldo) <= 0)
+            ? kardexes
             : kardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
         let dataPdf = dataPdfReturnKardexFisicoVerticalOnlyReciclen(
@@ -1007,7 +1007,7 @@ const generateExcelReportsKardexFisico = async (req, res) => {
         // Apply showZeroSaldo filter to match what is visible in the frontend table
         const showZeroSaldo = req.query.showZeroSaldo === 'true';
         const filteredKardexes = showZeroSaldo
-            ? kardexes.filter(k => Number(k.dataValues.quantity_saldo) <= 0)
+            ? kardexes
             : kardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
         const workbook = new ExcelJS.Workbook();

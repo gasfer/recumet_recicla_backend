@@ -176,7 +176,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
 
         const showZeroSaldo = req.query.showZeroSaldo === 'true' || req.query.showZeroSaldo === true;
         const filteredAllKardexes = showZeroSaldo
-            ? allKardexes.filter(k => Number(k.dataValues.quantity_saldo) <= 0)
+            ? allKardexes
             : allKardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
         let totalInput = 0;
@@ -384,7 +384,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
 
         const showZeroSaldo = req.query.showZeroSaldo === 'true' || req.query.showZeroSaldo === true;
         const filteredAllKardexes = showZeroSaldo
-            ? allKardexes.filter(k => Number(k.dataValues.quantity_saldo) <= 0)
+            ? allKardexes
             : allKardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
         let totalSaldo = 0;
@@ -495,7 +495,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
         }
 
         const filteredSP = showZeroSaldo
-            ? sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) <= 0)
+            ? sucursalProductKardexes
             : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);
 
         for (const sp of filteredSP) {
