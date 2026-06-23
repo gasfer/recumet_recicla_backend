@@ -457,7 +457,10 @@ const uploadFileVoucher = async (req, res) => {
     const { keyFile, file } = req;
     
     // Ensure uploads/vouchers directory exists
-    const uploadDirectory = path.join(__dirname, '../../uploads/vouchers');
+    const baseUploads = process.env.RESOURCES_PATH 
+        ? path.resolve(process.env.RESOURCES_PATH) 
+        : path.join(__dirname, '../../uploads');
+    const uploadDirectory = path.join(baseUploads, 'vouchers');
     if (!fs.existsSync(uploadDirectory)) {
         fs.mkdirSync(uploadDirectory, { recursive: true });
     }
