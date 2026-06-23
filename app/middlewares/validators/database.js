@@ -411,7 +411,19 @@ const idTypeProvider= async (id = "") => {
     throw new Error(`El tipo con id: ${id}, no existe`);
   }
 };
+
+const numberTransactionExist = async (number_transaction = "", { req }) => {
+  if (!number_transaction) return;
+  const { id_input } = req.params;
+  const existDB = await Input.findOne({ where: { number_transaction } });
+  if (!existDB) return;
+  if (existDB.id != id_input) {
+    throw new Error(`El Nro. de Transferencia: ${number_transaction}, ya existe`);
+  }
+};
+
 module.exports = {
+  numberTransactionExist,
   idExistUser,
   emailExistUser,
   number_documentExistUser,

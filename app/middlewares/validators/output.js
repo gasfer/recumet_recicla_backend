@@ -18,13 +18,27 @@ const validationSchema =  {
             negated: true, errorMessage: "El tipo de registro es obligatorio",
         },
     },
-    'output_data.number_registry': {
-       isEmpty: {
-            negated: true,
-            errorMessage: "El número de registro es obligatorio",
-        },
-        custom: { options: registryNumberExistOutput },
-    },
+   'output_data.number_registry': {
+    custom: {
+        options: async (value, { req }) => {
+
+            const typeRegistry = req.body.output_data?.type_registry;
+
+            // ✅ SIN FICHA → NO VALIDAR
+            if (typeRegistry === 'SIN FICHA') {
+                return true;
+            }
+
+            // ✅ BOLETA / FICHA → obligatorio
+            if (!value || value.trim() === '') {
+                throw new Error('El número de registro es obligatorio');
+            }
+
+            // ✅ validar duplicados
+            return await registryNumberExistOutput(value, { req });
+        }
+    }
+},
     'output_data.id_scale': {
         custom: { options: idExistScala },
     },

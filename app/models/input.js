@@ -54,6 +54,8 @@ module.exports = (sequelize, DataTypes) => {
     referral_sources: DataTypes.STRING,
     old_customer: DataTypes.BOOLEAN,
     with_pickup: DataTypes.BOOLEAN,
+    payment_voucher: DataTypes.STRING,
+    number_transaction: DataTypes.STRING,
   }, {
     sequelize,
     modelName: 'Input',

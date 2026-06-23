@@ -193,7 +193,7 @@ const newTransfer = async (req = request, res = response ) => {
 const receivedTransfer = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
-        const { id_transfer, id_storage_received, observations_received, date_received} = req.body;
+        const { id_transfer, id_storage_received, observations_received, date_received, details } = req.body;
         const transfer_received = await Transfers.findOne({
             where: { id:id_transfer, status:'PENDING' },
             include: [{association: 'detailsTransfers'}], transaction: t
@@ -214,6 +214,21 @@ const receivedTransfer = async (req = request, res = response ) => {
         const { id_sucursal_send,id_sucursal_received } = transfer_received;
         /*  detalles del traslado */
         for (const detail of transfer_received.detailsTransfers) {
+            let qtyReceived = Number(detail.quantity);
+            let obs = null;
+            if (details && Array.isArray(details)) {
+                const incomingDetail = details.find(d => d.id_detail === detail.id);
+                if (incomingDetail && incomingDetail.quantity_received !== undefined && incomingDetail.quantity_received !== null) {
+                    qtyReceived = Number(incomingDetail.quantity_received);
+                }
+                if (incomingDetail && incomingDetail.observation !== undefined) {
+                    obs = incomingDetail.observation;
+                }
+            }
+            detail.quantity_received = qtyReceived;
+            detail.observation = obs;
+            await detail.save({ transaction: t });
+
             const stock = await Stock.findOne({
                 order: [['id', 'DESC']],
                 where: { id_product:detail.id_product, id_sucursal:id_sucursal_received, id_storage:id_storage_received, status: true },
@@ -222,12 +237,12 @@ const receivedTransfer = async (req = request, res = response ) => {
             });
             if(!stock) {
                 await Stock.create({
-                    stock_min: 1, stock: detail.quantity,
+                    stock_min: 1, stock: qtyReceived,
                     id_product: detail.id_product, id_sucursal:id_sucursal_received, id_storage:id_storage_received,
                     status: true,
                 },{ transaction: t })
             } else {
-                stock.stock = Number(stock.stock) + Number(detail.quantity);
+                stock.stock = Number(stock.stock) + qtyReceived;
                 await stock.save({ transaction: t });
             }
         }

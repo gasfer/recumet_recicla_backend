@@ -36,7 +36,7 @@ const validarJWT = async (req, res = response, next) => {
                 }],
             });
         }
-        if (!verifyAssignShift(user.assign_shift)) {
+        if (!verifyAssignShift(user.assign_shift) && user.role !== 'ADMINISTRADOR') {
             return res.status(401).json({
                 ok: false,
                 errors: [{

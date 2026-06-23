@@ -1,0 +1,119 @@
+<p-dialog [header]="'Detalle cuenta por pagar: '+ accountPayable()?.cod" [(visible)]="accountsPayableService.showModalDetailsAccountPayable" [modal]="true"
+    [breakpoints]="{ '960px': '85vw', '576px': '95%' }" [style]="{ width: '60vw' }" [draggable]="false"
+    [resizable]="false" [dismissableMask]="true">
+    <form>
+        <p-tag styleClass="m-2 ms-0 mb-1" value="CUENTA: {{accountPayable()?.cod}} " [rounded]="true"></p-tag>
+        <div class="table-responsive">
+            <table class="table table-xxs table-sm">
+                <tbody class="border-solid">
+                    <tr>
+                        <td width="20%" class="text-black text-left fw-bold bg-secondary-subtle">FECHA</td>
+                        <td width="30%">{{accountPayable()?.date_credit | date:'dd/MM/yyyy, HH:mm:ss'}}</td>
+                        <td width="20%" class="text-black text-left fw-bold bg-secondary-subtle">DESCRIPCION.</td>
+                        <td width="30%">{{accountPayable()?.description}}</td>
+                    </tr>
+                    <tr>
+                        <td width="20%" class="text-black text-left fw-bold bg-secondary-subtle">TIPO DOC.</td>
+                        <td width="30%">{{accountPayable()?.input?.type_registry}}</td>
+                        <td width="20%" class="text-black text-left fw-bold bg-secondary-subtle">NO. DOC.</td>
+                        <td width="30%">{{accountPayable()?.input?.registry_number}}</td>
+                    </tr>
+                    <tr>
+                        <td width="20%" class="text-black text-left fw-bold bg-secondary-subtle">PROVEEDOR</td>
+                        <td width="30%">{{accountPayable()?.provider?.full_names}}</td>
+                        <td width="20%" class="text-black text-left fw-bold bg-secondary-subtle">ESTADO CREDITO</td>
+                        <td width="30%">{{'CREDITO' + ' ' +accountPayable()?.status_account}}</td>
+                    </tr>
+                    <tr>
+                        <td width="20%" class="text-black text-left fw-bold bg-secondary-subtle">MONTO CREDITO</td>
+                        <td colspan="3" width="80%">{{accountPayable()?.total | number:decimal()}}</td>
+                    </tr>
+                </tbody>
+            </table>     
+        </div>
+        <div class="justify-content-between d-flex">
+            <p-tag styleClass="m-2 ms-0 mb-1" severity="success" value="LISTADO DE ABONOS" [rounded]="true"></p-tag>
+            <p-button *ngIf="accountPayable()?.status_account == 'PENDIENTE'" icon="fa-solid fa-circle-plus" (click)="accountsPayableService.showModalNewAbono = true" pTooltip="Nuevo abono" tooltipPosition="left"
+                styleClass="p-button-primary p-button-rounded mb-1" label="Nuevo abono"></p-button>
+        </div>
+        <div class="table-responsive">
+			<table id="tbldetalle" class="table table-striped table-xxs table-hover table-sm">
+				<thead>
+					<tr>
+						<th style="background-color: var(--bg-primary);min-width:150px;max-width:150px" class="text-white"> Fecha abono </th>
+						<th style="background-color: var(--bg-primary);min-width:130px;" class="text-white"> Monto abonado </th>
+						<!-- <th style="background-color: var(--bg-primary);min-width:130px;" class="text-white"> Total abonado</th> -->
+						<!-- <th style="background-color: var(--bg-primary);min-width:130px;" class="text-white"> Restante</th> -->
+						<th style="background-color: var(--bg-primary)" class="text-white"> Abonado por</th>
+						<th style="background-color: var(--bg-primary)" class="text-white"> Concepto</th>
+						<th style="background-color: var(--bg-primary)" class="text-white"> Pago</th>
+						<th style="background-color: var(--bg-primary);min-width:80px;max-width:80px" class="text-white"> Opción</th>
+					</tr>
+				</thead>
+				<tbody>
+                    <tr *ngFor="let abono of accountPayable()?.abonosAccountsPayable" >
+                        <td style="min-width:150px;max-width:150px">{{abono.date_abono | date:'dd/MM/yyyy, HH:mm:ss'}}</td>
+                        <td style="min-width:100px;">{{abono.monto_abono      | number:decimal()}}</td>
+                        <!-- <td style="min-width:130px;">{{abono.total_abonado    | number:decimal()}}</td> -->
+                        <!-- <td style="min-width:130px;">{{abono.restante_credito | number:decimal()}}</td> -->
+                        <td [pTooltip]="abono.user.full_names" >{{abono.user.full_names | slice:0:23}}</td>
+                        <td [pTooltip]="abono.comments" >{{abono.comments}}</td>
+                        <td [pTooltip]="abono.type_payment" >{{abono.type_payment }}</td>
+                        <td>
+                            <button 
+                                pButton label="" 
+                                pTooltip ="Comprobante" tooltipPosition="bottom"
+                                (click)="accountsPayableService.printVoucherAbonoAccountPayablePdf(abono.id);" 
+                                pRipple icon="fas fa-print" 
+                                class="p-button-rounded p-button-sm">
+                            </button>
+                            <button 
+                                pButton label="" 
+                                pTooltip ="Anular abono" tooltipPosition="bottom"
+                                (click)="deleteAbono(abono.id,abono.monto_abono)" 
+                                pRipple icon="fa-solid fa-trash-can" 
+                                class="p-button-rounded p-button-danger p-button-sm ms-1">
+                            </button>
+                            <input 
+                                type="file" 
+                                [id]="'file-upload-' + abono.id" 
+                                style="display: none" 
+                                (change)="onFileSelected($event, abono.id)" 
+                                accept="image/*,application/pdf">
+                            <button 
+                                *ngIf="(abono.type_payment === 'TRANSFERENCIA' || abono.type_payment === 'QR') && !abono.payment_voucher"
+                                pButton label="" 
+                                pTooltip ="Adjuntar comprobante" tooltipPosition="bottom"
+                                (click)="triggerFileUpload(abono.id)" 
+                                pRipple icon="fa-solid fa-file-arrow-up" 
+                                class="p-button-rounded p-button-warning p-button-sm ms-1">
+                            </button>
+                            <button 
+                                *ngIf="(abono.type_payment === 'TRANSFERENCIA' || abono.type_payment === 'QR') && abono.payment_voucher"
+                                pButton label="" 
+                                pTooltip ="Ver comprobante adjunto" tooltipPosition="bottom"
+                                (click)="viewAttachedVoucher(abono.payment_voucher)" 
+                                pRipple icon="fa-solid fa-file-invoice" 
+                                class="p-button-rounded p-button-info p-button-sm ms-1">
+                            </button>
+                        </td>
+                    </tr>
+				</tbody>
+				<tfoot>
+                    <tr>
+                        <td width="10%" class="table-active fw-bold">TOTAL ABONADO</td>
+						<td id="subtotal">{{accountPayable()?.monto_abonado| number:decimal()}}</td>
+					</tr>
+                    <tr>
+                        <td width="10%" class="table-active fw-bold">RESTANTE</td>
+                        <td id="subtotal">{{accountPayable()?.monto_restante| number:decimal()}}</td>
+					</tr>
+				</tfoot>
+			</table>
+		</div>
+    </form>
+    <ng-template pTemplate="footer">
+        <p-button (click)="accountsPayableService.showModalDetailsAccountPayable = false" label="OK, Cerrar"
+            styleClass="p-button-outlined p-button-sm p-button-rounded"></p-button>
+    </ng-template>
+</p-dialog>

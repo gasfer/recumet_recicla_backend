@@ -113,14 +113,153 @@ const generatePdfReportsKardexFisico = async (
     res = response
 ) => {
     try {
-        const { filterBy, date1, date2 } = req.query;
+        const { id_sucursal, id_storage, filterBy, date1, date2 } = req.query;
         const decimal = await getNumberDecimal();
         const kardexes = await returnDataInputKardexFisico(req.query);
+
+        // Calculate initial balances for the products
+        const whereDate = whereDateForType(
+            filterBy,
+            date1,
+            date2,
+            '"ViewKardex"."date"'
+        );
+
+        if (kardexes && kardexes.length > 0) {
+            const productIds = kardexes.map(k => k.id_product);
+            const firstMovements = await ViewKardex.findAll({
+                attributes: [
+                    'id_product',
+                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
+                ],
+                where: {
+                    [Op.and]: [
+                        id_sucursal ? { id_sucursal } : {},
+                        id_storage ? { id_storage } : {},
+                        { id_product: { [Op.in]: productIds } },
+                        { date: whereDate }
+                    ]
+                },
+                group: ['id_product'],
+                raw: true
+            });
+            const minIds = firstMovements.map(m => m.min_id).filter(Boolean);
+            const initialBalances = minIds.length > 0 ? await ViewKardex.findAll({
+                attributes: ['id_product', 'saldo_inicial'],
+                where: {
+                    id: { [Op.in]: minIds }
+                },
+                raw: true
+            }) : [];
+            const balanceMap = {};
+            for (const bal of initialBalances) {
+                balanceMap[bal.id_product] = bal.saldo_inicial;
+            }
+            for (const kardex of kardexes) {
+                const quantity_inicial = Number(balanceMap[kardex.id_product] || 0);
+                kardex.dataValues.quantity_inicial = quantity_inicial;
+                kardex.dataValues.quantity_input = Number(kardex.dataValues.quantity_input) + quantity_inicial;
+                kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + quantity_inicial;
+            }
+        }
+
+        // Apply showZeroSaldo filter to match what is visible in the frontend table
+        const showZeroSaldo = req.query.showZeroSaldo === 'true';
+        const filteredKardexes = showZeroSaldo
+            ? kardexes
+            : kardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
+
         let dataPdf = dataPdfReturnKardexFisicoVerticalOnlyReciclen(
             req.userAuth,
-            kardexes
+            filteredKardexes
         ); //PDF
-        kardexes.forEach((kardex) => {
+
+        let currentCategory = null;
+        let categoryInput = 0;
+        let categoryOutput = 0;
+        let categorySaldo = 0;
+
+        let totalInput = 0;
+        let totalOutput = 0;
+        let totalSaldo = 0;
+
+        const addCategorySubtotalRow = (categoryName) => {
+            const subtotalRow = [
+                {
+                    text: `TOTAL ${categoryName.toUpperCase()}`,
+                    fontSize: 8,
+                    bold: true,
+                    fillColor: "#E2E8F0",
+                    colSpan: 3,
+                    margin: [5, 2, 5, 2]
+                },
+                {},
+                {},
+                {
+                    text: formatEuro(categoryInput, decimal),
+                    fontSize: 8,
+                    bold: true,
+                    fillColor: "#E2E8F0",
+                    alignment: "right"
+                },
+                {
+                    text: formatEuro(categoryOutput, decimal),
+                    fontSize: 8,
+                    bold: true,
+                    fillColor: "#E2E8F0",
+                    alignment: "right"
+                },
+                {
+                    text: formatEuro(categorySaldo, decimal),
+                    fontSize: 8,
+                    bold: true,
+                    fillColor: "#E2E8F0",
+                    alignment: "right"
+                }
+            ];
+            dataPdf[5].table.body.push(subtotalRow);
+        };
+
+        filteredKardexes.forEach((kardex) => {
+            const categoryName = kardex.product.category.name;
+            if (categoryName !== currentCategory) {
+                if (currentCategory !== null) {
+                    addCategorySubtotalRow(currentCategory);
+                    // Add spacing row in pdf
+                    dataPdf[5].table.body.push([
+                        { text: "", colSpan: 6, border: [false, false, false, false] },
+                        {},
+                        {},
+                        {},
+                        {},
+                        {}
+                    ]);
+                }
+
+                currentCategory = categoryName;
+                categoryInput = 0;
+                categoryOutput = 0;
+                categorySaldo = 0;
+
+                const categoryRow = [
+                    {
+                        text: categoryName.toUpperCase(),
+                        fontSize: 9,
+                        bold: true,
+                        fillColor: "#2D3748",
+                        color: "#ffffff",
+                        colSpan: 6,
+                        margin: [5, 2, 5, 2]
+                    },
+                    {},
+                    {},
+                    {},
+                    {},
+                    {}
+                ];
+                dataPdf[5].table.body.push(categoryRow);
+            }
+
             const tableData = [
                 { text: kardex?.product.cod, fontSize: 8 },
                 { text: kardex?.product.name, fontSize: 8 },
@@ -142,8 +281,67 @@ const generatePdfReportsKardexFisico = async (
                     alignment: "right",
                 },
             ];
+
+            categoryInput += Number(kardex.quantity_input);
+            categoryOutput += Number(kardex.quantity_output);
+            categorySaldo += Number(kardex.dataValues.quantity_saldo);
+
+            totalInput += Number(kardex.quantity_input);
+            totalOutput += Number(kardex.quantity_output);
+            totalSaldo += Number(kardex.dataValues.quantity_saldo);
+
             dataPdf[5].table.body.push(tableData);
         });
+
+        // Add last category subtotal row
+        if (currentCategory !== null) {
+            addCategorySubtotalRow(currentCategory);
+        }
+
+        // Add spacing and final totals row
+        dataPdf[5].table.body.push([
+            { text: "", colSpan: 6, border: [false, false, false, false] },
+            {},
+            {},
+            {},
+            {},
+            {}
+        ]);
+
+        const totalsRow = [
+            {
+                text: "TOTALES",
+                fontSize: 9,
+                bold: true,
+                fillColor: "#eeeeee",
+                colSpan: 3,
+                margin: [5, 2, 5, 2]
+            },
+            {},
+            {},
+            {
+                text: formatEuro(totalInput, decimal),
+                fontSize: 9,
+                bold: true,
+                fillColor: "#eeeeee",
+                alignment: "right"
+            },
+            {
+                text: formatEuro(totalOutput, decimal),
+                fontSize: 9,
+                bold: true,
+                fillColor: "#eeeeee",
+                alignment: "right"
+            },
+            {
+                text: formatEuro(totalSaldo, decimal),
+                fontSize: 9,
+                bold: true,
+                fillColor: "#eeeeee",
+                alignment: "right"
+            }
+        ];
+        dataPdf[5].table.body.push(totalsRow);
         const formatDate1 =
             filterBy == "MONTH" ? "MM" : filterBy == "YEAR" ? "YYYY" : "DD-MM-YYYY";
         const formatDate2 = filterBy == "MONTH" ? "YYYY" : "DD-MM-YYYY";
@@ -758,6 +956,59 @@ const generateExcelReportsKardexFisico = async (req, res) => {
     try {
         const kardexes = await returnDataInputKardexFisico(req.query);
         const decimal = await getNumberDecimal();
+        const { id_sucursal, id_storage, filterBy, date1, date2 } = req.query;
+
+        // Calculate initial balances for the products
+        const whereDate = whereDateForType(
+            filterBy,
+            date1,
+            date2,
+            '"ViewKardex"."date"'
+        );
+
+        if (kardexes && kardexes.length > 0) {
+            const productIds = kardexes.map(k => k.id_product);
+            const firstMovements = await ViewKardex.findAll({
+                attributes: [
+                    'id_product',
+                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
+                ],
+                where: {
+                    [Op.and]: [
+                        id_sucursal ? { id_sucursal } : {},
+                        id_storage ? { id_storage } : {},
+                        { id_product: { [Op.in]: productIds } },
+                        { date: whereDate }
+                    ]
+                },
+                group: ['id_product'],
+                raw: true
+            });
+            const minIds = firstMovements.map(m => m.min_id).filter(Boolean);
+            const initialBalances = minIds.length > 0 ? await ViewKardex.findAll({
+                attributes: ['id_product', 'saldo_inicial'],
+                where: {
+                    id: { [Op.in]: minIds }
+                },
+                raw: true
+            }) : [];
+            const balanceMap = {};
+            for (const bal of initialBalances) {
+                balanceMap[bal.id_product] = bal.saldo_inicial;
+            }
+            for (const kardex of kardexes) {
+                const quantity_inicial = Number(balanceMap[kardex.id_product] || 0);
+                kardex.dataValues.quantity_inicial = quantity_inicial;
+                kardex.dataValues.quantity_input = Number(kardex.dataValues.quantity_input) + quantity_inicial;
+                kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + quantity_inicial;
+            }
+        }
+
+        // Apply showZeroSaldo filter to match what is visible in the frontend table
+        const showZeroSaldo = req.query.showZeroSaldo === 'true';
+        const filteredKardexes = showZeroSaldo
+            ? kardexes
+            : kardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Kardex Físico");
@@ -769,9 +1020,88 @@ const generateExcelReportsKardexFisico = async (req, res) => {
             "Salida",
             "Saldo",
         ];
-        worksheet.addRow(headers);
+        
+        const headerRow = worksheet.addRow(headers);
+        headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        headerRow.eachCell((cell) => {
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FF1A3FA8' } // Deep blue brand color
+            };
+            cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        });
+        headerRow.height = 24;
 
-        kardexes.forEach((kardex) => {
+        let currentCategory = null;
+        let categoryInput = 0;
+        let categoryOutput = 0;
+        let categorySaldo = 0;
+
+        let totalInput = 0;
+        let totalOutput = 0;
+        let totalSaldo = 0;
+
+        const addCategorySubtotalRow = (categoryName) => {
+            const subtotalRow = worksheet.addRow([
+                `TOTAL ${categoryName.toUpperCase()}`,
+                "",
+                "",
+                categoryInput,
+                categoryOutput,
+                categorySaldo
+            ]);
+            worksheet.mergeCells(`A${subtotalRow.number}:C${subtotalRow.number}`);
+            
+            const subtotalCell = subtotalRow.getCell(1);
+            subtotalCell.font = { name: 'Arial', size: 10, bold: true };
+            subtotalCell.alignment = { vertical: 'middle', horizontal: 'left' };
+            subtotalCell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'FFE2E8F0' } // Light slate/gray
+            };
+            
+            [4, 5, 6].forEach((i) => {
+                const cell = subtotalRow.getCell(i);
+                cell.font = { name: 'Arial', size: 10, bold: true };
+                cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
+                cell.alignment = { horizontal: 'right' };
+                cell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FFE2E8F0' }
+                };
+            });
+            subtotalRow.height = 20;
+        };
+
+        filteredKardexes.forEach((kardex) => {
+            const categoryName = kardex.product.category.name;
+            if (categoryName !== currentCategory) {
+                if (currentCategory !== null) {
+                    addCategorySubtotalRow(currentCategory);
+                    worksheet.addRow([]);
+                }
+                
+                currentCategory = categoryName;
+                categoryInput = 0;
+                categoryOutput = 0;
+                categorySaldo = 0;
+                
+                const categoryRow = worksheet.addRow([categoryName.toUpperCase()]);
+                worksheet.mergeCells(`A${categoryRow.number}:F${categoryRow.number}`);
+                const categoryCell = categoryRow.getCell(1);
+                categoryCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+                categoryCell.fill = {
+                    type: 'pattern',
+                    pattern: 'solid',
+                    fgColor: { argb: 'FF2D3748' } // Dark gray category header
+                };
+                categoryCell.alignment = { vertical: 'middle', horizontal: 'left' };
+                categoryRow.height = 24;
+            }
+
             const row = worksheet.addRow([
                 kardex.product.cod,
                 kardex.product.name,
@@ -780,9 +1110,63 @@ const generateExcelReportsKardexFisico = async (req, res) => {
                 Number(kardex.quantity_output),
                 Number(kardex.dataValues.quantity_saldo),
             ]);
-            [4, 5, 6].forEach(
-                (i) => (row.getCell(i).numFmt = `#,##0.${"0".repeat(decimal)}`)
-            );
+            
+            categoryInput += Number(kardex.quantity_input);
+            categoryOutput += Number(kardex.quantity_output);
+            categorySaldo += Number(kardex.dataValues.quantity_saldo);
+
+            totalInput += Number(kardex.quantity_input);
+            totalOutput += Number(kardex.quantity_output);
+            totalSaldo += Number(kardex.dataValues.quantity_saldo);
+
+            [4, 5, 6].forEach((i) => {
+                const cell = row.getCell(i);
+                cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
+                cell.alignment = { horizontal: 'right' };
+            });
+        });
+
+        // Add last category subtotal row
+        if (currentCategory !== null) {
+            addCategorySubtotalRow(currentCategory);
+        }
+
+        // Add spacing and totals row
+        worksheet.addRow([]);
+        const totalsRow = worksheet.addRow([
+            "TOTALES",
+            "",
+            "",
+            totalInput,
+            totalOutput,
+            totalSaldo
+        ]);
+        worksheet.mergeCells(`A${totalsRow.number}:C${totalsRow.number}`);
+        
+        const totalsLabelCell = totalsRow.getCell(1);
+        totalsLabelCell.font = { name: 'Arial', size: 11, bold: true };
+        totalsLabelCell.alignment = { vertical: 'middle', horizontal: 'left' };
+        
+        [4, 5, 6].forEach((i) => {
+            const cell = totalsRow.getCell(i);
+            cell.font = { name: 'Arial', size: 11, bold: true };
+            cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
+            cell.alignment = { horizontal: 'right' };
+        });
+        totalsRow.height = 22;
+
+        // Auto-fit column widths
+        worksheet.columns.forEach((column, i) => {
+            let maxLength = 10;
+            column.eachCell({ includeEmpty: true }, (cell) => {
+                if (cell.value) {
+                    const str = String(cell.value);
+                    if (str.length > maxLength) {
+                        maxLength = str.length;
+                    }
+                }
+            });
+            column.width = i === 1 ? Math.min(maxLength + 2, 40) : maxLength + 2;
         });
 
         res.setHeader(
@@ -973,7 +1357,10 @@ const returnDataInputKardexFisico = async ({
     }
 
     return ViewKardex.findAll({
-        order: [[...orderNew]],
+        order: [
+            ['product', 'category', 'name', 'ASC'],
+            orderNew
+        ],
         attributes: [
             "id_product",
             [sequelize.fn("SUM", sequelize.col("quantity_input")), "quantity_input"],

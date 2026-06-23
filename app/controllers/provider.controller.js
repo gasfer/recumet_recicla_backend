@@ -2,6 +2,7 @@ const { response, request } = require('express');
 const { Provider, Sector, sequelize, TypesProvider,DetailsInput, ViewProviderTotals } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
+const providerService = require('../services/provider.service');
 
 const getProviderPaginate = async (req = request, res = response) => {
     try {
@@ -209,6 +210,23 @@ const getAllTypesProvider = async (req = request, res = response) => {
 }
 
 
+const getProviderAutocomplete = async (req = request, res = response) => {
+    try {
+        const { query = '' } = req.query;
+        const providers = await providerService.findAutocompleteProviders(query);
+        return res.status(200).json({
+            ok: true,
+            providers
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
+        });
+    }
+}
+
 module.exports = {
     getProviderPaginate,
     newProvider,
@@ -218,5 +236,6 @@ module.exports = {
     newSectorProvider,
     deleteSectorProvider,
     getProviderByProductPaginate,
-    getAllTypesProvider
+    getAllTypesProvider,
+    getProviderAutocomplete
 };

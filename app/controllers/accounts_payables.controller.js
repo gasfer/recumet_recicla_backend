@@ -4,6 +4,9 @@ const paginate = require('../helpers/paginate');
 const { whereDateForType } = require('../helpers/where_range');
 const { Op } = require('sequelize');
 const { getNumberDecimal } = require('../helpers/company');
+const { fileMoveAndRemoveOld } = require('../helpers/file-upload');
+const path = require('path');
+const fs = require('fs');
 
 
 const getAccountsPayablePaginate = async (req = request, res = response) => {
@@ -318,7 +321,7 @@ const getAccountAllProvider = async (req = request, res = response) => {
 const payAccountMultiple = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
-        const { id_provider, monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_sucursal, id_bank_origin, account_origin} = req.body;
+        const { id_provider, monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_sucursal, id_bank_origin, account_origin, number_transaction} = req.body;
         if (!monto_abono || isNaN(monto_abono) || !date_abono) {
             return res.status(422).json({
                 ok: false,
@@ -391,8 +394,8 @@ const payAccountMultiple = async (req = request, res = response) => {
         if(ids_account_payables.length > 0) { //A las cuentas que se realizo abono
             const abonosAccountsPayableMultiple = await AbonosAccountsPayableMultiple.create({
                 ids_account_payables, ids_abonos_payables, date_abono, monto_abono, id_user: req.userAuth.id, status: true,
-                type_payment,comments,account_output,id_bank,id_sucursal,id_provider, status: true,codes_input,
-                id_bank_origin, account_origin
+                type_payment,comments,account_output,id_bank,id_sucursal,id_provider,codes_input,
+                id_bank_origin, account_origin, number_transaction
             },{ transaction: t });
             id_abono_accounts_payable = abonosAccountsPayableMultiple.id;
         }
@@ -415,7 +418,7 @@ const payAccountMultiple = async (req = request, res = response) => {
 
 const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
     try {
-        const  {monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_bank_origin, account_origin} = body;
+        const  {monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_bank_origin, account_origin, number_transaction} = body;
         const decimal = await getNumberDecimal();
         let total_account_monto = Number(account.monto_abonado) + Number(monto_abono);
         let new_total_restante = Number(account.total).toFixed(decimal) - Number(total_account_monto).toFixed(decimal)
@@ -433,7 +436,7 @@ const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
         const abonosAccountsPayable = await AbonosAccountsPayable.create({
             id_account_payable:account.id, date_abono, monto_abono, total_abonado: total_account_monto,
             restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_output,id_bank,from_pay_multiple,
-            id_bank_origin, account_origin
+            id_bank_origin, account_origin, number_transaction
         },{ transaction: t });
         /* Ingreso historico */
         await History.create({
@@ -453,6 +456,51 @@ const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
     }
 }
 
+const uploadFileVoucherAbono = async (req, res) => {
+    const { idAbono, isMultiple } = req.query;
+    const { keyFile, file } = req;
+    
+    const baseUploads = process.env.RESOURCES_PATH 
+        ? path.resolve(process.env.RESOURCES_PATH) 
+        : path.join(__dirname, '../../uploads');
+    const uploadDirectory = path.join(baseUploads, 'vouchers');
+    if (!fs.existsSync(uploadDirectory)) {
+        fs.mkdirSync(uploadDirectory, { recursive: true });
+    }
+
+    try {
+        let abonoDB;
+        if (isMultiple === 'true') {
+            abonoDB = await AbonosAccountsPayableMultiple.findByPk(idAbono);
+        } else {
+            abonoDB = await AbonosAccountsPayable.findByPk(idAbono);
+        }
+
+        if (!abonoDB) {
+            return res.status(404).json({
+                ok: false,
+                msg: `El abono con ID ${idAbono} no existe`,
+            });
+        }
+        
+        const extensions = ['png', 'PNG', 'jpg', 'JPG', 'jpeg', 'JPEG', 'webp', 'WEBP', 'pdf', 'PDF'];
+        abonoDB.payment_voucher = await fileMoveAndRemoveOld(file, abonoDB.payment_voucher || '', idAbono, 'vouchers', extensions);
+        await abonoDB.save();
+        
+        return res.json({
+            ok: true,
+            msg: `Comprobante subido correctamente`,
+            payment_voucher: abonoDB.payment_voucher
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(422).json({
+            ok: false,
+            errors: [{ msg: `No se pudo subir tu comprobante - ${error}` }]
+        });
+    }
+};
+
 module.exports = {
     getAccountsPayablePaginate,
     newAbonoAccountPayable,
@@ -461,4 +509,5 @@ module.exports = {
     payAccountMultiple,
     getAbonosAllPayablePaginate,
     deleteAbonoMultipleAccountPayable,
+    uploadFileVoucherAbono
 };

@@ -1,9 +1,11 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getInputsPaginate, newInput, anularInput, updateInput, getInputFindOne } = require('../controllers/input.controller');
+const { getInputsPaginate, newInput, anularInput, updateInput, getInputFindOne, uploadFileVoucher } = require('../controllers/input.controller');
 const { getValidateCreate, validateIdInput, getValidateUpdate } = require('../middlewares/validators/input');
 const { generatePdfReports, generateExcelReports, generatePdfDetailsReports, generateExcelDetailsReports, printInputVoucher, generatePdfDetailsCPPReports } = require('../controllers/reports/input.controller');
+const expressfileUpload = require('express-fileupload');
+const { filesExist, filesValidateSize } = require('../middlewares/validators/validar-files');
 
 const router = Router();
 
@@ -86,6 +88,13 @@ router.put('/:id_input', [
     toUpperCaseConvert,
     getValidateUpdate,
 ], updateInput);
+
+router.put('/upload/voucher', [
+    validarJWT,
+    expressfileUpload(),
+    filesExist,
+    filesValidateSize
+], uploadFileVoucher);
 
 /**
  * @swagger
