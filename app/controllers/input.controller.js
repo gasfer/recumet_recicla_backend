@@ -150,7 +150,7 @@ const newInput = async (req = request, res = response) => {
                 const lastNumber = parseInt(lastInput.registry_number.split('-')[1]);
                 nextNumber = lastNumber + 1;
             }
-            input_data.registry_number = get_num_request('SFC-',nextNumber,5);
+            input_data.registry_number = get_num_request('SF-',nextNumber,5);
         }
 
         input_data.id_user = req.userAuth.id;
@@ -280,7 +280,7 @@ const updateInput = async (req = request, res = response) => {
                     nextNumber = lastNumber + 1;
                 }
                 
-                input_data.registry_number = get_num_request('SFC-',nextNumber,5);
+                input_data.registry_number = get_num_request('SF-',nextNumber,5);
             } else {
                 input_data.registry_number = input_old.registry_number;
             }
