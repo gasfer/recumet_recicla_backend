@@ -253,7 +253,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
 
 const getTotalStockRecumet = async (req = request, res = response) => {
     try {
-        const { query, page, limit, id_sucursal, id_sucursales, id_storage, id_storages, id_product, category_ids, filterBy, date1, date2 } = req.query;
+        const { query, page, limit, id_sucursal, id_sucursales, id_storage, id_storages, id_product, id_products, category_ids, filterBy, date1, date2 } = req.query;
         const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
 
         let sucursalCond = {};
@@ -274,9 +274,21 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             }
         }
 
+        let productCond = {};
+        const targetProducts = id_products || id_product;
+        if (targetProducts) {
+            const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+            if (productIds.length > 0) {
+                productCond = { id_product: { [Op.in]: productIds } };
+            }
+        }
+
         let whereProduct = {};
-        if (id_product) {
-            whereProduct = { id: id_product };
+        if (targetProducts) {
+            const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+            if (productIds.length > 0) {
+                whereProduct = { id: { [Op.in]: productIds } };
+            }
         }
         if (category_ids) {
             let ids = [];
@@ -316,7 +328,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
                 [Op.and]: [
                     sucursalCond,
                     storageCond,
-                    id_product ? { id_product } : {},
+                    productCond,
                     { date: whereDate },
                 ]
             },
@@ -429,7 +441,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
                 [Op.and]: [
                     sucursalCond,
                     storageCond,
-                    id_product ? { id_product } : {},
+                    productCond,
                     { date: whereDate },
                 ]
             },
