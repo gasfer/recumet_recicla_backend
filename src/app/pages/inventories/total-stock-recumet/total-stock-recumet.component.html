@@ -66,7 +66,7 @@
 
             <div class="row mt-3">
               <!-- Categorías Multiselect -->
-              <div class="col-12 col-md-6">
+              <div class="col-12 col-md-4">
                 <label class="block mb-1">Categorías</label>
                 <p-multiSelect [options]="dropdownCategories()" [(ngModel)]="selectedCategoryValues"
                   [ngModelOptions]="{standalone: true}" (onChange)="onCategoryChange($event.value)" optionLabel="name"
@@ -75,8 +75,25 @@
                 </p-multiSelect>
               </div>
 
+              <!-- Productos Multiselect -->
+              <div class="col-12 col-md-4">
+                <label class="block mb-1">Productos</label>
+                <p-multiSelect [options]="dropdownProducts()" [(ngModel)]="selectedProductValues"
+                  [ngModelOptions]="{standalone: true}" (onChange)="onProductChange($event.value)" optionLabel="name"
+                  optionValue="id" placeholder="Seleccione productos..." [style]="{'width':'100%'}" appendTo="body"
+                  [filter]="true" filterBy="name,cod" [loading]="loadingProducts()" [showClear]="true" display="chip">
+                  <ng-template let-product pTemplate="item">
+                    <div class="flex align-items-center gap-2">
+                      <span class="text-muted" style="font-size: 0.85em;">{{ product.cod }}</span>
+                      <span class="mx-1">|</span>
+                      <span class="fw-bold">{{ product.name }}</span>
+                    </div>
+                  </ng-template>
+                </p-multiSelect>
+              </div>
+
               <!-- Filtrar Saldos -->
-              <div class="col-12 col-md-6">
+              <div class="col-12 col-md-4">
                 <label class="block mb-1">Filtrar Saldos</label>
 
                 <div class="d-flex align-items-center gap-3 mt-2">

@@ -23,7 +23,7 @@ const formatEuro = (value, decimal = 2) => {
 };
 
 const returnDataTotalStockRecumet = async (queryReq) => {
-    const { query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, category_ids, filterBy, date1, date2 } = queryReq;
+    const { query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, id_products, category_ids, filterBy, date1, date2 } = queryReq;
     const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
 
     let sucursalCond = {};
@@ -44,9 +44,21 @@ const returnDataTotalStockRecumet = async (queryReq) => {
         }
     }
 
+    let productCond = {};
+    const targetProducts = id_products || id_product;
+    if (targetProducts) {
+        const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+        if (productIds.length > 0) {
+            productCond = { id_product: { [Op.in]: productIds } };
+        }
+    }
+
     let whereProduct = {};
-    if (id_product) {
-        whereProduct = { id: id_product };
+    if (targetProducts) {
+        const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+        if (productIds.length > 0) {
+            whereProduct = { id: { [Op.in]: productIds } };
+        }
     }
     if (category_ids) {
         let ids = [];
@@ -86,7 +98,7 @@ const returnDataTotalStockRecumet = async (queryReq) => {
             [Op.and]: [
                 sucursalCond,
                 storageCond,
-                id_product ? { id_product } : {},
+                productCond,
                 { date: whereDate },
             ]
         },
@@ -203,7 +215,7 @@ const dataPdfReturnTotalStock = (auth) => {
 
 const generatePdfReportsTotalStock = async (req = request, res = response) => {
     try {
-        const { filterBy, date1, date2, query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, category_ids } = req.query;
+        const { filterBy, date1, date2, query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, id_products, category_ids } = req.query;
         const decimal = await getNumberDecimal();
         const kardexes = await returnDataTotalStockRecumet(req.query);
         const auth = req.userAuth;
@@ -231,9 +243,21 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
             }
         }
 
+        let productCond = {};
+        const targetProducts = id_products || id_product;
+        if (targetProducts) {
+            const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+            if (productIds.length > 0) {
+                productCond = { id_product: { [Op.in]: productIds } };
+            }
+        }
+
         let whereProduct = {};
-        if (id_product) {
-            whereProduct = { id: id_product };
+        if (targetProducts) {
+            const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+            if (productIds.length > 0) {
+                whereProduct = { id: { [Op.in]: productIds } };
+            }
         }
         if (category_ids) {
             let ids = [];
@@ -272,7 +296,7 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
                 [Op.and]: [
                     sucursalCond,
                     storageCond,
-                    id_product ? { id_product } : {},
+                    productCond,
                     { date: whereDate },
                 ]
             },
@@ -547,7 +571,7 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
 
 const generateExcelReportsTotalStock = async (req = request, res = response) => {
     try {
-        const { filterBy, date1, date2, query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, category_ids } = req.query;
+        const { filterBy, date1, date2, query, id_sucursal, id_sucursales, id_storage, id_storages, id_product, id_products, category_ids } = req.query;
         const kardexes = await returnDataTotalStockRecumet(req.query);
         const decimal = await getNumberDecimal();
 
@@ -572,9 +596,21 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             }
         }
 
+        let productCond = {};
+        const targetProducts = id_products || id_product;
+        if (targetProducts) {
+            const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+            if (productIds.length > 0) {
+                productCond = { id_product: { [Op.in]: productIds } };
+            }
+        }
+
         let whereProduct = {};
-        if (id_product) {
-            whereProduct = { id: id_product };
+        if (targetProducts) {
+            const productIds = String(targetProducts).split(',').map(id => id.trim()).filter(Boolean);
+            if (productIds.length > 0) {
+                whereProduct = { id: { [Op.in]: productIds } };
+            }
         }
         if (category_ids) {
             let ids = [];
@@ -613,7 +649,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                 [Op.and]: [
                     sucursalCond,
                     storageCond,
-                    id_product ? { id_product } : {},
+                    productCond,
                     { date: whereDate },
                 ]
             },

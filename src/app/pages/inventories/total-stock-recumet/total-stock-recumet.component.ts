@@ -13,6 +13,7 @@ import { Sucursal } from 'src/app/pages/managements/interfaces/sucursales.interf
 import { MenuItem } from 'primeng/api';
 import Swal from 'sweetalert2';
 import { CategoriesService } from '../services/categories.service';
+import { ProductsService } from '../services/products.service';
 import { forkJoin } from 'rxjs';
 
 @Component({
@@ -28,6 +29,7 @@ export class TotalStockRecumetComponent implements OnInit {
   sucursalService = inject(SucursalesService);
   authService = inject(AuthService);
   categoriesService = inject(CategoriesService);
+  productService = inject(ProductsService);
 
   loading = signal(false);
   rows = signal(50);
@@ -43,6 +45,12 @@ export class TotalStockRecumetComponent implements OnInit {
   selectedCategoryIds = signal<number[]>([]);
   loadingCategories = signal(false);
   selectedCategoryValues: number[] = [];
+
+  // Product selection properties
+  dropdownProducts = signal<any[]>([]);
+  selectedProductIds = signal<number[]>([]);
+  selectedProductValues: number[] = [];
+  loadingProducts = signal(false);
 
   buttonItems: MenuItem[] = [
     {
@@ -149,6 +157,7 @@ export class TotalStockRecumetComponent implements OnInit {
 
     this.getSucursales();
     this.loadCategories();
+    this.loadDropdownProducts(true);
     this.getAllAndSearchKardex(1, this.rows());
   }
 
@@ -192,6 +201,9 @@ export class TotalStockRecumetComponent implements OnInit {
     this.loadingCategories.set(true);
     this.selectedCategoryIds.set([]);
     this.selectedCategoryValues = [];
+    this.selectedProductIds.set([]);
+    this.selectedProductValues = [];
+    this.dropdownProducts.set([]);
 
     forkJoin({
       rawMaterial: this.categoriesService.getCategorySelect('RAW_MATERIAL'),
@@ -214,6 +226,39 @@ export class TotalStockRecumetComponent implements OnInit {
   onCategoryChange(selectedIds: number[]): void {
     this.selectedCategoryIds.set(selectedIds);
     this.selectedCategoryValues = [...selectedIds];
+
+    this.selectedProductIds.set([]);
+    this.selectedProductValues = [];
+
+    this.loadDropdownProducts(true);
+  }
+
+  loadDropdownProducts(reset: boolean = false): void {
+    if (reset) {
+      this.dropdownProducts.set([]);
+    }
+    this.loadingProducts.set(true);
+
+    const categoryIds =
+      this.selectedCategoryIds().length > 0
+        ? this.selectedCategoryIds().join(',')
+        : '';
+
+    this.productService.getSelectProducts('', 5000, '', categoryIds).subscribe({
+      next: (resp: any) => {
+        const products = resp.products || [];
+        this.dropdownProducts.set(products);
+        this.loadingProducts.set(false);
+      },
+      error: () => {
+        this.loadingProducts.set(false);
+      }
+    });
+  }
+
+  onProductChange(selectedIds: number[]): void {
+    this.selectedProductIds.set(selectedIds);
+    this.selectedProductValues = [...selectedIds];
   }
 
   getAllAndSearchKardex(page: number, limit: number, type: string = '', query: string = '') {
@@ -268,6 +313,7 @@ export class TotalStockRecumetComponent implements OnInit {
       const sucursalIdsStr = Array.isArray(id_sucursal) ? id_sucursal.join(',') : (id_sucursal || '');
       const storageIdsStr = Array.isArray(id_storage) ? id_storage.join(',') : (id_storage || '');
       const categoryIdsStr = this.selectedCategoryIds().length > 0 ? this.selectedCategoryIds().join(',') : '';
+      const productIdsStr = this.selectedProductIds().length > 0 ? this.selectedProductIds().join(',') : '';
 
       const newParams = {
         type_kardex: '',
@@ -276,6 +322,7 @@ export class TotalStockRecumetComponent implements OnInit {
         id_storage: '',
         id_storages: storageIdsStr,
         category_ids: categoryIdsStr,
+        id_products: productIdsStr,
         id_provider: '',
         id_product: '',
         filterBy: filterBy,
@@ -338,7 +385,10 @@ export class TotalStockRecumetComponent implements OnInit {
     });
     this.selectedCategoryIds.set([]);
     this.selectedCategoryValues = [];
+    this.selectedProductIds.set([]);
+    this.selectedProductValues = [];
     this.onSucursalesChange();
+    this.loadDropdownProducts(true);
     this.getAllAndSearchKardex(1, this.rows());
   }
 
