@@ -140,9 +140,20 @@ const newInput = async (req = request, res = response) => {
             const lastInput = await Input.findOne({
                 where: { 
                     type_registry: 'SIN FICHA',
-                    registry_number: { [Op.like]: 'SF-%'}
+                    registry_number: { [Op.or]: [
+                        { [Op.like]: 'SF-%' },
+                        { [Op.like]: 'SFC-%' }
+                    ]}
                 },
-                order: [['registry_number', 'DESC']],
+                order: [
+                    [
+                        Sequelize.cast(
+                            Sequelize.fn('split_part', Sequelize.col('registry_number'), '-', 2),
+                            'INTEGER'
+                        ),
+                        'DESC'
+                    ]
+                ],
                 transaction: t
             });
             let nextNumber = 1;
@@ -150,7 +161,7 @@ const newInput = async (req = request, res = response) => {
                 const lastNumber = parseInt(lastInput.registry_number.split('-')[1]);
                 nextNumber = lastNumber + 1;
             }
-            input_data.registry_number = get_num_request('SF-',nextNumber,5);
+            input_data.registry_number = get_num_request('SFC-',nextNumber,5);
         }
 
         input_data.id_user = req.userAuth.id;
@@ -268,9 +279,20 @@ const updateInput = async (req = request, res = response) => {
                 const lastInput = await Input.findOne({
                     where: { 
                         type_registry: 'SIN FICHA',
-                        registry_number: { [Op.like]: 'SF-%'}
+                        registry_number: { [Op.or]: [
+                            { [Op.like]: 'SF-%' },
+                            { [Op.like]: 'SFC-%' }
+                        ]}
                     },
-                    order: [['registry_number', 'DESC']],
+                    order: [
+                        [
+                            Sequelize.cast(
+                                Sequelize.fn('split_part', Sequelize.col('registry_number'), '-', 2),
+                                'INTEGER'
+                            ),
+                            'DESC'
+                        ]
+                    ],
                     transaction: t
                 });
                 
@@ -280,7 +302,7 @@ const updateInput = async (req = request, res = response) => {
                     nextNumber = lastNumber + 1;
                 }
                 
-                input_data.registry_number = get_num_request('SF-',nextNumber,5);
+                input_data.registry_number = get_num_request('SFC-',nextNumber,5);
             } else {
                 input_data.registry_number = input_old.registry_number;
             }
