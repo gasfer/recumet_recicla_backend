@@ -196,10 +196,11 @@ export class InputsService {
         const fileURL = URL.createObjectURL(file);
 
         const iframe = document.createElement('iframe');
-        iframe.style.position = 'absolute';
-        iframe.style.width = '0px';
-        iframe.style.height = '0px';
+        iframe.style.position = 'fixed';
+        iframe.style.width = '800px';
+        iframe.style.height = '1100px';
         iframe.style.border = 'none';
+        iframe.style.top = '-9999px';
         iframe.style.left = '-9999px';
         iframe.src = fileURL;
 
