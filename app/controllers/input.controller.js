@@ -140,9 +140,20 @@ const newInput = async (req = request, res = response) => {
             const lastInput = await Input.findOne({
                 where: { 
                     type_registry: 'SIN FICHA',
-                    registry_number: { [Op.like]: 'SF-%'}
+                    registry_number: { [Op.or]: [
+                        { [Op.like]: 'SF-%' },
+                        { [Op.like]: 'SFC-%' }
+                    ]}
                 },
-                order: [['registry_number', 'DESC']],
+                order: [
+                    [
+                        Sequelize.cast(
+                            Sequelize.fn('split_part', Sequelize.col('registry_number'), '-', 2),
+                            'INTEGER'
+                        ),
+                        'DESC'
+                    ]
+                ],
                 transaction: t
             });
             let nextNumber = 1;
@@ -268,9 +279,20 @@ const updateInput = async (req = request, res = response) => {
                 const lastInput = await Input.findOne({
                     where: { 
                         type_registry: 'SIN FICHA',
-                        registry_number: { [Op.like]: 'SF-%'}
+                        registry_number: { [Op.or]: [
+                            { [Op.like]: 'SF-%' },
+                            { [Op.like]: 'SFC-%' }
+                        ]}
                     },
-                    order: [['registry_number', 'DESC']],
+                    order: [
+                        [
+                            Sequelize.cast(
+                                Sequelize.fn('split_part', Sequelize.col('registry_number'), '-', 2),
+                                'INTEGER'
+                            ),
+                            'DESC'
+                        ]
+                    ],
                     transaction: t
                 });
                 
