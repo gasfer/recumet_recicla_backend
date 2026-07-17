@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { Transfers, sequelize , DetailsTransfers, Stock, History  } = require('../database/config');
+const { Transfers, sequelize , DetailsTransfers, Stock, History, Product, kardexMovements } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
@@ -244,6 +244,50 @@ const receivedTransfer = async (req = request, res = response ) => {
             } else {
                 stock.stock = Number(stock.stock) + qtyReceived;
                 await stock.save({ transaction: t });
+            }
+        }
+        /*  Merma: registrar diferencia negativa en kardex */
+        let totalMerma = 0;
+        for (const detail of transfer_received.detailsTransfers) {
+            const qtySent = Number(detail.quantity);
+            const qtyReceived = Number(detail.quantity_received);
+            if (qtyReceived < qtySent) {
+                totalMerma += qtySent - qtyReceived;
+            }
+        }
+        if (totalMerma > 0) {
+            const mermaProduct = await Product.findByPk(122, { transaction: t });
+            if (mermaProduct) {
+                await kardexMovements.create({
+                    type: 'INPUT',
+                    date: new Date(),
+                    details: `MERMA TRASPASO #${transfer_received.cod}`,
+                    quantity: totalMerma,
+                    cost: 0,
+                    price: 0,
+                    total: 0,
+                    id_product: mermaProduct.id,
+                    id_user: req.userAuth.id,
+                    id_sucursal: id_sucursal_received,
+                    id_storage: id_storage_received,
+                    status: true,
+                }, { transaction: t });
+                const stockMerma = await Stock.findOne({
+                    order: [['id', 'DESC']],
+                    where: { id_product: mermaProduct.id, id_sucursal: id_sucursal_received, id_storage: id_storage_received, status: true },
+                    lock: true,
+                    transaction: t
+                });
+                if (!stockMerma) {
+                    await Stock.create({
+                        stock_min: 1, stock: totalMerma,
+                        id_product: mermaProduct.id, id_sucursal: id_sucursal_received, id_storage: id_storage_received,
+                        status: true,
+                    }, { transaction: t });
+                } else {
+                    stockMerma.stock = Number(stockMerma.stock) + totalMerma;
+                    await stockMerma.save({ transaction: t });
+                }
             }
         }
          /* Ingreso histórico */
