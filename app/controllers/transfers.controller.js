@@ -225,7 +225,8 @@ const receivedTransfer = async (req = request, res = response ) => {
                     obs = incomingDetail.observation;
                 }
             }
-            detail.quantity_received = qtyReceived;
+            const qtySent = Number(detail.quantity);
+            detail.quantity_received = Math.min(qtyReceived, qtySent);
             detail.observation = obs;
             await detail.save({ transaction: t });
 
@@ -244,6 +245,24 @@ const receivedTransfer = async (req = request, res = response ) => {
             } else {
                 stock.stock = Number(stock.stock) + qtyReceived;
                 await stock.save({ transaction: t });
+            }
+            /*  Excedente: registrar diferencia positiva en kardex */
+            if (qtyReceived > qtySent) {
+                await kardexMovements.create({
+                    type: 'INPUT',
+                    date: new Date(),
+                    details: `EXCEDENTE TRASPASO #${transfer_received.cod}`,
+                    quantity: qtyReceived - qtySent,
+                    cost: detail.cost,
+                    price: 0,
+                    total: 0,
+                    id_product: detail.id_product,
+                    id_user: req.userAuth.id,
+                    id_sucursal: id_sucursal_received,
+                    id_storage: id_storage_received,
+                    status: true,
+                    registry_number: transfer_received.registry_number,
+                }, { transaction: t });
             }
         }
         /*  Merma: registrar diferencia negativa en kardex */
@@ -271,6 +290,7 @@ const receivedTransfer = async (req = request, res = response ) => {
                     id_sucursal: id_sucursal_received,
                     id_storage: id_storage_received,
                     status: true,
+                    registry_number: transfer_received.registry_number,
                 }, { transaction: t });
                 const stockMerma = await Stock.findOne({
                     order: [['id', 'DESC']],

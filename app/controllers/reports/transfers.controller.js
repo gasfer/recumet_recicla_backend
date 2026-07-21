@@ -223,6 +223,8 @@ const printTransferVoucher = async (req = request, res = response) =>{
         let dataPdf = dataPdfReturnTransferVoucher(transfers); //PDF 
         let quantity_total = 0;
         let quantity_received_total = 0;
+        let excedente_total = 0;
+        let faltante_total = 0;
         let units = [];
         transfers.detailsTransfers.forEach(detail => {
             const sentQty = Number(detail?.quantity || 0);
@@ -240,12 +242,19 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 diffPctText = `${diffPct.toFixed(2)}%`;
             }
 
+            const excedente = transfers.status === 'RECEIVED' ? Math.max(0, receivedQty - sentQty) : 0;
+            const faltante = transfers.status === 'RECEIVED' ? Math.max(0, sentQty - receivedQty) : 0;
+            excedente_total += excedente;
+            faltante_total += faltante;
+
             const tableData = [
                 {text:detail?.product?.cod, fontSize:8}, 
                 {text:detail?.product?.name, fontSize:8}, 
                 {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
                 {text:sentQty, fontSize:8, alignment: 'center'}, 
                 {text:transfers.status === 'RECEIVED' ? receivedQty : '-', fontSize:8, alignment: 'center'}, 
+                {text:excedente, fontSize:8, alignment: 'center'}, 
+                {text:faltante, fontSize:8, alignment: 'center'}, 
                 {text:diffPctText, fontSize:8, alignment: 'center'}, 
                 {text:detail?.observation || '-', fontSize:8, alignment: 'center'}, 
             ];
@@ -265,12 +274,15 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 {text: units.join(','), fontSize:8, alignment:'center'},
                 {text: quantity_total,  fontSize:8, alignment:'center'},
                 {text: transfers.status === 'RECEIVED' ? quantity_received_total : '-', fontSize:8, alignment:'center'},
+                {text: excedente_total, fontSize:8, alignment:'center'},
+                {text: faltante_total, fontSize:8, alignment:'center'},
                 {text: totalDiffPctText, fontSize:8, alignment:'center'},
                 {text: '', border:[false,false,false,false]},
             ],
         );
         let docDefinition = {
             content: dataPdf,
+            pageOrientation: 'landscape',
             styles: styles,
         };
         const printer = new PdfPrinter(fonts);
@@ -324,7 +336,7 @@ const dataPdfReturnTransferVoucher = (transfer) => [
     {
         style: 'tableExample',
         table: {
-            widths: [40, '*', 25, 55, 70, 50, 85],
+            widths: [40, '*', 25, 55, 70, 55, 55, 50, 85],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
@@ -332,6 +344,8 @@ const dataPdfReturnTransferVoucher = (transfer) => [
                     {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                     {text:'CANT. ENVIADO',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                     {text:'CANT. RECEPCIONADO',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
+                    {text:'EXCEDENTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
+                    {text:'FALTANTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                     {text:'PORCENTAJE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                     {text:'OBSERVACIÓN',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                 ]

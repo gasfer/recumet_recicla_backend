@@ -40,7 +40,8 @@ module.exports = (sequelize, DataTypes) => {
     id_user: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,
     id_storage: DataTypes.INTEGER,
-    status: DataTypes.BOOLEAN
+    status: DataTypes.BOOLEAN,
+    registry_number: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'kardexMovements',
