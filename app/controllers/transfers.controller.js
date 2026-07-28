@@ -4,6 +4,7 @@ const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const get_num_request = require('../helpers/generate-cod');
+const notificationService = require('../services/notification.service');
 
 const getTransferFindOne = async (req = request, res = response) => {
     try {
@@ -174,6 +175,15 @@ const newTransfer = async (req = request, res = response ) => {
             id_reference: id_transfer,
             status: true
         }, { transaction: t }); 
+        /* Notificación a administradores */
+        const senderName = req.userAuth ? req.userAuth.full_names : 'Un usuario';
+        await notificationService.notifyAdmins({
+            title: `Nuevo Traslado Creado #${cod}`,
+            message: `El usuario ${senderName} ha registrado el traslado #${cod}.`,
+            type: 'TRANSFER_CREATE',
+            level: 'INFO',
+            id_reference: id_transfer
+        }, t, req.userAuth.id);
         await t.commit();
         return res.status(201).json({
             ok: true,
@@ -321,6 +331,42 @@ const receivedTransfer = async (req = request, res = response ) => {
             id_reference: transfer_received.id,
             status: true
         }, { transaction: t }); 
+
+        /* Notificación de Alerta Roja a Administradores si existe discrepancia > +-1% */
+        const discrepantDetails = [];
+        for (const detail of transfer_received.detailsTransfers) {
+            let qtyReceived = Number(detail.quantity);
+            if (details && Array.isArray(details)) {
+                const incomingDetail = details.find(d => d.id_detail === detail.id);
+                if (incomingDetail && incomingDetail.quantity_received !== undefined && incomingDetail.quantity_received !== null) {
+                    qtyReceived = Number(incomingDetail.quantity_received);
+                }
+            }
+            const qtySent = Number(detail.quantity);
+            if (qtySent > 0) {
+                const diffPct = ((qtyReceived - qtySent) / qtySent) * 100;
+                if (Math.abs(diffPct) > 1.0) {
+                    discrepantDetails.push({
+                        qtySent,
+                        qtyReceived,
+                        diffPct: diffPct > 0 ? `+${diffPct.toFixed(2)}%` : `${diffPct.toFixed(2)}%`
+                    });
+                }
+            }
+        }
+
+        if (discrepantDetails.length > 0) {
+            const receiverName = req.userAuth ? req.userAuth.full_names : 'Un usuario';
+            const detailMsgs = discrepantDetails.map(d => `Enviado: ${d.qtySent}, Recibido: ${d.qtyReceived} (${d.diffPct})`).join(' | ');
+            await notificationService.notifyAdmins({
+                title: `🚨 ALERTA ROJA: Discrepancia Recepción #${transfer_received.cod}`,
+                message: `El usuario ${receiverName} recepcionó el traslado #${transfer_received.cod} con diferencia superior al ±1%: ${detailMsgs}`,
+                type: 'TRANSFER_RECEPTION_DIFF',
+                level: 'DANGER',
+                id_reference: transfer_received.id
+            }, t, req.userAuth.id);
+        }
+
         await t.commit();
         return res.status(201).json({
             ok: true,
