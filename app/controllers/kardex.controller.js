@@ -8,8 +8,9 @@ const getKardexPaginate = async (req = request, res = response) => {
     try {
         const { query, page, limit, type, id_sucursal, id_storage, id_product, filterBy, date1, date2, type_kardex, orderNew } = req.query;
         const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
+        const tieBreakerOrder = orderNew?.at(-1) === 'ASC' ? 'ASC' : 'DESC';
         const optionsDb = {
-            order: [orderNew],
+            order: [orderNew, ['id', tieBreakerOrder]],
             attributes: ['type', 'date', 'id_movement', 'type_movement', 'registry_number', 'detail', 'sub_detail', 'quantity', 'quantity_input', 'quantity_output', 'cost_unitario', 'cost_input', 'cost_output', 'saldo', 'cost_saldo'],
             where: {
                 [Op.and]: [

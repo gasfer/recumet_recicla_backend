@@ -10,9 +10,12 @@ const { whereDateForType } = require("../../helpers/where_range");
 const imagePath = path.join(__dirname, '../../../uploads/logo.png');
 const ExcelJS = require('exceljs');
 const { response } = require("express");
+const { reconcileTransferReceipt } = require('../../helpers/transfer-reception');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
+
+const roundQuantity = (value) => Math.round((Number(value) + Number.EPSILON) * 10000) / 10000;
 
 moment.locale('es'); 
 
@@ -229,8 +232,11 @@ const printTransferVoucher = async (req = request, res = response) =>{
         transfers.detailsTransfers.forEach(detail => {
             const sentQty = Number(detail?.quantity || 0);
             const receivedQty = Number(detail?.quantity_received !== null && detail?.quantity_received !== undefined ? detail?.quantity_received : detail?.quantity || 0);
-            quantity_total += sentQty;
-            quantity_received_total += receivedQty;
+            const reconciliation = reconcileTransferReceipt(sentQty, receivedQty);
+            const excessQty = transfers.status === 'RECEIVED' ? reconciliation.excess : 0;
+            const shortageQty = transfers.status === 'RECEIVED' ? reconciliation.shortage : 0;
+            quantity_total = roundQuantity(quantity_total + reconciliation.sent);
+            quantity_received_total = roundQuantity(quantity_received_total + reconciliation.received);
 
             if (!units.includes(detail?.product?.unit.siglas)) {
                 units.push(detail?.product?.unit.siglas);
@@ -242,10 +248,8 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 diffPctText = `${diffPct.toFixed(2)}%`;
             }
 
-            const excedente = transfers.status === 'RECEIVED' ? Math.max(0, receivedQty - sentQty) : 0;
-            const faltante = transfers.status === 'RECEIVED' ? Math.max(0, sentQty - receivedQty) : 0;
-            excedente_total += excedente;
-            faltante_total += faltante;
+            excedente_total = roundQuantity(excedente_total + excessQty);
+            faltante_total = roundQuantity(faltante_total + shortageQty);
 
             const tableData = [
                 {text:detail?.product?.cod, fontSize:8}, 
@@ -253,8 +257,8 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
                 {text:sentQty, fontSize:8, alignment: 'center'}, 
                 {text:transfers.status === 'RECEIVED' ? receivedQty : '-', fontSize:8, alignment: 'center'}, 
-                {text:excedente, fontSize:8, alignment: 'center'}, 
-                {text:faltante, fontSize:8, alignment: 'center'}, 
+                {text:excessQty, fontSize:8, alignment: 'center'},
+                {text:shortageQty, fontSize:8, alignment: 'center'},
                 {text:diffPctText, fontSize:8, alignment: 'center'}, 
                 {text:detail?.observation || '-', fontSize:8, alignment: 'center'}, 
             ];
@@ -269,15 +273,15 @@ const printTransferVoucher = async (req = request, res = response) =>{
 
         dataPdf[9].table.body.push(
             [
-                {text:'',colSpan: 2, border:[false,false,false,false]},
+                {text:'PESOS TOTALES', colSpan: 2, fontSize:8, bold:true, alignment:'right'},
                 '',
-                {text: units.join(','), fontSize:8, alignment:'center'},
-                {text: quantity_total,  fontSize:8, alignment:'center'},
-                {text: transfers.status === 'RECEIVED' ? quantity_received_total : '-', fontSize:8, alignment:'center'},
-                {text: excedente_total, fontSize:8, alignment:'center'},
-                {text: faltante_total, fontSize:8, alignment:'center'},
-                {text: totalDiffPctText, fontSize:8, alignment:'center'},
-                {text: '', border:[false,false,false,false]},
+                {text: units.join(','), fontSize:8, bold:true, alignment:'center'},
+                {text: quantity_total, fontSize:8, bold:true, alignment:'center'},
+                {text: transfers.status === 'RECEIVED' ? quantity_received_total : '-', fontSize:8, bold:true, alignment:'center'},
+                {text: excedente_total, fontSize:8, bold:true, alignment:'center'},
+                {text: faltante_total, fontSize:8, bold:true, alignment:'center'},
+                {text: totalDiffPctText, fontSize:8, bold:true, alignment:'center'},
+                {text: '', fontSize:8, bold:true},
             ],
         );
         let docDefinition = {
@@ -336,7 +340,7 @@ const dataPdfReturnTransferVoucher = (transfer) => [
     {
         style: 'tableExample',
         table: {
-            widths: [40, '*', 25, 55, 70, 55, 55, 50, 85],
+            widths: [35, '*', 23, 55, 55, 48, 48, 45, 70],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 

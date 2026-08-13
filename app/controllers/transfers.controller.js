@@ -5,6 +5,9 @@ const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const get_num_request = require('../helpers/generate-cod');
 const notificationService = require('../services/notification.service');
+const { buildReceivedDetails } = require('../helpers/transfer-reception');
+
+const BALANCE_DIFFERENCE_PRODUCT_ID = 122;
 
 const getTransferFindOne = async (req = request, res = response) => {
     try {
@@ -208,6 +211,27 @@ const receivedTransfer = async (req = request, res = response ) => {
             where: { id:id_transfer, status:'PENDING' },
             include: [{association: 'detailsTransfers'}], transaction: t
         });
+        const receiptDetailsResult = buildReceivedDetails(details, transfer_received.detailsTransfers);
+        if (receiptDetailsResult.errors) {
+            await t.rollback();
+            return res.status(422).json({
+                ok: false,
+                errors: receiptDetailsResult.errors.map((msg) => ({ msg })),
+            });
+        }
+        const totalMerma = receiptDetailsResult.receivedDetails.reduce((total, { detail, quantityReceived }) => {
+            return total + Math.max(0, Number(detail.quantity) - quantityReceived);
+        }, 0);
+        const mermaProduct = totalMerma > 0
+            ? await Product.findOne({ where: { id: BALANCE_DIFFERENCE_PRODUCT_ID, status: true }, transaction: t })
+            : null;
+        if (totalMerma > 0 && !mermaProduct) {
+            await t.rollback();
+            return res.status(422).json({
+                ok: false,
+                errors: [{ msg: `El producto de Diferencia de balanza (ID ${BALANCE_DIFFERENCE_PRODUCT_ID}) no existe o está inactivo.` }],
+            });
+        }
         transfer_received.status = 'RECEIVED';   
         transfer_received.id_user_received = req.userAuth.id;
         if( new Date(transfer_received.date_send)  > new Date(date_received)) {
@@ -223,20 +247,10 @@ const receivedTransfer = async (req = request, res = response ) => {
         await transfer_received.save({transaction: t});
         const { id_sucursal_send,id_sucursal_received } = transfer_received;
         /*  detalles del traslado */
-        for (const detail of transfer_received.detailsTransfers) {
-            let qtyReceived = Number(detail.quantity);
-            let obs = null;
-            if (details && Array.isArray(details)) {
-                const incomingDetail = details.find(d => d.id_detail === detail.id);
-                if (incomingDetail && incomingDetail.quantity_received !== undefined && incomingDetail.quantity_received !== null) {
-                    qtyReceived = Number(incomingDetail.quantity_received);
-                }
-                if (incomingDetail && incomingDetail.observation !== undefined) {
-                    obs = incomingDetail.observation;
-                }
-            }
+        for (const receiptDetail of receiptDetailsResult.receivedDetails) {
+            const { detail, quantityReceived: qtyReceived, observation: obs } = receiptDetail;
             const qtySent = Number(detail.quantity);
-            detail.quantity_received = Math.min(qtyReceived, qtySent);
+            detail.quantity_received = qtyReceived;
             detail.observation = obs;
             await detail.save({ transaction: t });
 
@@ -260,7 +274,7 @@ const receivedTransfer = async (req = request, res = response ) => {
             if (qtyReceived > qtySent) {
                 await kardexMovements.create({
                     type: 'INPUT',
-                    date: new Date(),
+                    date: transfer_received.date_received,
                     details: `EXCEDENTE TRASPASO #${transfer_received.cod}`,
                     quantity: qtyReceived - qtySent,
                     cost: detail.cost,
@@ -276,20 +290,10 @@ const receivedTransfer = async (req = request, res = response ) => {
             }
         }
         /*  Merma: registrar diferencia negativa en kardex */
-        let totalMerma = 0;
-        for (const detail of transfer_received.detailsTransfers) {
-            const qtySent = Number(detail.quantity);
-            const qtyReceived = Number(detail.quantity_received);
-            if (qtyReceived < qtySent) {
-                totalMerma += qtySent - qtyReceived;
-            }
-        }
         if (totalMerma > 0) {
-            const mermaProduct = await Product.findByPk(122, { transaction: t });
-            if (mermaProduct) {
-                await kardexMovements.create({
+            await kardexMovements.create({
                     type: 'INPUT',
-                    date: new Date(),
+                    date: transfer_received.date_received,
                     details: `MERMA TRASPASO #${transfer_received.cod}`,
                     quantity: totalMerma,
                     cost: 0,
@@ -302,22 +306,21 @@ const receivedTransfer = async (req = request, res = response ) => {
                     status: true,
                     registry_number: transfer_received.registry_number,
                 }, { transaction: t });
-                const stockMerma = await Stock.findOne({
+            const stockMerma = await Stock.findOne({
                     order: [['id', 'DESC']],
                     where: { id_product: mermaProduct.id, id_sucursal: id_sucursal_received, id_storage: id_storage_received, status: true },
                     lock: true,
                     transaction: t
                 });
-                if (!stockMerma) {
-                    await Stock.create({
+            if (!stockMerma) {
+                await Stock.create({
                         stock_min: 1, stock: totalMerma,
                         id_product: mermaProduct.id, id_sucursal: id_sucursal_received, id_storage: id_storage_received,
                         status: true,
-                    }, { transaction: t });
-                } else {
-                    stockMerma.stock = Number(stockMerma.stock) + totalMerma;
-                    await stockMerma.save({ transaction: t });
-                }
+                }, { transaction: t });
+            } else {
+                stockMerma.stock = Number(stockMerma.stock) + totalMerma;
+                await stockMerma.save({ transaction: t });
             }
         }
          /* Ingreso histórico */
