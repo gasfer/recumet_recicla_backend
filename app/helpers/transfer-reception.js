@@ -68,7 +68,57 @@ const reconcileTransferReceipt = (sentQuantity, receivedQuantity) => {
     };
 };
 
+const buildTransferVoucherSummary = (details, transferStatus) => {
+    const round = (value) => Math.round((value + Number.EPSILON) * 10000) / 10000;
+    const received = transferStatus === 'RECEIVED';
+    const units = new Set();
+    const totals = { sent: 0, received: 0, excess: 0, shortage: 0 };
+
+    const rows = details.map((detail) => {
+        const sentQuantity = Number(detail?.quantity || 0);
+        const receivedQuantity = Number(
+            detail?.quantity_received !== null && detail?.quantity_received !== undefined
+                ? detail.quantity_received
+                : detail?.quantity || 0,
+        );
+        const reconciliation = reconcileTransferReceipt(sentQuantity, receivedQuantity);
+        const excess = received ? reconciliation.excess : 0;
+        const shortage = received ? reconciliation.shortage : 0;
+
+        totals.sent = round(totals.sent + reconciliation.sent);
+        totals.received = round(totals.received + reconciliation.received);
+        totals.excess = round(totals.excess + excess);
+        totals.shortage = round(totals.shortage + shortage);
+
+        if (detail?.product?.unit?.siglas) units.add(detail.product.unit.siglas);
+
+        return {
+            sent: reconciliation.sent,
+            received: received ? reconciliation.received : '-',
+            excess,
+            shortage,
+            differencePercentage: received && sentQuantity > 0
+                ? `${(((receivedQuantity - sentQuantity) / sentQuantity) * 100).toFixed(2)}%`
+                : '-',
+            observation: detail?.observation || '-',
+        };
+    });
+
+    return {
+        rows,
+        units: [...units],
+        totals: {
+            ...totals,
+            received: received ? totals.received : '-',
+            differencePercentage: received && totals.sent > 0
+                ? `${(((totals.received - totals.sent) / totals.sent) * 100).toFixed(2)}%`
+                : '-',
+        },
+    };
+};
+
 module.exports = {
     buildReceivedDetails,
     reconcileTransferReceipt,
+    buildTransferVoucherSummary,
 };

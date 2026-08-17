@@ -1,13 +1,14 @@
 const { response, request } = require('express');
-const { Transfers, sequelize , DetailsTransfers, Stock, History, Product, kardexMovements } = require('../database/config');
+const { Transfers, sequelize , DetailsTransfers, Stock, History, Product, Category, kardexMovements } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const get_num_request = require('../helpers/generate-cod');
 const notificationService = require('../services/notification.service');
 const { buildReceivedDetails } = require('../helpers/transfer-reception');
+const { createTransferReviewNote } = require('../services/transfer-review-note.service');
 
-const BALANCE_DIFFERENCE_PRODUCT_ID = 122;
+const DIFFERENCE_CATEGORY_ID = 22;
 
 const getTransferFindOne = async (req = request, res = response) => {
     try {
@@ -206,7 +207,7 @@ const newTransfer = async (req = request, res = response ) => {
 const receivedTransfer = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
-        const { id_transfer, id_storage_received, observations_received, date_received, details } = req.body;
+        const { id_transfer, id_storage_received, observations_received, date_received, details, id_merma_product } = req.body;
         const transfer_received = await Transfers.findOne({
             where: { id:id_transfer, status:'PENDING' },
             include: [{association: 'detailsTransfers'}], transaction: t
@@ -223,13 +224,17 @@ const receivedTransfer = async (req = request, res = response ) => {
             return total + Math.max(0, Number(detail.quantity) - quantityReceived);
         }, 0);
         const mermaProduct = totalMerma > 0
-            ? await Product.findOne({ where: { id: BALANCE_DIFFERENCE_PRODUCT_ID, status: true }, transaction: t })
+            ? await Product.findOne({
+                where: { id: id_merma_product, status: true },
+                include: [{ association: 'category', required: true, where: { id: DIFFERENCE_CATEGORY_ID, status: true } }],
+                transaction: t,
+            })
             : null;
         if (totalMerma > 0 && !mermaProduct) {
             await t.rollback();
             return res.status(422).json({
                 ok: false,
-                errors: [{ msg: `El producto de Diferencia de balanza (ID ${BALANCE_DIFFERENCE_PRODUCT_ID}) no existe o está inactivo.` }],
+                errors: [{ msg: 'Debe seleccionar un producto activo de la categoría de diferencias.' }],
             });
         }
         transfer_received.status = 'RECEIVED';   
@@ -272,7 +277,7 @@ const receivedTransfer = async (req = request, res = response ) => {
             }
             /*  Excedente: registrar diferencia positiva en kardex */
             if (qtyReceived > qtySent) {
-                await kardexMovements.create({
+                const excessMovement = await kardexMovements.create({
                     type: 'INPUT',
                     date: transfer_received.date_received,
                     details: `EXCEDENTE TRASPASO #${transfer_received.cod}`,
@@ -287,11 +292,28 @@ const receivedTransfer = async (req = request, res = response ) => {
                     status: true,
                     registry_number: transfer_received.registry_number,
                 }, { transaction: t });
+                await createTransferReviewNote({
+                    type: 'EXCEDENTE_PARA_REVISION',
+                    date: transfer_received.date_received,
+                    observations: observations_received,
+                    transfer: transfer_received,
+                    kardexMovement: excessMovement,
+                    productId: detail.id_product,
+                    userId: req.userAuth.id,
+                    storageId: id_storage_received,
+                    details: [{
+                        id_detail_transfer: detail.id,
+                        id_product: detail.id_product,
+                        quantity_sent: qtySent,
+                        quantity_received: qtyReceived,
+                        quantity_difference: qtyReceived - qtySent,
+                    }],
+                }, t);
             }
         }
         /*  Merma: registrar diferencia negativa en kardex */
         if (totalMerma > 0) {
-            await kardexMovements.create({
+            const shortageMovement = await kardexMovements.create({
                     type: 'INPUT',
                     date: transfer_received.date_received,
                     details: `MERMA TRASPASO #${transfer_received.cod}`,
@@ -322,6 +344,25 @@ const receivedTransfer = async (req = request, res = response ) => {
                 stockMerma.stock = Number(stockMerma.stock) + totalMerma;
                 await stockMerma.save({ transaction: t });
             }
+            await createTransferReviewNote({
+                type: 'FALTANTE_PARA_REVISION',
+                date: transfer_received.date_received,
+                observations: observations_received,
+                transfer: transfer_received,
+                kardexMovement: shortageMovement,
+                productId: mermaProduct.id,
+                userId: req.userAuth.id,
+                storageId: id_storage_received,
+                details: receiptDetailsResult.receivedDetails
+                    .filter(({ detail, quantityReceived }) => quantityReceived < Number(detail.quantity))
+                    .map(({ detail, quantityReceived }) => ({
+                        id_detail_transfer: detail.id,
+                        id_product: detail.id_product,
+                        quantity_sent: Number(detail.quantity),
+                        quantity_received: quantityReceived,
+                        quantity_difference: Number(detail.quantity) - quantityReceived,
+                    })),
+            }, t);
         }
          /* Ingreso histórico */
         await History.create({

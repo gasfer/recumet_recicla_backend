@@ -21,6 +21,7 @@ module.exports = (sequelize, DataTypes) => {
       Sucursal.hasMany(models.CajaSmall,{as: 'cajaSmall', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Transfers,{as: 'transfers_send', foreignKey:'id_sucursal_send'});
       Sucursal.hasMany(models.Transfers,{as: 'transfers_received', foreignKey:'id_sucursal_received'});
+      Sucursal.hasMany(models.TransferReviewNote,{as: 'transferReviewNotes', foreignKey:'id_sucursal'});
     }
   }
   Sucursal.init({

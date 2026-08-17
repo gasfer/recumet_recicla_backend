@@ -511,7 +511,7 @@ const uploadFileProduct = async (req, res) => {
 
 const getProductsForSelect = async (req = request, res = response) => {
   try {
-    const { query, limit = 10, category_type, category_ids } = req.query;
+    const { query, limit = 10, category_type, category_ids, mermas } = req.query;
     const where = { status: true };
 
     if (query) {
@@ -525,6 +525,11 @@ const getProductsForSelect = async (req = request, res = response) => {
     const categoryWhere = {};
     if (category_type) {
       categoryWhere.type = category_type;
+    }
+    if (mermas === 'true') {
+      categoryWhere.name = 'MERMAS';
+      categoryWhere.type = 'RAW_MATERIAL';
+      categoryWhere.status = true;
     }
     if (category_ids) {
       const ids = category_ids.split(",").map(Number);

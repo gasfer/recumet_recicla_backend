@@ -8,6 +8,7 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       DetailsTransfers.belongsTo(models.Transfers,{as: 'transfers', foreignKey:'id_transfer'});
       DetailsTransfers.belongsTo(models.Product,{as: 'product', foreignKey:'id_product'});
+      DetailsTransfers.hasMany(models.TransferReviewNoteDetail,{as: 'reviewNoteDetails', foreignKey:'id_detail_transfer'});
     }
   }
   DetailsTransfers.init({
