@@ -12,17 +12,17 @@ const base_url = environment.base_url;
   providedIn: 'root'
 })
 export class InputsService {
-  detailShopping   = signal<Product[]>([]);
-  providerSelect   = signal<Provider|undefined>(undefined);
-  dataInputForEdit = signal<Input|undefined>(undefined);
+  detailShopping = signal<Product[]>([]);
+  providerSelect = signal<Provider | undefined>(undefined);
+  dataInputForEdit = signal<Input | undefined>(undefined);
   showModalConfigInput: boolean = false;
   showModalSaveInput: boolean = false;
   showModalDetailsInput: boolean = false;
   isEdit: boolean = false;
   editSubs$: EventEmitter<Input> = new EventEmitter<Input>();
   detailsSubs$: EventEmitter<Input> = new EventEmitter<Input>();
-  types_registry = signal([{name: 'SIN FICHA', code: 'SIN FICHA'},{name: 'FICHA', code: 'FICHA'},{name: 'BOLETA', code: 'BOLETA'}]);
-  private http   = inject(HttpClient);
+  types_registry = signal([{ name: 'SIN FICHA', code: 'SIN FICHA' }, { name: 'FICHA', code: 'FICHA' }, { name: 'BOLETA', code: 'BOLETA' }]);
+  private http = inject(HttpClient);
   referral_sources = signal([
     { name: 'Redes Sociales (Facebook, TikTok, Instagram)', code: 'REDES SOCIALES' },
     { name: 'Página Web RECUMET', code: 'PAGINA WEB RECUMET' },
@@ -32,7 +32,7 @@ export class InputsService {
     { name: 'Seguimiento Comercial (Llamadas periódicas)', code: 'SEGUIMIENTO COMERCIAL' }
   ]);
 
-  public _inputConfig : InputConfig = {
+  public _inputConfig: InputConfig = {
     searchForCode: localStorage.getItem('searchForCode') === 'true' ? true : false,
     clearInputAfterProductSearch: localStorage.getItem('clearInputAfterProductSearch') === 'false' ? false : true,
     viewCardProducts: localStorage.getItem('viewCardProducts') === 'true' ? true : false,
@@ -42,14 +42,14 @@ export class InputsService {
     printHalfPage: localStorage.getItem('printHalfPage') === 'true' ? true : false,
   }
 
-  getInputById(id_input:string): Observable<GetOneInput>{
-    let  url = `${base_url}/input/find/${id_input}`;
+  getInputById(id_input: string): Observable<GetOneInput> {
+    let url = `${base_url}/input/find/${id_input}`;
     return this.http.get<GetOneInput>(url);
   }
 
-  getAllAndSearchInputs(page: number, limit: number,params:FormSearchInputs, type: string = '', query?: string,field_sort:string = 'id',order:string = 'DESC',): Observable<GetAllInputs>{
+  getAllAndSearchInputs(page: number, limit: number, params: FormSearchInputs, type: string = '', query?: string, field_sort: string = 'id', order: string = 'DESC',): Observable<GetAllInputs> {
     let url = '';
-    if(type === ''){
+    if (type === '') {
       url = `${base_url}/input?page=${page}&limit=${limit}&field_sort=${field_sort}&order=${order}`;
     } else {
       url = `${base_url}/input?page=${page}&limit=${limit}&type=${type}&query=${query}&field_sort=${field_sort}&order=${order}`;
@@ -63,14 +63,14 @@ export class InputsService {
     });
   }
 
-  postNewInput(data:NewInputForm): Observable<{ok:string,msg:string,id_input:number}> {
+  postNewInput(data: NewInputForm): Observable<{ ok: string, msg: string, id_input: number }> {
     const url = `${base_url}/input`;
-    return this.http.post<{ok:string,msg:string,id_input:number}>(url, data);
+    return this.http.post<{ ok: string, msg: string, id_input: number }>(url, data);
   }
 
-  putUpdateInput(id_input:number,data:NewInputForm): Observable<{ok:string,msg:string,id_input:number}> {
+  putUpdateInput(id_input: number, data: NewInputForm): Observable<{ ok: string, msg: string, id_input: number }> {
     const url = `${base_url}/input/${id_input}`;
-    return this.http.put<{ok:string,msg:string,id_input:number}>(url, data);
+    return this.http.put<{ ok: string, msg: string, id_input: number }>(url, data);
   }
 
   deleteInput(id_input: number) {
@@ -79,18 +79,18 @@ export class InputsService {
   }
 
   resetInput() {
-    this.detailShopping.update((details)=>  details = []);
+    this.detailShopping.update((details) => details = []);
     this.providerSelect.set(undefined);
   }
 
   updateDetailShopping(product: Product, updateQuantity: boolean = true, newQuantity: boolean = false) {
     const productExist = this.detailShopping().length > 0 ? this.detailShopping().find((prod) => prod.id === product.id) : false;
-    if(productExist){
+    if (productExist) {
       this.detailShopping.update((details) => {
         return details.map((prod) => {
           if (prod.id !== product.id) return prod;
           if (updateQuantity) {
-            prod.quantity = newQuantity ? product.quantity : prod.quantity + (prod.set_quantity ??  1);
+            prod.quantity = newQuantity ? product.quantity : prod.quantity + (prod.set_quantity ?? 1);
           }
           prod.import = prod.quantity * prod.costo;
           return prod;
@@ -98,7 +98,7 @@ export class InputsService {
       });
     } else {
       //primera agregación al carrito
-      product.quantity = product.set_quantity ??  1;
+      product.quantity = product.set_quantity ?? 1;
       product.import = product.quantity * product.costo;
       this.detailShopping.update((details) => [
         ...details,
@@ -107,67 +107,67 @@ export class InputsService {
     }
   }
   //* Reportes */
-  getReportPdf(params:FormSearchInputs,field_sort:string = 'id',order:string = 'DESC',) {
+  getReportPdf(params: FormSearchInputs, field_sort: string = 'id', order: string = 'DESC',) {
     const url = `${base_url}/input/pdf?field_sort=${field_sort}&order=${order}`;
-    return this.http.get<any>(url,{
-              params: new HttpParams({
-                fromObject: {
-                  ...params
-                }
-              }),
-              responseType: 'blob' as 'json'
-            });
+    return this.http.get<any>(url, {
+      params: new HttpParams({
+        fromObject: {
+          ...params
+        }
+      }),
+      responseType: 'blob' as 'json'
+    });
   }
 
-  getReportExcel(params:FormSearchInputs,field_sort:string = 'id',order:string = 'DESC',) {
+  getReportExcel(params: FormSearchInputs, field_sort: string = 'id', order: string = 'DESC',) {
     const url = `${base_url}/input/excel?field_sort=${field_sort}&order=${order}`;
-    return this.http.get(url,{
-              params: new HttpParams({
-                fromObject: {
-                  ...params
-                }
-              }),
-              responseType: 'blob',
-            });
+    return this.http.get(url, {
+      params: new HttpParams({
+        fromObject: {
+          ...params
+        }
+      }),
+      responseType: 'blob',
+    });
   }
   //* Reportes Detalles */
-  getReportDetailsPdf(params:FormSearchInputs) {
+  getReportDetailsPdf(params: FormSearchInputs) {
     const url = `${base_url}/input/pdf/details`;
-    return this.http.get<any>(url,{
-              params: new HttpParams({
-                fromObject: {
-                  ...params
-                }
-              }),
-              responseType: 'blob' as 'json'
-            });
+    return this.http.get<any>(url, {
+      params: new HttpParams({
+        fromObject: {
+          ...params
+        }
+      }),
+      responseType: 'blob' as 'json'
+    });
   }
 
-  getReportDetailsCPPPdf(params:FormSearchInputs) {
+  getReportDetailsCPPPdf(params: FormSearchInputs) {
     const url = `${base_url}/input/pdf/details/cpp`;
-    return this.http.get<any>(url,{
-              params: new HttpParams({
-                fromObject: {
-                  ...params
-                }
-              }),
-              responseType: 'blob' as 'json'
-            });
+    return this.http.get<any>(url, {
+      params: new HttpParams({
+        fromObject: {
+          ...params
+        }
+      }),
+      responseType: 'blob' as 'json'
+    });
   }
-  getReportDetailsExcel(params:FormSearchInputs) {
+  getReportDetailsExcel(params: FormSearchInputs) {
     const url = `${base_url}/input/excel/details`;
-    return this.http.get(url,{
-              params: new HttpParams({
-                fromObject: {
-                  ...params
-                }
-              }),
-              responseType: 'blob',
-            });
+    return this.http.get(url, {
+      params: new HttpParams({
+        fromObject: {
+          ...params
+        }
+      }),
+      responseType: 'blob',
+    });
   }
 
   //* IMPRIMIR BOLETA
-  getPrintVoucherInput(id_input:Number) {
+  getPrintVoucherInput(id_input: Number) {
     let format = 'normal';
     if (this._inputConfig.printRoll) {
       format = 'rollo';
@@ -175,9 +175,9 @@ export class InputsService {
       format = 'media';
     }
     const url = `${base_url}/input/pdf/voucher/${id_input}?format=${format}`;
-    return this.http.get(url,{
-              responseType: 'blob',
-            });
+    return this.http.get(url, {
+      responseType: 'blob',
+    });
   }
 
   printPdfReport(id_input: number) {

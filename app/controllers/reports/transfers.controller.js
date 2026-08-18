@@ -1,5 +1,5 @@
 const { Op } = require("sequelize");
-const { Transfers } = require('../../database/config');
+const { Transfers, TransferReviewNote } = require('../../database/config');
 const PdfPrinter = require('pdfmake');
 const fonts = require('../../helpers/generator-pdf/fonts');
 const styles = require('../../helpers/generator-pdf/styles');
@@ -10,9 +10,12 @@ const { whereDateForType } = require("../../helpers/where_range");
 const imagePath = path.join(__dirname, '../../../uploads/logo.png');
 const ExcelJS = require('exceljs');
 const { response } = require("express");
+const { buildTransferVoucherSummary } = require('../../helpers/transfer-reception');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
+
+const roundQuantity = (value) => Math.round((Number(value) + Number.EPSILON) * 10000) / 10000;
 
 moment.locale('es'); 
 
@@ -202,94 +205,135 @@ const returnDataTransfer = async (params) => {
     return await Transfers.findAll(optionsDb);
 }
 
+const transferVoucherIncludes = [
+    {association: 'sucursal_send', attributes: ['name']},
+    {association: 'sucursal_received', attributes: ['name']},
+    {association: 'storage_send', attributes: ['name']},
+    {association: 'storage_received', attributes: ['name']},
+    {association: 'user_send', attributes: ['full_names']},
+    {association: 'user_received', attributes: ['full_names']},
+    {association: 'scale', attributes: ['name']},
+    { association: 'detailsTransfers', include: [
+        { association: 'product', attributes: ['cod', 'name'], include: [{ association: 'unit', attributes: ['name', 'siglas'] }] },
+    ] },
+];
+
+const sendVoucherPdf = (res, dataPdf, filename) => {
+    const docDefinition = { content: dataPdf, pageOrientation: 'landscape', styles };
+    const printer = new PdfPrinter(fonts);
+    const pdfDoc = printer.createPdfKitDocument(docDefinition);
+    const chunks = [];
+
+    pdfDoc.on('data', (chunk) => chunks.push(chunk));
+    pdfDoc.on('end', () => {
+        res.setHeader('Content-Type', 'application/pdf;');
+        res.setHeader('Content-disposition', `filename=${filename}.pdf`);
+        res.send(Buffer.concat(chunks));
+    });
+    pdfDoc.end();
+};
+
 const printTransferVoucher = async (req = request, res = response) =>{
     try {
         const { id_transfer } = req.params;
-        const transfers = await Transfers.findByPk(id_transfer,{
-            include: [ 
-                {association: 'sucursal_send', attributes: ['name']},
-                {association: 'sucursal_received', attributes: ['name']},
-                {association: 'storage_send', attributes: ['name']},
-                {association: 'storage_received', attributes: ['name']},
-                {association: 'user_send', attributes: ['full_names']},
-                {association: 'user_received', attributes: ['full_names']},
-                {association: 'scale', attributes: ['name']},
-                { association: 'detailsTransfers', include: [
-                        { association: 'product',  attributes: ['cod','name'], include: [{association:'unit', attributes: ['name','siglas']}]},
-                    ]
-                },
-            ]
-        });
-        let dataPdf = dataPdfReturnTransferVoucher(transfers); //PDF 
-        let quantity_total = 0;
-        let quantity_received_total = 0;
-        let units = [];
-        transfers.detailsTransfers.forEach(detail => {
-            const sentQty = Number(detail?.quantity || 0);
-            const receivedQty = Number(detail?.quantity_received !== null && detail?.quantity_received !== undefined ? detail?.quantity_received : detail?.quantity || 0);
-            quantity_total += sentQty;
-            quantity_received_total += receivedQty;
+        const transfer = await Transfers.findByPk(id_transfer, { include: transferVoucherIncludes });
+        if (!transfer) return res.status(404).json({ ok: false, errors: [{ msg: 'El traslado no existe.' }] });
 
-            if (!units.includes(detail?.product?.unit.siglas)) {
-                units.push(detail?.product?.unit.siglas);
-            }
-            
-            let diffPctText = '-';
-            if (transfers.status === 'RECEIVED' && sentQty > 0) {
-                const diffPct = ((receivedQty - sentQty) / sentQty) * 100;
-                diffPctText = `${diffPct.toFixed(2)}%`;
-            }
-
+        const dataPdf = dataPdfReturnTransferVoucher(transfer);
+        transfer.detailsTransfers.forEach((detail) => {
             const tableData = [
-                {text:detail?.product?.cod, fontSize:8}, 
-                {text:detail?.product?.name, fontSize:8}, 
-                {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
-                {text:sentQty, fontSize:8, alignment: 'center'}, 
-                {text:transfers.status === 'RECEIVED' ? receivedQty : '-', fontSize:8, alignment: 'center'}, 
-                {text:diffPctText, fontSize:8, alignment: 'center'}, 
-                {text:detail?.observation || '-', fontSize:8, alignment: 'center'}, 
+                { text: detail?.product?.cod, fontSize: 8 },
+                { text: detail?.product?.name, fontSize: 8 },
+                { text: detail?.product?.unit?.siglas, fontSize: 8, alignment: 'center' },
+                { text: roundQuantity(detail?.quantity), fontSize: 8, alignment: 'center' },
             ];
             dataPdf[9].table.body.push(tableData);
         });
-        
-        let totalDiffPctText = '-';
-        if (transfers.status === 'RECEIVED' && quantity_total > 0) {
-            const totalDiffPct = ((quantity_received_total - quantity_total) / quantity_total) * 100;
-            totalDiffPctText = `${totalDiffPct.toFixed(2)}%`;
-        }
-
         dataPdf[9].table.body.push(
             [
-                {text:'',colSpan: 2, border:[false,false,false,false]},
+                { text: 'PESOS TOTALES', colSpan: 2, fontSize: 8, bold: true, alignment: 'right' },
                 '',
-                {text: units.join(','), fontSize:8, alignment:'center'},
-                {text: quantity_total,  fontSize:8, alignment:'center'},
-                {text: transfers.status === 'RECEIVED' ? quantity_received_total : '-', fontSize:8, alignment:'center'},
-                {text: totalDiffPctText, fontSize:8, alignment:'center'},
-                {text: '', border:[false,false,false,false]},
+                { text: [...new Set(transfer.detailsTransfers.map((detail) => detail?.product?.unit?.siglas).filter(Boolean))].join(','), fontSize: 8, bold: true, alignment: 'center' },
+                { text: roundQuantity(transfer.detailsTransfers.reduce((total, detail) => total + Number(detail.quantity || 0), 0)), fontSize: 8, bold: true, alignment: 'center' },
             ],
         );
-        let docDefinition = {
-            content: dataPdf,
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
-        });
-        pdfDoc.end();
+        sendVoucherPdf(res, dataPdf, `guia-traslado-${transfer.cod}`);
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la Guía de traslado.' }] });
     }
 }
+
+const printTransferReceptionVoucher = async (req = request, res = response) => {
+    try {
+        const { id_transfer } = req.params;
+        const transfer = await Transfers.findByPk(id_transfer, { include: transferVoucherIncludes });
+        if (!transfer) return res.status(404).json({ ok: false, errors: [{ msg: 'El traslado no existe.' }] });
+        if (transfer.status !== 'RECEIVED') return res.status(409).json({ ok: false, errors: [{ msg: 'La Guía de recepción sólo está disponible para traslados recibidos.' }] });
+
+        const reviewNotes = await TransferReviewNote.findAll({
+            where: { id_transfer: transfer.id },
+            include: [
+                { association: 'registeredProduct', attributes: ['cod', 'name'] },
+                { association: 'details', include: [{ association: 'product', attributes: ['cod', 'name'] }] },
+            ],
+        });
+        const voucherSummary = buildTransferVoucherSummary(transfer.detailsTransfers, transfer.status);
+        const dataPdf = dataPdfReturnReceptionVoucher(transfer);
+
+        voucherSummary.rows.forEach((row, index) => {
+            const detail = transfer.detailsTransfers[index];
+            dataPdf[9].table.body.push([
+                { text: `${detail?.product?.cod || ''} - ${detail?.product?.name || ''}`, fontSize: 8 },
+                { text: detail?.product?.unit?.siglas, fontSize: 8, alignment: 'center' },
+                { text: row.sent, fontSize: 8, alignment: 'center' },
+                { text: row.received, fontSize: 8, alignment: 'center' },
+                { text: row.excess, fontSize: 8, alignment: 'center' },
+                { text: row.shortage, fontSize: 8, alignment: 'center' },
+                { text: row.differencePercentage, fontSize: 8, alignment: 'center' },
+                { text: row.observation, fontSize: 8, alignment: 'center' },
+            ]);
+        });
+        dataPdf[9].table.body.push([
+            { text: 'PESOS TOTALES', fontSize: 8, bold: true, alignment: 'right' },
+            { text: voucherSummary.units.join(','), fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.sent, fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.received, fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.excess, fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.shortage, fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.differencePercentage, fontSize: 8, bold: true, alignment: 'center' },
+            { text: '', fontSize: 8, bold: true },
+        ]);
+
+        const reconciliationRows = reviewNotes.flatMap((note) => note.details.map((detail) => [
+            { text: `${detail.product.cod} - ${detail.product.name}`, fontSize: 8 },
+            { text: note.type === 'EXCEDENTE_PARA_REVISION' ? 'EXCEDENTE' : 'FALTANTE', fontSize: 8, alignment: 'center' },
+            { text: roundQuantity(detail.quantity_difference), fontSize: 8, alignment: 'center' },
+            { text: note.type === 'EXCEDENTE_PARA_REVISION'
+                ? `${detail.product.cod} - ${detail.product.name}`
+                : note.registeredProduct ? `${note.registeredProduct.cod} - ${note.registeredProduct.name}` : '-', fontSize: 8 },
+        ]));
+        if (reconciliationRows.length > 0) {
+            const totalExcess = reviewNotes.filter((note) => note.type === 'EXCEDENTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
+            const totalShortage = reviewNotes.filter((note) => note.type === 'FALTANTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
+            dataPdf[10].stack.unshift(createReconciliationTable(reconciliationRows, totalExcess, totalShortage));
+        }
+        sendVoucherPdf(res, dataPdf, `guia-recepcion-${transfer.cod}`);
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la Guía de recepción.' }] });
+    }
+};
+
+const createReconciliationTable = (rows, totalExcess, totalShortage) => ({
+    margin: [0, 8, 0, 0],
+    table: { widths: ['*', 75, 75, '*'], body: [
+        [{ text: 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS', colSpan: 4, bold: true, fontSize: 8, fillColor: '#eeeeee' }, '', '', ''],
+        [{ text: 'PRODUCTO ORIGEN', bold: true, fontSize: 8 }, { text: 'TIPO', bold: true, fontSize: 8 }, { text: 'KG REGISTRADOS', bold: true, fontSize: 8 }, { text: 'PRODUCTO DESTINO', bold: true, fontSize: 8 }],
+        ...rows,
+        [{ text: 'TOTALES', bold: true, fontSize: 8 }, { text: `EXC: ${roundQuantity(totalExcess)}`, bold: true, fontSize: 8 }, { text: `FAL: ${roundQuantity(totalShortage)}`, bold: true, fontSize: 8 }, ''],
+    ] },
+});
 
 const dataPdfReturnTransferVoucher = (transfer) => [
     {
@@ -316,79 +360,113 @@ const dataPdfReturnTransferVoucher = (transfer) => [
         columns: [
             { text: `Sucursal:`, bold:true ,style: 'text',width: 45, },
             { text: `${transfer.sucursal_received.name}`, style: 'text',  },
-            { text: `Fecha recepción:`, bold:true ,style: 'text',width: 80, },
-            { text: transfer.date_received ? moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss') : '-', style: 'text',  },
         ]
     },
     { text: 'DETALLE DE LOS PRODUCTOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,5,0,0] },
     {
         style: 'tableExample',
         table: {
-            widths: [40, '*', 25, 55, 70, 50, 85],
+            widths: [45, '*', 40, 85],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
                     {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                     {text:'CANT. ENVIADO',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'CANT. RECEPCIONADO',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'PORCENTAJE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'OBSERVACIÓN',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
                 ]
             ]
         }
     },
-    {
-        margin: [0,10,0,0],
-        style: 'tableExample',
-        table: {
-            widths: ['*', '*'],
-            body: [
-                [
-                    {text:'OBSERVACIONES ENVIÓ', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'OBSERVACIONES RECEPCIÓN', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                ],
-                [
-                    { text: `${transfer?.observations_send?? ''}`, style: 'text',fontSize:8  },
-                    { text: `${transfer?.observations_received?? ''}`, style: 'text',fontSize:8  },
-                ]
-            ]
-        }
-    },
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `P/${transfer.type_registry} NRO:`, bold:true ,style: 'text',width: 65, },
-            { text: `${transfer.registry_number}`, style: 'text',  },
-            { text: `BALANZA:`, bold:true, style: 'text',width: 58,  },
-            { text: `${transfer?.scale?.name}`,  style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,40,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-            { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `Responsable de almacén`,style: 'text',alignment: 'center' },
-            { text: `Chofer` , style: 'text',alignment: 'center' },
-        ]
-    },
+    createVoucherClosingSection(transfer),
 ];
+
+const createVoucherClosingSection = (transfer, includeReceptionObservations = false) => ({
+    unbreakable: true,
+    stack: [
+        {
+            margin: [0, 10, 0, 0],
+            style: 'tableExample',
+            table: {
+                widths: includeReceptionObservations ? ['*', '*'] : ['*'],
+                body: includeReceptionObservations
+                    ? [
+                        [
+                            { text: 'OBSERVACIONES ENVÍO', fontSize: 9, fillColor: '#eeeeee', bold: true },
+                            { text: 'OBSERVACIONES RECEPCIÓN', fontSize: 9, fillColor: '#eeeeee', bold: true },
+                        ],
+                        [
+                            { text: `${transfer?.observations_send ?? ''}`, style: 'text', fontSize: 8 },
+                            { text: `${transfer?.observations_received ?? ''}`, style: 'text', fontSize: 8 },
+                        ],
+                    ]
+                    : [
+                        [{ text: 'OBSERVACIONES ENVÍO', fontSize: 9, fillColor: '#eeeeee', bold: true }],
+                        [{ text: `${transfer?.observations_send ?? ''}`, style: 'text', fontSize: 8 }],
+                    ],
+            },
+        },
+        {
+            margin: [0, 3, 0, 0],
+            columns: [
+                { text: `P/${transfer.type_registry} NRO:`, bold: true, style: 'text', width: 65 },
+                { text: `${transfer.registry_number}`, style: 'text' },
+                { text: 'BALANZA:', bold: true, style: 'text', width: 58 },
+                { text: `${transfer?.scale?.name}`, style: 'text' },
+            ],
+        },
+        {
+            margin: [0, 40, 0, 0],
+            columns: [
+                { text: '-----------------------------------------', bold: true, style: 'text', alignment: 'center' },
+                { text: '-----------------------------------------', bold: true, style: 'text', alignment: 'center' },
+            ],
+        },
+        {
+            margin: [0, -5, 0, 0],
+            columns: [
+                { text: 'Entregue conforme', bold: true, style: 'text', alignment: 'center' },
+                { text: 'Recibí conforme', bold: true, style: 'text', alignment: 'center' },
+            ],
+        },
+        {
+            margin: [0, -2, 0, 0],
+            columns: [
+                { text: 'Responsable de almacén', style: 'text', alignment: 'center' },
+                { text: 'Chofer', style: 'text', alignment: 'center' },
+            ],
+        },
+    ],
+});
+
+const dataPdfReturnReceptionVoucher = (transfer) => {
+    const dataPdf = dataPdfReturnTransferVoucher(transfer);
+    dataPdf[3] = { text: 'GUÍA DE RECEPCIÓN', style: 'title2', bold: true, fontSize: 13 };
+    dataPdf[7] = {
+        columns: [
+            { text: 'Sucursal:', bold: true, style: 'text', width: 45 },
+            { text: `${transfer.sucursal_received.name}`, style: 'text' },
+            { text: 'Fecha recepción:', bold: true, style: 'text', width: 80 },
+            { text: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'), style: 'text' },
+        ],
+    };
+    dataPdf[9].table.widths = ['*', 30, 55, 55, 48, 48, 45, 70];
+    dataPdf[9].table.body[0] = [
+        { text: 'DETALLE', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'UND', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'CANT. ENVIADO', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'CANT. RECEPCIONADO', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'EXCEDENTE', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'FALTANTE', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'PORCENTAJE', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'OBSERVACIÓN', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+    ];
+    dataPdf[10] = createVoucherClosingSection(transfer, true);
+    return dataPdf;
+};
 
 module.exports = {
     generatePdfReports,
     generateExcelReports,
     printTransferVoucher,
+    printTransferReceptionVoucher,
 }

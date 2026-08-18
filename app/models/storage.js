@@ -12,6 +12,7 @@ module.exports = (sequelize, DataTypes) => {
       Storage.hasMany(models.Classified,{as: 'classified', foreignKey:'id_storage'});
       Storage.hasMany(models.Transfers,{as: 'transfers_send', foreignKey:'id_storage_send'});
       Storage.hasMany(models.Transfers,{as: 'transfers_received', foreignKey:'id_storage_received'});
+      Storage.hasMany(models.TransferReviewNote,{as: 'transferReviewNotes', foreignKey:'id_storage'});
     }
   }
   Storage.init({

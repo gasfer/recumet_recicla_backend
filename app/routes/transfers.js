@@ -3,7 +3,7 @@ const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getTransfersPaginate, newTransfer, deleteTransfer, receivedTransfer, getTransferFindOne } = require('../controllers/transfers.controller');
 const { getValidateCreate, validateIdTransferPending, getValidateReceived, validateIdTransfer } = require('../middlewares/validators/transfers');
-const { printTransferVoucher, generatePdfReports, generateExcelReports } = require('../controllers/reports/transfers.controller');
+const { printTransferVoucher, printTransferReceptionVoucher, generatePdfReports, generateExcelReports } = require('../controllers/reports/transfers.controller');
 
 const router = Router();
 
@@ -123,6 +123,17 @@ router.get('/pdf/voucher/:id_transfer', [
     validarJWT,
     validateIdTransfer,
 ], printTransferVoucher);
+
+/**
+ * /transfers/pdf/reception-voucher/{id_transfer}:
+ *   get:
+ *     summary: Imprimir guía de recepción de transferencia
+ *     tags: [Transfers]
+ */
+router.get('/pdf/reception-voucher/:id_transfer', [
+    validarJWT,
+    validateIdTransfer,
+], printTransferReceptionVoucher);
 
 /**
  * @swagger

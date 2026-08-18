@@ -6,6 +6,7 @@ const {
   Stock,
   ProductSucursals,
   ProductCosts,
+  Category,
   kardexMovements,
 } = require("../database/config");
 const paginate = require("../helpers/paginate");
@@ -28,6 +29,7 @@ const getProductPaginate = async (req = request, res = response) => {
       withStock,
       id_sucursal,
       id_storage,
+      category_type,
       orderNew,
     } = req.query;
 
@@ -72,6 +74,20 @@ const getProductPaginate = async (req = request, res = response) => {
         },
       ],
     };
+
+    // ✅ Filtro por tipo de categoría (ej. RAW_MATERIAL) — antes del filtro id_category explícito
+    if (category_type) {
+      const categoriesByType = await Category.findAll({
+        where: { type: category_type, status: true },
+        attributes: ["id"],
+      });
+      const categoryIds = categoriesByType.map((category) => category.id);
+      if (categoryIds.length > 0) {
+        optionsDb.where.id_category = { [Op.in]: categoryIds };
+      } else {
+        optionsDb.where.id = { [Op.in]: [] };
+      }
+    }
 
     // ✅ Filtro múltiple por categoría — viene como '1,2,3'
     if (type === 'id_category' && query) {
@@ -495,7 +511,7 @@ const uploadFileProduct = async (req, res) => {
 
 const getProductsForSelect = async (req = request, res = response) => {
   try {
-    const { query, limit = 10, category_type, category_ids } = req.query;
+    const { query, limit = 10, category_type, category_ids, mermas } = req.query;
     const where = { status: true };
 
     if (query) {
@@ -509,6 +525,11 @@ const getProductsForSelect = async (req = request, res = response) => {
     const categoryWhere = {};
     if (category_type) {
       categoryWhere.type = category_type;
+    }
+    if (mermas === 'true') {
+      categoryWhere.name = 'MERMAS';
+      categoryWhere.type = 'RAW_MATERIAL';
+      categoryWhere.status = true;
     }
     if (category_ids) {
       const ids = category_ids.split(",").map(Number);

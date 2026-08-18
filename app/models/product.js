@@ -15,6 +15,8 @@ module.exports = (sequelize, DataTypes) => {
       Product.hasMany(models.Classified,{as: 'classified', foreignKey:'id_product'});
       Product.hasMany(models.DetailsClassified,{as: 'detailsClassified', foreignKey:'id_product'});
       Product.hasMany(models.DetailsTransfers,{as: 'detailsTransfers', foreignKey:'id_product'});
+      Product.hasMany(models.TransferReviewNote,{as: 'transferReviewNotes', foreignKey:'id_product'});
+      Product.hasMany(models.TransferReviewNoteDetail,{as: 'transferReviewNoteDetails', foreignKey:'id_product'});
       Product.hasOne(models.ProductCosts,{as: 'productCosts', foreignKey:'id_product'});
     }
   }

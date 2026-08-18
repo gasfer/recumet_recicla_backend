@@ -1,9 +1,14 @@
 const { response, request } = require('express');
-const { Transfers, sequelize , DetailsTransfers, Stock, History  } = require('../database/config');
+const { Transfers, sequelize , DetailsTransfers, Stock, History, Product, Category, kardexMovements } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const get_num_request = require('../helpers/generate-cod');
+const notificationService = require('../services/notification.service');
+const { buildReceivedDetails } = require('../helpers/transfer-reception');
+const { createTransferReviewNote } = require('../services/transfer-review-note.service');
+
+const DIFFERENCE_CATEGORY_ID = 22;
 
 const getTransferFindOne = async (req = request, res = response) => {
     try {
@@ -174,6 +179,15 @@ const newTransfer = async (req = request, res = response ) => {
             id_reference: id_transfer,
             status: true
         }, { transaction: t }); 
+        /* Notificación a administradores */
+        const senderName = req.userAuth ? req.userAuth.full_names : 'Un usuario';
+        await notificationService.notifyAdmins({
+            title: `Nuevo Traslado Creado #${cod}`,
+            message: `El usuario ${senderName} ha registrado el traslado #${cod}.`,
+            type: 'TRANSFER_CREATE',
+            level: 'INFO',
+            id_reference: id_transfer
+        }, t, req.userAuth.id);
         await t.commit();
         return res.status(201).json({
             ok: true,
@@ -193,11 +207,36 @@ const newTransfer = async (req = request, res = response ) => {
 const receivedTransfer = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
-        const { id_transfer, id_storage_received, observations_received, date_received, details } = req.body;
+        const { id_transfer, id_storage_received, observations_received, date_received, details, id_merma_product } = req.body;
         const transfer_received = await Transfers.findOne({
             where: { id:id_transfer, status:'PENDING' },
             include: [{association: 'detailsTransfers'}], transaction: t
         });
+        const receiptDetailsResult = buildReceivedDetails(details, transfer_received.detailsTransfers);
+        if (receiptDetailsResult.errors) {
+            await t.rollback();
+            return res.status(422).json({
+                ok: false,
+                errors: receiptDetailsResult.errors.map((msg) => ({ msg })),
+            });
+        }
+        const totalMerma = receiptDetailsResult.receivedDetails.reduce((total, { detail, quantityReceived }) => {
+            return total + Math.max(0, Number(detail.quantity) - quantityReceived);
+        }, 0);
+        const mermaProduct = totalMerma > 0
+            ? await Product.findOne({
+                where: { id: id_merma_product, status: true },
+                include: [{ association: 'category', required: true, where: { id: DIFFERENCE_CATEGORY_ID, status: true } }],
+                transaction: t,
+            })
+            : null;
+        if (totalMerma > 0 && !mermaProduct) {
+            await t.rollback();
+            return res.status(422).json({
+                ok: false,
+                errors: [{ msg: 'Debe seleccionar un producto activo de la categoría de diferencias.' }],
+            });
+        }
         transfer_received.status = 'RECEIVED';   
         transfer_received.id_user_received = req.userAuth.id;
         if( new Date(transfer_received.date_send)  > new Date(date_received)) {
@@ -213,18 +252,9 @@ const receivedTransfer = async (req = request, res = response ) => {
         await transfer_received.save({transaction: t});
         const { id_sucursal_send,id_sucursal_received } = transfer_received;
         /*  detalles del traslado */
-        for (const detail of transfer_received.detailsTransfers) {
-            let qtyReceived = Number(detail.quantity);
-            let obs = null;
-            if (details && Array.isArray(details)) {
-                const incomingDetail = details.find(d => d.id_detail === detail.id);
-                if (incomingDetail && incomingDetail.quantity_received !== undefined && incomingDetail.quantity_received !== null) {
-                    qtyReceived = Number(incomingDetail.quantity_received);
-                }
-                if (incomingDetail && incomingDetail.observation !== undefined) {
-                    obs = incomingDetail.observation;
-                }
-            }
+        for (const receiptDetail of receiptDetailsResult.receivedDetails) {
+            const { detail, quantityReceived: qtyReceived, observation: obs } = receiptDetail;
+            const qtySent = Number(detail.quantity);
             detail.quantity_received = qtyReceived;
             detail.observation = obs;
             await detail.save({ transaction: t });
@@ -245,6 +275,94 @@ const receivedTransfer = async (req = request, res = response ) => {
                 stock.stock = Number(stock.stock) + qtyReceived;
                 await stock.save({ transaction: t });
             }
+            /*  Excedente: registrar diferencia positiva en kardex */
+            if (qtyReceived > qtySent) {
+                const excessMovement = await kardexMovements.create({
+                    type: 'INPUT',
+                    date: transfer_received.date_received,
+                    details: `EXCEDENTE TRASPASO #${transfer_received.cod}`,
+                    quantity: qtyReceived - qtySent,
+                    cost: detail.cost,
+                    price: 0,
+                    total: 0,
+                    id_product: detail.id_product,
+                    id_user: req.userAuth.id,
+                    id_sucursal: id_sucursal_received,
+                    id_storage: id_storage_received,
+                    status: true,
+                    registry_number: transfer_received.registry_number,
+                }, { transaction: t });
+                await createTransferReviewNote({
+                    type: 'EXCEDENTE_PARA_REVISION',
+                    date: transfer_received.date_received,
+                    observations: observations_received,
+                    transfer: transfer_received,
+                    kardexMovement: excessMovement,
+                    productId: detail.id_product,
+                    userId: req.userAuth.id,
+                    storageId: id_storage_received,
+                    details: [{
+                        id_detail_transfer: detail.id,
+                        id_product: detail.id_product,
+                        quantity_sent: qtySent,
+                        quantity_received: qtyReceived,
+                        quantity_difference: qtyReceived - qtySent,
+                    }],
+                }, t);
+            }
+        }
+        /*  Merma: registrar diferencia negativa en kardex */
+        if (totalMerma > 0) {
+            const shortageMovement = await kardexMovements.create({
+                    type: 'INPUT',
+                    date: transfer_received.date_received,
+                    details: `MERMA TRASPASO #${transfer_received.cod}`,
+                    quantity: totalMerma,
+                    cost: 0,
+                    price: 0,
+                    total: 0,
+                    id_product: mermaProduct.id,
+                    id_user: req.userAuth.id,
+                    id_sucursal: id_sucursal_received,
+                    id_storage: id_storage_received,
+                    status: true,
+                    registry_number: transfer_received.registry_number,
+                }, { transaction: t });
+            const stockMerma = await Stock.findOne({
+                    order: [['id', 'DESC']],
+                    where: { id_product: mermaProduct.id, id_sucursal: id_sucursal_received, id_storage: id_storage_received, status: true },
+                    lock: true,
+                    transaction: t
+                });
+            if (!stockMerma) {
+                await Stock.create({
+                        stock_min: 1, stock: totalMerma,
+                        id_product: mermaProduct.id, id_sucursal: id_sucursal_received, id_storage: id_storage_received,
+                        status: true,
+                }, { transaction: t });
+            } else {
+                stockMerma.stock = Number(stockMerma.stock) + totalMerma;
+                await stockMerma.save({ transaction: t });
+            }
+            await createTransferReviewNote({
+                type: 'FALTANTE_PARA_REVISION',
+                date: transfer_received.date_received,
+                observations: observations_received,
+                transfer: transfer_received,
+                kardexMovement: shortageMovement,
+                productId: mermaProduct.id,
+                userId: req.userAuth.id,
+                storageId: id_storage_received,
+                details: receiptDetailsResult.receivedDetails
+                    .filter(({ detail, quantityReceived }) => quantityReceived < Number(detail.quantity))
+                    .map(({ detail, quantityReceived }) => ({
+                        id_detail_transfer: detail.id,
+                        id_product: detail.id_product,
+                        quantity_sent: Number(detail.quantity),
+                        quantity_received: quantityReceived,
+                        quantity_difference: Number(detail.quantity) - quantityReceived,
+                    })),
+            }, t);
         }
          /* Ingreso histórico */
         await History.create({
@@ -257,6 +375,42 @@ const receivedTransfer = async (req = request, res = response ) => {
             id_reference: transfer_received.id,
             status: true
         }, { transaction: t }); 
+
+        /* Notificación de Alerta Roja a Administradores si existe discrepancia > +-1% */
+        const discrepantDetails = [];
+        for (const detail of transfer_received.detailsTransfers) {
+            let qtyReceived = Number(detail.quantity);
+            if (details && Array.isArray(details)) {
+                const incomingDetail = details.find(d => d.id_detail === detail.id);
+                if (incomingDetail && incomingDetail.quantity_received !== undefined && incomingDetail.quantity_received !== null) {
+                    qtyReceived = Number(incomingDetail.quantity_received);
+                }
+            }
+            const qtySent = Number(detail.quantity);
+            if (qtySent > 0) {
+                const diffPct = ((qtyReceived - qtySent) / qtySent) * 100;
+                if (Math.abs(diffPct) > 1.0) {
+                    discrepantDetails.push({
+                        qtySent,
+                        qtyReceived,
+                        diffPct: diffPct > 0 ? `+${diffPct.toFixed(2)}%` : `${diffPct.toFixed(2)}%`
+                    });
+                }
+            }
+        }
+
+        if (discrepantDetails.length > 0) {
+            const receiverName = req.userAuth ? req.userAuth.full_names : 'Un usuario';
+            const detailMsgs = discrepantDetails.map(d => `Enviado: ${d.qtySent}, Recibido: ${d.qtyReceived} (${d.diffPct})`).join(' | ');
+            await notificationService.notifyAdmins({
+                title: `🚨 ALERTA ROJA: Discrepancia Recepción #${transfer_received.cod}`,
+                message: `El usuario ${receiverName} recepcionó el traslado #${transfer_received.cod} con diferencia superior al ±1%: ${detailMsgs}`,
+                type: 'TRANSFER_RECEPTION_DIFF',
+                level: 'DANGER',
+                id_reference: transfer_received.id
+            }, t, req.userAuth.id);
+        }
+
         await t.commit();
         return res.status(201).json({
             ok: true,

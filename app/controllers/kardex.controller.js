@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { sequelize, ViewKardex } = require('../database/config');
+const { sequelize, ViewKardex, TransferReviewNote } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
@@ -8,8 +8,9 @@ const getKardexPaginate = async (req = request, res = response) => {
     try {
         const { query, page, limit, type, id_sucursal, id_storage, id_product, filterBy, date1, date2, type_kardex, orderNew } = req.query;
         const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
+        const tieBreakerOrder = orderNew?.at(-1) === 'ASC' ? 'ASC' : 'DESC';
         const optionsDb = {
-            order: [orderNew],
+            order: [orderNew, ['id', tieBreakerOrder]],
             attributes: ['type', 'date', 'id_movement', 'type_movement', 'registry_number', 'detail', 'sub_detail', 'quantity', 'quantity_input', 'quantity_output', 'cost_unitario', 'cost_input', 'cost_output', 'saldo', 'cost_saldo'],
             where: {
                 [Op.and]: [
@@ -30,6 +31,18 @@ const getKardexPaginate = async (req = request, res = response) => {
             ]
         };
         let kardexes = await paginate(ViewKardex, page, limit, type, query, optionsDb);
+        const movementIds = kardexes.data.map((item) => Number(item.id_movement)).filter(Number.isInteger);
+        if (movementIds.length > 0) {
+            const notes = await TransferReviewNote.findAll({
+                where: { id_kardex_movement: { [Op.in]: movementIds } },
+                attributes: ['id', 'registry_number', 'type', 'id_kardex_movement'],
+            });
+            const notesByMovement = new Map(notes.map((note) => [Number(note.id_kardex_movement), note]));
+            kardexes.data.forEach((item) => {
+                const note = notesByMovement.get(Number(item.id_movement));
+                if (note) item.dataValues.review_note = note;
+            });
+        }
         return res.status(200).json({
             ok: true,
             kardexes

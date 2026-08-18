@@ -5,6 +5,7 @@ const { whereDateForType } = require('../helpers/where_range');
 const { Op } = require('sequelize');
 const { getNumberDecimal } = require('../helpers/company');
 const { fileMoveAndRemoveOld } = require('../helpers/file-upload');
+const notificationService = require('../services/notification.service');
 const path = require('path');
 const fs = require('fs');
 
@@ -210,6 +211,20 @@ const deleteAbonoAccountPayable = async (req = request, res = response) => {
             id_reference: abonoAccountsPayable.id,
             status: true
         }, { transaction: t }); 
+
+        /* Notificación de Alerta Roja a Administradores */
+        const userName = req.userAuth ? req.userAuth.full_names : 'Un usuario';
+        const voucherCod = (accountsPayable && accountsPayable.cod) 
+            ? `#${accountsPayable.cod}` 
+            : ((accountsPayable && accountsPayable.input && accountsPayable.input.cod) ? `#${accountsPayable.input.cod}` : '');
+        await notificationService.notifyAdmins({
+            title: `🚨 ALERTA ROJA: Abono Anulado ${voucherCod}`,
+            message: `El usuario ${userName} anuló un abono de Bs. ${abono_anulado} correspondiente al comprobante ${voucherCod || accountsPayable.description}.`,
+            type: 'PAYABLE_ABONO_DELETE',
+            level: 'DANGER',
+            id_reference: abonoAccountsPayable.id
+        }, t, req.userAuth ? req.userAuth.id : null);
+
         await t.commit();
         return res.status(201).json({
             ok: true,
@@ -252,6 +267,21 @@ const deleteAbonoMultipleAccountPayable = async (req = request, res = response) 
                 status: true
             }, { transaction: t }); 
         }
+
+        /* Notificación de Alerta Roja a Administradores por Anulación Múltiple */
+        const userName = req.userAuth ? req.userAuth.full_names : 'Un usuario';
+        const totalAnulado = abonosAccountsPayableMultiple.monto_abono || 0;
+        const codesStr = (abonosAccountsPayableMultiple.codes_input && abonosAccountsPayableMultiple.codes_input.length > 0)
+            ? abonosAccountsPayableMultiple.codes_input.join(', ')
+            : '';
+        await notificationService.notifyAdmins({
+            title: `🚨 ALERTA ROJA: Abono Múltiple Anulado`,
+            message: `El usuario ${userName} anuló un abono múltiple de Bs. ${totalAnulado} correspondiente a los comprobantes: ${codesStr}.`,
+            type: 'PAYABLE_ABONO_MULTIPLE_DELETE',
+            level: 'DANGER',
+            id_reference: abonosAccountsPayableMultiple.id
+        }, t, req.userAuth ? req.userAuth.id : null);
+
         await abonosAccountsPayableMultiple.destroy({ transaction: t });
         await t.commit();
         return res.status(201).json({

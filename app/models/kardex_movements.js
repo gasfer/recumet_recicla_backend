@@ -6,6 +6,7 @@ const { formattedDecimalSetter, formattedDecimalQuantitySetter } = require('../h
 module.exports = (sequelize, DataTypes) => {
   class kardexMovements extends Model {
     static associate(models) {
+      kardexMovements.hasOne(models.TransferReviewNote, { as: 'transferReviewNote', foreignKey: 'id_kardex_movement' });
     }
   }
   kardexMovements.init({
@@ -40,7 +41,8 @@ module.exports = (sequelize, DataTypes) => {
     id_user: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,
     id_storage: DataTypes.INTEGER,
-    status: DataTypes.BOOLEAN
+    status: DataTypes.BOOLEAN,
+    registry_number: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'kardexMovements',
