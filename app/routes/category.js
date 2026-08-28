@@ -3,8 +3,23 @@ const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getCategoryPaginate, newCategory, updateCategory, activeInactiveCategory, getCategoriesForSelect } = require('../controllers/category.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete } = require('../middlewares/validators/category');
+const { PRODUCT_ACCESS_ROUTE_CONTEXTS } = require('../constants/product-category-access');
+const { bindProductAccessContext } = require('../middlewares/bind-product-access-context');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
+
+Object.entries(PRODUCT_ACCESS_ROUTE_CONTEXTS).forEach(([routeSegment, context]) => {
+    const bindContext = bindProductAccessContext(context);
+    router.get(`/operational/${routeSegment}`, [
+        validarJWT,
+        bindContext,
+    ], getCategoryPaginate);
+    router.get(`/operational/${routeSegment}/select`, [
+        validarJWT,
+        bindContext,
+    ], getCategoriesForSelect);
+});
 
 
 /**
@@ -63,6 +78,7 @@ const router = Router();
  */
 router.get('/', [
     validarJWT,
+    authorizeModulePermission('CATEGORIAS', 'view'),
 ], getCategoryPaginate);
 
 /**
@@ -84,6 +100,7 @@ router.get('/', [
  */
 router.get('/select', [
     validarJWT,
+    authorizeModulePermission('CATEGORIAS', 'view'),
 ], getCategoriesForSelect);
 
 /**

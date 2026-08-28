@@ -16,6 +16,7 @@ module.exports = (sequelize, DataTypes) => {
     type: DataTypes.STRING,
     level: DataTypes.STRING,
     id_reference: DataTypes.INTEGER,
+    idempotency_key: DataTypes.STRING,
     is_read: {
       type: DataTypes.BOOLEAN,
       defaultValue: false

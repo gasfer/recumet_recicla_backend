@@ -1,8 +1,9 @@
 const { response, request } = require('express');
-const { sequelize, ViewKardex, TransferReviewNote } = require('../database/config');
+const { sequelize, ViewKardex, TransferReviewNote, History } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
+const { attachAvailabilityToKardexRows, getStockDiagnostic, syncStocksFromKardex } = require('../services/stock-availability.service');
 
 const getKardexPaginate = async (req = request, res = response) => {
     try {
@@ -45,7 +46,7 @@ const getKardexPaginate = async (req = request, res = response) => {
         }
         return res.status(200).json({
             ok: true,
-            kardexes
+            kardexes,
         });
     } catch (error) {
         console.log(error);
@@ -54,7 +55,7 @@ const getKardexPaginate = async (req = request, res = response) => {
             errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
     }
-}
+};
 
 const getKardexFisicoPaginate = async (req = request, res = response) => {
     try {
@@ -72,7 +73,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
                     id_category: {
                         [Op.in]: ids
                     }
-                }
+                };
             }
         }
 
@@ -87,11 +88,10 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
                     type: {
                         [Op.in]: types
                     }
-                }
+                };
             }
         }
 
-        // Configuración para obtener TODOS los registros con todos sus detalles (includes)
         const optionsDbAll = {
             order: [
                 ['product', 'category', 'name', 'ASC'],
@@ -187,6 +187,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             }
         }
 
+        await attachAvailabilityToKardexRows(allKardexes, { idSucursal: id_sucursal, idStorage: id_storage });
         const showZeroSaldo = req.query.showZeroSaldo === 'true' || req.query.showZeroSaldo === true;
         const filteredAllKardexes = showZeroSaldo
             ? allKardexes
@@ -407,6 +408,10 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             }
         }
 
+        await attachAvailabilityToKardexRows(allKardexes, {
+            idSucursal: id_sucursales || id_sucursal,
+            idStorage: id_storages || id_storage,
+        });
         const showZeroSaldo = req.query.showZeroSaldo === 'true' || req.query.showZeroSaldo === true;
         const filteredAllKardexes = showZeroSaldo
             ? allKardexes
@@ -521,9 +526,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
 
         const filteredSP = showZeroSaldo
             ? sucursalProductKardexes
-            : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);
-
-        for (const sp of filteredSP) {
+            : sucursalProductKardexes.filter(sp => Number(sp.quantity_saldo) > 0);        for (const sp of filteredSP) {
             const sucursalId = sp.id_sucursal;
             const sucursalName = sp.sucursal?.name || `Sucursal ${sucursalId}`;
             const catType = sp.product?.category?.type;
@@ -587,10 +590,83 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
     }
-}
+};
+
+const getStockDiagnosticHandler = async (req = request, res = response) => {
+    try {
+        if (req.userAuth?.role !== 'ADMINISTRADOR') {
+            return res.status(403).json({
+                ok: false,
+                errors: [{ msg: 'No tienes permiso para consultar el diagnóstico. Módulo restringido a Administradores.' }]
+            });
+        }
+
+        const { id_sucursal, id_storage, limit } = req.query;
+        const diagnostic = await getStockDiagnostic({
+            idSucursal: id_sucursal,
+            idStorage: id_storage,
+            limit
+        });
+
+        return res.status(200).json({
+            ok: true,
+            diagnostic
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }]
+        });
+    }
+};
+
+const syncStocksHandler = async (req = request, res = response) => {
+    try {
+        if (req.userAuth?.role !== 'ADMINISTRADOR') {
+            return res.status(403).json({
+                ok: false,
+                errors: [{ msg: 'No tienes permiso para ejecutar la sincronización. Acceso restringido a Administradores.' }]
+            });
+        }
+
+        const { id_sucursal, id_storage } = req.body;
+        const corrected = await syncStocksFromKardex({
+            idSucursal: id_sucursal,
+            idStorage: id_storage
+        });
+
+        if (corrected.length > 0) {
+            await History.create({
+                id_user: req.userAuth.id,
+                id_sucursal: id_sucursal || req.userAuth.id_sucursal || null,
+                description: `SINCRONIZACIÓN STOCK-KARDEX: ${corrected.length} productos corregidos usando el saldo de la vista Kardex Detalle.`,
+                type: 'UPDATE',
+                module: 'KARDEX',
+                query: JSON.stringify(corrected),
+                action: 'SYNC_STOCKS',
+                status: true
+            });
+        }
+
+        return res.status(200).json({
+            ok: true,
+            synced: corrected.length,
+            corrected
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: `Error en sincronización: ${error.message || 'Ocurrió un imprevisto interno'}` }]
+        });
+    }
+};
 
 module.exports = {
     getKardexPaginate,
     getKardexFisicoPaginate,
-    getTotalStockRecumet
+    getTotalStockRecumet,
+    getStockDiagnosticHandler,
+    syncStocksHandler
 }

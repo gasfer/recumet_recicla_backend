@@ -13,7 +13,8 @@ class Server {
     static _instance;
     constructor() {
         this.app = express();
-        this.port = process.env.PORT || 3000;
+        this.port = Number(process.env.PORT || 3000);
+        this.started = false;
         this.server = http.createServer(this.app);
         this.io = new ServerSocket(this.server, {
             cors: {
@@ -56,14 +57,41 @@ class Server {
     }
 
     async listen() {
-        this.server.listen(this.port, () => {
-            console.log('Ejecuto en puerto : ', this.port);
-            console.log(`📚 Swagger Documentation: http://localhost:${this.port}/api-docs`);
-        });
+        if (this.started || this.server.listening) return;
+
+        if (process.env.DB_SYNC_ON_START === 'true') {
+            await sequelize.sync({ force: false });
+        } else {
+            await sequelize.authenticate();
+        }
         await loadDecimals();
-        sequelize.sync({ force: false }).then(() => {
-            console.log('Conexión exitosa a la base de datos');
+
+        await new Promise((resolve, reject) => {
+            const onError = (error) => {
+                this.server.off('listening', onListening);
+                reject(error);
+            };
+            const onListening = () => {
+                this.server.off('error', onError);
+                resolve();
+            };
+            this.server.once('error', onError);
+            this.server.once('listening', onListening);
+            this.server.listen(this.port);
         });
+
+        this.started = true;
+        console.log(`Backend ejecutándose en http://localhost:${this.port}`);
+        console.log(`Swagger: http://localhost:${this.port}/api-docs`);
+        console.log('Conexión exitosa a la base de datos');
+    }
+
+    async close() {
+        if (this.server.listening) {
+            await new Promise((resolve) => this.io.close(resolve));
+        }
+        this.started = false;
+        await sequelize.close();
     }
 
 }

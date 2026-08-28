@@ -38,7 +38,12 @@ module.exports = (sequelize, DataTypes) => {
     },
     id_sucursal: DataTypes.INTEGER,
     status_account:  DataTypes.STRING,
-    status: DataTypes.BOOLEAN
+    status: DataTypes.BOOLEAN,
+    updated_by: DataTypes.INTEGER,
+    voided_by: DataTypes.INTEGER,
+    voided_at: DataTypes.DATE,
+    void_reason: DataTypes.TEXT,
+    superseded_by: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'AccountsPayable',

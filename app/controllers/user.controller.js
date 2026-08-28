@@ -2,9 +2,25 @@
 const bcrypt = require('bcrypt');
 const generarJWT = require('../helpers/jwt');
 const { response, request } = require('express');
-const { User , assignPermission, assignShift, assignSucursales} = require('../database/config');
+const { User , assignPermission, assignShift, assignSucursales, sequelize} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require("sequelize");
+
+const rejectAdminTarget = async (res, idUser) => {
+    const user = await User.findByPk(idUser);
+    if (!user) return { error: res.status(404).json({ ok: false, errors: [{ msg: 'El usuario no existe.' }] }) };
+    if (user.role === 'ADMINISTRADOR') {
+        return { error: res.status(403).json({ ok: false, errors: [{ msg: 'No se puede gestionar un usuario Administrador.' }] }) };
+    }
+    return { user };
+};
+
+const keepAdministratorRole = (user, body) => {
+    if (user.role === 'ADMINISTRADOR') {
+        body.role = 'ADMINISTRADOR';
+        body.status = true;
+    }
+};
 
 const getUsers = async (req = request, res = response) => {
     try {
@@ -63,9 +79,17 @@ const updateUser = async (req = request, res = response) => {
     try {
         const { id } = req.params;
         const body = req.body;
-        const salt = bcrypt.genSaltSync();
-        body.password = bcrypt.hashSync(body.password, salt);
         const user = await User.findByPk(id);
+        if (!user) {
+            return res.status(404).json({ ok: false, errors: [{ msg: 'El usuario no existe.' }] });
+        }
+        if (body.password) {
+            const salt = bcrypt.genSaltSync();
+            body.password = bcrypt.hashSync(body.password, salt);
+        } else {
+            delete body.password;
+        }
+        keepAdministratorRole(user, body);
         await user.update(body);
         return res.status(201).json({
             ok: true,
@@ -84,7 +108,9 @@ const activeInactiveUser = async (req = request, res = response) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        const user = await User.findByPk(id);
+        const result = await rejectAdminTarget(res, id);
+        if (result.error) return result.error;
+        const user = result.user;
         await user.update({status});
         res.status(201).json({
             ok: true,
@@ -101,26 +127,48 @@ const activeInactiveUser = async (req = request, res = response) => {
 
 
 const updateAssignPermissions = async (req = request, res = response) => {
+    let transaction;
     try {
+        transaction = await sequelize.transaction();
         const { permissions } = req.body;
+        const result = await rejectAdminTarget(res, permissions[0]?.id_user);
+        if (result.error) {
+            await transaction.rollback();
+            return result.error;
+        }
         for (const permission of permissions) {
-            const assign_permission = await assignPermission.update({
+            const values = {
                 view: permission.view,
                 create: permission.create,
                 update: permission.update,
                 delete: permission.delete,
-                reports: permission.reports,        
-                status: permission.status,        
-            },{where: {id_user:permission.id_user,module:permission.module}});
-            if(!assign_permission[0]){
-                await assignPermission.create(permission);
-            } 
+                reports: permission.reports,
+                status: permission.status,
+            };
+            if (Array.isArray(permission.allowed_category_types)) {
+                values.allowed_category_types = permission.allowed_category_types;
+            }
+
+            const existingPermission = await assignPermission.findOne({
+                where: { id_user: permission.id_user, module: permission.module },
+                transaction,
+                lock: transaction.LOCK.UPDATE,
+            });
+            if (existingPermission) {
+                await existingPermission.update(values, { transaction });
+            } else {
+                await assignPermission.create({ ...permission, ...values }, { transaction });
+            }
         }
+        await transaction.commit();
         return res.status(201).json({
             ok: true,
             msg: 'Permisos exitosamente asignados'
         });   
     } catch (error) {
+        if (transaction && !transaction.finished) {
+            await transaction.rollback();
+        }
         console.log(error);
         return res.status(500).json({
           ok: false,
@@ -132,6 +180,8 @@ const updateAssignPermissions = async (req = request, res = response) => {
 const updateAssignShift = async (req = request, res = response) => {
     try {
         const { shifts } = req.body;
+        const result = await rejectAdminTarget(res, shifts[0]?.id_user);
+        if (result.error) return result.error;
         for (const shift of shifts) {
             const assign_shift = await assignShift.update({
                 number_day: shift.number_day,
@@ -159,6 +209,8 @@ const updateAssignShift = async (req = request, res = response) => {
 const updateAssignSucursales = async (req = request, res = response) => {
     try {
         const { sucursales } = req.body;
+        const result = await rejectAdminTarget(res, sucursales[0]?.id_user);
+        if (result.error) return result.error;
         for (const sucursal of sucursales) {
             const assign_sucursal = await assignSucursales.update({
                 status: sucursal.status       

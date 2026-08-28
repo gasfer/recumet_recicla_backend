@@ -4,6 +4,7 @@ const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
+const { hasAvailableStock } = require('../services/stock-availability.service');
 
 const getClassifiedFindOne= async (req = request, res = response) => {
     try {
@@ -127,12 +128,13 @@ const newClassified = async (req = request, res = response ) => {
             transaction: t
         });
         //??ERROR STOCK INSUFICIENTE
-        if(stock.stock < quantity_product){
+        const availability = await hasAvailableStock(stock, quantity_product, t);
+        if(!availability.sufficient){
             await t.rollback();
             return res.status(422).json({
                 ok: false,
                 errors: [
-                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`}
+                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`}
                 ],
             });
         }
@@ -212,6 +214,14 @@ const destroyClassified = async (req = request, res = response) => {
                 lock: true,
                 transaction: t
             });
+            const detailAvailability = await hasAvailableStock(stock, detail.quantity, t);
+            if (!detailAvailability.sufficient) {
+                await t.rollback();
+                return res.status(422).json({
+                    ok: false,
+                    errors: [{ msg: `No se puede anular la clasificación: el producto ${detail.id_product} tiene sólo ${detailAvailability.available_stock} de stock disponible.` }],
+                });
+            }
             stock.stock = Number(stock.stock) - Number(detail.quantity);
             await stock.save({ transaction: t });
         }

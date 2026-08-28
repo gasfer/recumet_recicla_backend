@@ -98,12 +98,20 @@ const loadReceivedTransfer = (models, notifications = []) => {
     const cachedReviewNoteService = require.cache[reviewNoteServicePath];
     const cachedController = require.cache[controllerPath];
 
-    require.cache[configPath] = { id: configPath, filename: configPath, loaded: true, exports: models };
+    const modelsWithWorkflowDefaults = {
+        TransferReviewEvent: { create: async (data) => data },
+        TransferReviewInventoryHold: { bulkCreate: async (data) => data },
+        ...models,
+    };
+    require.cache[configPath] = { id: configPath, filename: configPath, loaded: true, exports: modelsWithWorkflowDefaults };
     require.cache[notificationPath] = {
         id: notificationPath,
         filename: notificationPath,
         loaded: true,
-        exports: { notifyAdmins: async (payload) => notifications.push(payload) },
+        exports: {
+            notifyAdmins: async (payload) => notifications.push(payload),
+            notifyTransferReviewStakeholders: async (payload) => notifications.push(payload),
+        },
     };
     delete require.cache[controllerPath];
     delete require.cache[reviewNoteServicePath];
@@ -159,6 +167,12 @@ const pendingDetail = (id, productId, quantity) => ({
     async save() { this.saveCalls += 1; },
 });
 
+const createReviewDetails = (operations) => async (data) => {
+    const created = data.map((detail, index) => ({ ...detail, id: operations.noteDetails.length + index + 1 }));
+    operations.noteDetails.push(...created);
+    return created;
+};
+
 test('recepción con excedente actualiza stock, Kardex y una nota independiente', async (t) => {
     const transfer = pendingTransfer([pendingDetail(1, 10, 5)]);
     const operations = { stockCreates: [], kardex: [], notes: [], noteDetails: [], history: [], commits: 0, rollbacks: 0 };
@@ -170,7 +184,7 @@ test('recepción con excedente actualiza stock, Kardex y una nota independiente'
         Stock: { findOne: async () => null, create: async (data) => operations.stockCreates.push(data) },
         kardexMovements: { create: async (data) => { operations.kardex.push(data); return { id: operations.kardex.length }; } },
         TransferReviewNote: { create: async (data) => { const note = { ...data, id: operations.notes.length + 1, async save() {} }; operations.notes.push(note); return note; } },
-        TransferReviewNoteDetail: { bulkCreate: async (data) => operations.noteDetails.push(...data) },
+        TransferReviewNoteDetail: { bulkCreate: createReviewDetails(operations) },
         History: { create: async (data) => operations.history.push(data) },
     });
     t.after(restore);
@@ -193,6 +207,9 @@ test('recepción con excedente actualiza stock, Kardex y una nota independiente'
     assert.equal(operations.stockCreates[0].stock, 7);
     assert.deepEqual(operations.kardex.map(({ details, quantity, id_product }) => ({ details, quantity, id_product })), [
         { details: 'EXCEDENTE TRASPASO #TRAS00044', quantity: 2, id_product: 10 },
+    ]);
+    assert.deepEqual(operations.kardex.map(({ date, registry_number }) => ({ date, registry_number })), [
+        { date: '2026-08-14T09:00:00.000Z', registry_number: 'SF-00044' },
     ]);
     assert.equal(operations.notes[0].type, 'EXCEDENTE_PARA_REVISION');
     assert.equal(operations.noteDetails[0].quantity_difference, 2);
@@ -236,7 +253,7 @@ test('recepción con faltante registra la diferencia consolidada en el producto 
         Stock: { findOne: async () => null, create: async (data) => operations.stockCreates.push(data) },
         kardexMovements: { create: async (data) => { operations.kardex.push(data); return { id: operations.kardex.length }; } },
         TransferReviewNote: { create: async (data) => { const note = { ...data, id: operations.notes.length + 1, async save() {} }; operations.notes.push(note); return note; } },
-        TransferReviewNoteDetail: { bulkCreate: async (data) => operations.noteDetails.push(...data) },
+        TransferReviewNoteDetail: { bulkCreate: createReviewDetails(operations) },
         History: { create: async () => {} },
     });
     t.after(restore);
@@ -263,6 +280,9 @@ test('recepción con faltante registra la diferencia consolidada en el producto 
     assert.deepEqual(operations.kardex.map(({ details, quantity, id_product }) => ({ details, quantity, id_product })), [
         { details: 'MERMA TRASPASO #TRAS00044', quantity: 1.5, id_product: 321 },
     ]);
+    assert.deepEqual(operations.kardex.map(({ date, registry_number }) => ({ date, registry_number })), [
+        { date: '2026-08-14T09:00:00.000Z', registry_number: 'SF-00044' },
+    ]);
     assert.equal(operations.notes[0].type, 'FALTANTE_PARA_REVISION');
     assert.equal(operations.noteDetails[0].quantity_difference, 1.5);
 });
@@ -278,7 +298,7 @@ test('recepción con varios faltantes crea un único movimiento y nota consolida
         Stock: { findOne: async () => null, create: async (data) => operations.stockCreates.push(data) },
         kardexMovements: { create: async (data) => { operations.kardex.push(data); return { id: operations.kardex.length }; } },
         TransferReviewNote: { create: async (data) => { const note = { ...data, id: 1, async save() {} }; operations.notes.push(note); return note; } },
-        TransferReviewNoteDetail: { bulkCreate: async (data) => operations.noteDetails.push(...data) },
+        TransferReviewNoteDetail: { bulkCreate: createReviewDetails(operations) },
         History: { create: async () => {} },
     });
     t.after(restore);
@@ -314,7 +334,7 @@ test('recepción con varios excedentes crea un movimiento y nota por producto', 
         Stock: { findOne: async () => null, create: async () => {} },
         kardexMovements: { create: async (data) => { operations.kardex.push(data); return { id: operations.kardex.length }; } },
         TransferReviewNote: { create: async (data) => { const note = { ...data, id: operations.notes.length + 1, async save() {} }; operations.notes.push(note); return note; } },
-        TransferReviewNoteDetail: { bulkCreate: async (data) => operations.noteDetails.push(...data) },
+        TransferReviewNoteDetail: { bulkCreate: createReviewDetails(operations) },
         History: { create: async () => {} },
     });
     t.after(restore);

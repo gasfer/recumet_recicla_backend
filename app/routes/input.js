@@ -1,11 +1,14 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getInputsPaginate, newInput, anularInput, updateInput, getInputFindOne, uploadFileVoucher } = require('../controllers/input.controller');
+const { getInputsPaginate, newInput, anularInput, previewAnularInput, updateInput, getInputFindOne, uploadFileVoucher } = require('../controllers/input.controller');
 const { getValidateCreate, validateIdInput, getValidateUpdate } = require('../middlewares/validators/input');
 const { generatePdfReports, generateExcelReports, generatePdfDetailsReports, generateExcelDetailsReports, printInputVoucher, generatePdfDetailsCPPReports } = require('../controllers/reports/input.controller');
 const expressfileUpload = require('express-fileupload');
 const { filesExist, filesValidateSize } = require('../middlewares/validators/validar-files');
+const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
+const { authorizeProductCategoryAccess, detailProductIds } = require('../middlewares/authorize-product-category-access');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
 
@@ -63,8 +66,10 @@ router.get('/find/:id_input', [
  */
 router.post('/', [
     validarJWT,
+    authorizeModulePermission('COMPRAS', 'create'),
     toUpperCaseConvert,
-    getValidateCreate
+    getValidateCreate,
+    authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.PURCHASES, action: 'create', extractProductIds: detailProductIds('input_details') })
 ], newInput);
 
 /**
@@ -85,8 +90,10 @@ router.post('/', [
  */
 router.put('/:id_input', [
     validarJWT,
+    authorizeModulePermission('COMPRAS', 'update'),
     toUpperCaseConvert,
     getValidateUpdate,
+    authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.PURCHASES, action: 'update', extractProductIds: detailProductIds('input_details') }),
 ], updateInput);
 
 router.put('/upload/voucher', [
@@ -112,8 +119,15 @@ router.put('/upload/voucher', [
  *       200:
  *         description: Entrada anulada
  */
+router.get('/anular/:id_input/preview', [
+    validarJWT,
+    authorizeModulePermission('COMPRAS', 'delete'),
+    validateIdInput
+], previewAnularInput);
+
 router.delete('/anular/:id_input', [
     validarJWT,
+    authorizeModulePermission('COMPRAS', 'delete'),
     validateIdInput
 ], anularInput)
 

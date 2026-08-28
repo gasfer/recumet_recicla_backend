@@ -7,6 +7,10 @@ const get_num_request = require('../helpers/generate-cod');
 const notificationService = require('../services/notification.service');
 const { buildReceivedDetails } = require('../helpers/transfer-reception');
 const { createTransferReviewNote } = require('../services/transfer-review-note.service');
+const { deriveReceptionStatus } = require('../services/transfer-review-workflow.service');
+const { REVIEW_STATUSES } = require('../constants/transfer-review');
+const { hasAvailableStock } = require('../services/stock-availability.service');
+const automatedResolutionService = require('../services/automated-transfer-review-resolution.service');
 
 const DIFFERENCE_CATEGORY_ID = 22;
 
@@ -50,7 +54,7 @@ const getTransfersPaginate = async (req = request, res = response) => {
     try {
         const { query, page, limit, type, status,filterBy, date1, date2, 
                 id_sucursal_send, id_storage_send, id_sucursal_received, 
-                id_storage_received, id_user_send,id_user_received ,orderNew} = req.query;
+                id_storage_received, id_user_send,id_user_received, reconciliation_status, inconclusive, orderNew} = req.query;
 
         const whereDate = whereDateForType(filterBy,date1, date2, '"Transfers"."date_send"');
         const whereDateSum = whereDateForType(filterBy,date1, date2, '"transfers"."date_send"');
@@ -70,9 +74,24 @@ const getTransfersPaginate = async (req = request, res = response) => {
         const whereSum = {
             [Op.and]: [...baseConditions, { date_send: whereDateSum }]
         };
+        const reviewNotesInclude = {
+            association: 'reviewNotes',
+            required: inconclusive === 'true' || Boolean(reconciliation_status),
+            attributes: ['id', 'reconciliation_status', 'resolved_at', 'management_status'],
+            where: inconclusive === 'true'
+                ? { management_status: { [Op.ne]: 'ELIMINADA' }, [Op.or]: [
+                    { reconciliation_status: { [Op.ne]: REVIEW_STATUSES.COMPLETED } },
+                    { resolved_at: null },
+                ] }
+                : reconciliation_status
+                    ? { reconciliation_status, management_status: { [Op.ne]: 'ELIMINADA' } }
+                    : { management_status: { [Op.ne]: 'ELIMINADA' } },
+            include: [{ association: 'details', attributes: ['id', 'reconciliation_status', 'quantity_difference', 'quantity_resolved'] }],
+        };
         const optionsDb = {
             order: [orderNew],
             where,
+            distinct: true,
             include: [
                 {association: 'sucursal_send', attributes: ['name']},
                 {association: 'sucursal_received', attributes: ['name']},
@@ -80,6 +99,7 @@ const getTransfersPaginate = async (req = request, res = response) => {
                 {association: 'storage_received', attributes: ['name']},
                 {association: 'user_send', attributes: ['full_names']},
                 {association: 'user_received', attributes: ['full_names']},
+                reviewNotesInclude,
                 {association: 'detailsTransfers', include: [
                         { association: 'product',  attributes: [
                                 [sequelize.literal(`CONCAT("detailsTransfers->product"."cod",' - ' ,"detailsTransfers->product"."name")`), 'name'],
@@ -94,6 +114,13 @@ const getTransfersPaginate = async (req = request, res = response) => {
         let transfers = await paginate(Transfers, page, limit, type, query, optionsDb);
         for (const input of transfers.data) {
             input.dataValues.total_quantity = input.detailsTransfers.reduce((acc, item) => acc + Number(item.quantity), 0);
+            input.dataValues.reconciliation_status = deriveReceptionStatus(input.reviewNotes || []);
+            input.dataValues.pending_review_items = (input.reviewNotes || []).reduce((total, note) => (
+                total + (note.details || []).filter((detail) => detail.reconciliation_status !== REVIEW_STATUSES.COMPLETED).length
+            ), 0);
+            input.dataValues.review_closure_pending = (input.reviewNotes || []).some((note) => (
+                note.reconciliation_status === REVIEW_STATUSES.COMPLETED && !note.resolved_at
+            ));
         }
         const totalTransfer = await Transfers.sum('total', {where});
         const totalQuantity = await DetailsTransfers.sum('quantity', {
@@ -152,9 +179,10 @@ const newTransfer = async (req = request, res = response ) => {
                 transaction: t
             });
             //??ERROR STOCK INSUFICIENTE
-            if(stock.stock < detail.quantity){
+            const availability = await hasAvailableStock(stock, detail.quantity, t);
+            if(!availability.sufficient){
                 listProductNotStock.push(
-                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`}
+                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`}
                 );
             }
             stock.stock = Number(stock.stock) - Number(detail.quantity);
@@ -411,6 +439,7 @@ const receivedTransfer = async (req = request, res = response ) => {
             }, t, req.userAuth.id);
         }
 
+        await automatedResolutionService.completePendingTransfer({ transferId: transfer_received.id, actorUserId: req.userAuth.id, transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,

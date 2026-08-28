@@ -5,6 +5,7 @@ const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
 const { validaOpenCajaSmall } = require("../middlewares/validators/caja_small");
+const { hasAvailableStock } = require('../services/stock-availability.service');
 
 
 const getOutputFindOne = async (req = request, res = response) => {
@@ -249,13 +250,11 @@ const newOutput = async (req = request, res = response) => {
             });
 
             // ERROR STOCK INSUFICIENTE
-            if (
-                Number(stock.stock) <
-                Number(detail.quantity)
-            ) {
+            const availability = await hasAvailableStock(stock, detail.quantity, t);
+            if (!availability.sufficient) {
 
                 listProductNotStock.push({
-                    msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`
+                    msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`
                 });
             }
 
@@ -609,14 +608,12 @@ const updateOutput = async (req = request, res = response) => {
                 continue;
             }
 
-            if(
-                Number(stock.stock) <
-                Number(detail.quantity)
-            ){
+            const availability = await hasAvailableStock(stock, detail.quantity, t);
+            if(!availability.sufficient){
 
                 listProductNotStock.push({
                     msg:
-                    `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock.`
+                    `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`
                 });
 
                 continue;

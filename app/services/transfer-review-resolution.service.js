@@ -1,0 +1,238 @@
+'use strict';
+
+const {
+  sequelize,
+  TransferReviewNote,
+  TransferReviewNoteDetail,
+  TransferReviewResolutionAction,
+  TransferReviewActionMovement,
+  TransferReviewEvidence,
+  TransferReviewEvent,
+  Stock,
+  Product,
+  kardexMovements,
+} = require('../database/config');
+const { DETAIL_REVIEW_STATUSES, REVIEW_STATUSES } = require('../constants/transfer-review');
+const { createEvent, syncNoteStatus } = require('./transfer-review-workflow.service');
+const notificationService = require('./notification.service');
+
+const EXCESS_STRATEGIES = new Set([
+  'ORIGEN_ENVIO_MAYOR',
+  'ERROR_RECEPCION',
+  'PRODUCTO_INCORRECTO',
+  'FUENTE_EXTERNA',
+  'TOLERANCIA_AUTORIZADA',
+  'ACCION_MANUAL_VERIFICADA',
+]);
+const SHORTAGE_STRATEGIES = new Set([
+  'FALTANTE_LOCALIZADO',
+  'PERDIDA_CONFIRMADA',
+  'ERROR_MEDICION_FALTANTE',
+  'RECLASIFICACION',
+  'ACCION_MANUAL_VERIFICADA',
+]);
+const APPROVAL_REQUIRED = new Set(['FUENTE_EXTERNA', 'TOLERANCIA_AUTORIZADA', 'PERDIDA_CONFIRMADA', 'ACCION_MANUAL_VERIFICADA']);
+const EVIDENCE_REQUIRED = new Set(['FUENTE_EXTERNA', 'TOLERANCIA_AUTORIZADA', 'PERDIDA_CONFIRMADA']);
+
+const workflowError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
+
+const adjustStock = async ({ productId, sucursalId, storageId, delta, transaction }) => {
+  let stock = await Stock.findOne({
+    where: { id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true },
+    transaction,
+    lock: transaction.LOCK.UPDATE,
+  });
+  if (!stock && delta < 0) throw workflowError(`No existe stock físico para el producto ${productId}.`);
+  if (!stock) {
+    stock = await Stock.create({
+      stock_min: 1,
+      stock: 0,
+      id_product: productId,
+      id_sucursal: sucursalId,
+      id_storage: storageId,
+      status: true,
+    }, { transaction });
+  }
+  const nextStock = Number(stock.stock) + Number(delta);
+  if (nextStock < 0) throw workflowError(`La resolución dejaría stock negativo para el producto ${productId}.`);
+  stock.stock = nextStock;
+  await stock.save({ transaction });
+  return stock;
+};
+
+const createMovement = async ({ type, quantity, productId, sucursalId, storageId, userId, note, strategy, transaction }) => (
+  kardexMovements.create({
+    type,
+    date: new Date(),
+    details: `CONCILIACIÓN ${strategy} ${note.registry_number}`,
+    quantity,
+    cost: 0,
+    price: 0,
+    total: 0,
+    id_product: productId,
+    id_user: userId,
+    id_sucursal: sucursalId,
+    id_storage: storageId,
+    status: true,
+    registry_number: note.registry_number,
+  }, { transaction })
+);
+
+const linkMovements = async (actionId, movements, transaction) => {
+  if (movements.length === 0) return;
+  await TransferReviewActionMovement.bulkCreate(movements.map(({ id }) => ({
+    id_transfer_review_resolution_action: actionId,
+    id_kardex_movement: id,
+  })), { transaction });
+};
+
+const assertStrategy = (note, strategy) => {
+  const allowed = note.type === 'EXCEDENTE_PARA_REVISION' ? EXCESS_STRATEGIES : SHORTAGE_STRATEGIES;
+  if (!allowed.has(strategy)) throw workflowError(`La estrategia ${strategy} no corresponde al tipo de diferencia.`);
+};
+
+const assertTargetProduct = async (targetProductId, transaction) => {
+  const product = await Product.findOne({ where: { id: targetProductId, status: true }, transaction });
+  if (!product) throw workflowError('El producto destino no existe o está inactivo.');
+  return product;
+};
+
+const applyExcessStrategy = async ({ strategy, quantity, detail, note, targetProductId, userId, transaction }) => {
+  const movements = [];
+  if (strategy === 'ACCION_MANUAL_VERIFICADA') return movements;
+  const destination = { sucursalId: note.id_sucursal, storageId: note.id_storage };
+  if (strategy === 'ORIGEN_ENVIO_MAYOR') {
+    await adjustStock({ productId: note.id_product, sucursalId: note.transfer.id_sucursal_send, storageId: note.transfer.id_storage_send, delta: -quantity, transaction });
+    movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: note.id_product, sucursalId: note.transfer.id_sucursal_send, storageId: note.transfer.id_storage_send, userId, note, strategy, transaction }));
+  } else if (strategy === 'ERROR_RECEPCION') {
+    await adjustStock({ productId: note.id_product, ...destination, delta: -quantity, transaction });
+    movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: note.id_product, ...destination, userId, note, strategy, transaction }));
+  } else if (strategy === 'PRODUCTO_INCORRECTO') {
+    await assertTargetProduct(targetProductId, transaction);
+    if (Number(targetProductId) === Number(note.id_product)) throw workflowError('El producto correcto debe ser diferente del producto observado.');
+    await adjustStock({ productId: note.id_product, ...destination, delta: -quantity, transaction });
+    await adjustStock({ productId: targetProductId, ...destination, delta: quantity, transaction });
+    movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: note.id_product, ...destination, userId, note, strategy, transaction }));
+    movements.push(await createMovement({ type: 'INPUT', quantity, productId: targetProductId, ...destination, userId, note, strategy, transaction }));
+  }
+  return movements;
+};
+
+const applyShortageStrategy = async ({ strategy, quantity, detail, note, targetProductId, userId, transaction }) => {
+  const movements = [];
+  if (strategy === 'ACCION_MANUAL_VERIFICADA') return movements;
+  const destination = { sucursalId: note.id_sucursal, storageId: note.id_storage };
+  const differenceProductId = note.id_product;
+  const incomingProductId = strategy === 'RECLASIFICACION' ? Number(targetProductId) : detail.id_product;
+  if (strategy === 'RECLASIFICACION') await assertTargetProduct(incomingProductId, transaction);
+
+  await adjustStock({ productId: differenceProductId, ...destination, delta: -quantity, transaction });
+  movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: differenceProductId, ...destination, userId, note, strategy, transaction }));
+
+  if (strategy !== 'PERDIDA_CONFIRMADA') {
+    await adjustStock({ productId: incomingProductId, ...destination, delta: quantity, transaction });
+    movements.push(await createMovement({ type: 'INPUT', quantity, productId: incomingProductId, ...destination, userId, note, strategy, transaction }));
+  }
+  return movements;
+};
+
+const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause, observations, targetProductId, idempotencyKey, actorUserId, actorCanApprove }) => {
+  if (!idempotencyKey) throw workflowError('La clave de idempotencia es obligatoria.');
+  const requestedQuantity = Number(quantity);
+  if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) throw workflowError('La cantidad a conciliar debe ser mayor a cero.');
+
+  return sequelize.transaction(async (transaction) => {
+    const existing = await TransferReviewResolutionAction.findOne({
+      where: { idempotency_key: idempotencyKey },
+      include: [{ association: 'movementLinks', include: [{ association: 'kardexMovement' }] }],
+      transaction,
+    });
+    if (existing) return { action: existing, idempotent: true };
+
+    const detail = await TransferReviewNoteDetail.findOne({
+      where: { id: detailId, id_transfer_review_note: noteId },
+      include: [{ association: 'reviewNote', include: [{ association: 'transfer' }] }],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!detail) throw workflowError('Detalle de revisión no encontrado.', 404);
+    const note = detail.reviewNote;
+    assertStrategy(note, strategy);
+    if (APPROVAL_REQUIRED.has(strategy) && !actorCanApprove) throw workflowError('Esta estrategia requiere permiso de aprobación.', 403);
+    if (EVIDENCE_REQUIRED.has(strategy)) {
+      const evidenceCount = await TransferReviewEvidence.count({ where: { id_transfer_review_note: note.id }, transaction });
+      if (evidenceCount === 0) throw workflowError('Esta estrategia requiere evidencia registrada antes de aprobarse.');
+    }
+    if (strategy === 'ACCION_MANUAL_VERIFICADA') {
+      const manualEvents = await TransferReviewEvent.findAll({
+        where: { id_transfer_review_note: note.id, event_type: 'ACCION_MANUAL' },
+        transaction,
+      });
+      const referencedAction = manualEvents.find(({ metadata }) => (
+        (!metadata?.detail_id || Number(metadata.detail_id) === Number(detail.id))
+        && metadata?.reference_code
+      ));
+      if (!referencedAction) {
+        throw workflowError('La conciliación manual requiere una acción previa con referencia verificable.');
+      }
+    }
+
+    const pendingQuantity = Number(detail.quantity_difference) - Number(detail.quantity_resolved || 0);
+    if (requestedQuantity > pendingQuantity) throw workflowError(`La cantidad excede el pendiente de ${pendingQuantity}.`);
+
+    const action = await TransferReviewResolutionAction.create({
+      idempotency_key: idempotencyKey,
+      strategy,
+      quantity: requestedQuantity,
+      observations,
+      approved_at: APPROVAL_REQUIRED.has(strategy) ? new Date() : null,
+      id_transfer_review_note: note.id,
+      id_transfer_review_note_detail: detail.id,
+      id_user: actorUserId,
+      id_approved_user: APPROVAL_REQUIRED.has(strategy) ? actorUserId : null,
+    }, { transaction });
+
+    const common = { strategy, quantity: requestedQuantity, detail, note, targetProductId, userId: actorUserId, transaction };
+    const movements = note.type === 'EXCEDENTE_PARA_REVISION'
+      ? await applyExcessStrategy(common)
+      : await applyShortageStrategy(common);
+    await linkMovements(action.id, movements, transaction);
+
+    detail.quantity_resolved = Number(detail.quantity_resolved || 0) + requestedQuantity;
+    detail.cause = cause || strategy;
+    if (Number(detail.quantity_resolved) === Number(detail.quantity_difference)) {
+      detail.reconciliation_status = DETAIL_REVIEW_STATUSES.COMPLETED;
+      detail.resolved_at = new Date();
+      detail.id_resolved_user = actorUserId;
+    }
+    await detail.save({ transaction });
+    const syncedNote = await syncNoteStatus(note.id, transaction);
+    const event = await createEvent(note.id, actorUserId, 'RESOLUCION_APLICADA', `Se conciliaron ${requestedQuantity} mediante ${strategy}.`, {
+      action_id: action.id,
+      detail_id: detail.id,
+      strategy,
+      quantity: requestedQuantity,
+      movement_ids: movements.map(({ id }) => id),
+      target_product_id: targetProductId || null,
+    }, transaction);
+    await notificationService.notifyTransferReviewStakeholders({
+      note: syncedNote,
+      title: `Conciliación ${note.registry_number}`,
+      message: syncedNote.reconciliation_status === REVIEW_STATUSES.COMPLETED
+        ? `Las cantidades están conciliadas. Falta verificar stock–Kardex y guardar la revisión como resuelta.`
+        : `Se conciliaron ${requestedQuantity} mediante ${strategy}. Estado: ${syncedNote.reconciliation_status}.`,
+      type: syncedNote.reconciliation_status === REVIEW_STATUSES.COMPLETED ? 'TRANSFER_REVIEW_READY_TO_CLOSE' : 'TRANSFER_REVIEW_UPDATED',
+      level: 'WARNING',
+      eventKey: `review-resolution:${event.id}`,
+    }, transaction, actorUserId);
+    return { action, note: syncedNote, detail, movements, idempotent: false };
+  });
+};
+
+module.exports = {
+  EXCESS_STRATEGIES,
+  SHORTAGE_STRATEGIES,
+  APPROVAL_REQUIRED,
+  EVIDENCE_REQUIRED,
+  resolveReviewDetail,
+};

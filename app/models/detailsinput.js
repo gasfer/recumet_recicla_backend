@@ -38,7 +38,12 @@ module.exports = (sequelize, DataTypes) => {
     },
     id_input: DataTypes.INTEGER,
     id_product: DataTypes.INTEGER,
-    status: DataTypes.STRING
+    status: DataTypes.STRING,
+    created_by: DataTypes.INTEGER,
+    updated_by: DataTypes.INTEGER,
+    removed_by: DataTypes.INTEGER,
+    removed_at: DataTypes.DATE,
+    removal_reason: DataTypes.TEXT
   }, {
     sequelize,
     modelName: 'DetailsInput',

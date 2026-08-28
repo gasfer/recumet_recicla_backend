@@ -3,6 +3,65 @@ const { Op } = require('sequelize');
 const paginate = require('../helpers/paginate');
 
 class NotificationService {
+  async notifyTransferReviewStakeholders({ note, title, message, type, level = 'WARNING', eventKey, assignedUserId = null, reviewChanged = true }, transaction = null, excludeUserId = null) {
+    const users = await User.findAll({
+      where: { status: true },
+      attributes: ['id', 'role'],
+      include: [
+        { association: 'assign_sucursales', required: false, attributes: ['id_sucursal', 'status'] },
+        { association: 'assign_permission', required: false, attributes: ['module', 'view', 'status'] },
+      ],
+      transaction,
+    });
+    const recipientIds = [...new Set(users.filter((user) => {
+      if (excludeUserId && Number(user.id) === Number(excludeUserId)) return false;
+      if (user.role === 'ADMINISTRADOR' || Number(user.id) === Number(assignedUserId || note.id_assigned_user)) return true;
+      const hasBranch = user.assign_sucursales.some(({ id_sucursal, status }) => status !== false && Number(id_sucursal) === Number(note.id_sucursal));
+      const canRead = user.assign_permission.some(({ module, view, status }) => module === 'TRANSFER_REVIEW' && view === true && status !== false);
+      return hasBranch && canRead;
+    }).map(({ id }) => Number(id)))];
+
+    if (recipientIds.length === 0) return [];
+    const rows = recipientIds.map((userId) => ({
+      id_user: userId,
+      title,
+      message,
+      type,
+      level,
+      id_reference: note.id_transfer,
+      idempotency_key: `${eventKey}:${userId}`,
+      is_read: false,
+      status: true,
+    }));
+    const created = await Notification.bulkCreate(rows, { transaction, ignoreDuplicates: true, returning: true });
+    const createdRecipientIds = created
+      .filter(({ id }) => Boolean(id))
+      .map(({ id_user }) => Number(id_user));
+    if (createdRecipientIds.length === 0) return created;
+    try {
+      const Server = require('../models/server');
+      if (Server.instance?.io) {
+        const eventName = reviewChanged ? 'transfer-review-updated' : 'new-notification';
+        Server.instance.io.emit(eventName, reviewChanged ? {
+          transfer_id: note.id_transfer,
+          review_note_id: note.id,
+          sucursal_id: note.id_sucursal,
+          recipient_ids: createdRecipientIds,
+          type,
+        } : {
+          type,
+          level,
+          title,
+          message,
+          recipient_ids: createdRecipientIds,
+        });
+      }
+    } catch (error) {
+      console.error('Error al emitir actualización de revisión:', error);
+    }
+    return created;
+  }
+
   /**
    * Notifica a todos los usuarios con rol 'ADMINISTRADOR', opcionalmente excluyendo a uno (excludeUserId)
    */

@@ -2,14 +2,33 @@ const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const expressfileUpload = require('express-fileupload');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getProductPaginate, newProduct, updateProduct, activeInactiveProduct, newPriceProduct, deletePriceProduct, uploadFileProduct, getOneProductSucursal, productAssignatSucursals, getProductCostsSucursal, updateProductsCostos, getOneProduct, getProductsForSelect } = require('../controllers/product.controller');
+const { getProductPaginate, newProduct, updateProduct, activeInactiveProduct, newPriceProduct, deletePriceProduct, uploadFileProduct, getOneProductSucursal, productAssignatSucursals, getProductCostsSucursal, updateProductsCostos, getOneProduct, getProductsForSelect, getDifferenceProductsForSelect } = require('../controllers/product.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete, getValidateCreatePrice, validateDeletePrice } = require('../middlewares/validators/product');
 const { filesExist, validateUploadIdProduct, filesValidateSize } = require('../middlewares/validators/validar-files');
 const { validatedResponse } = require('../middlewares/validated-response');
 const { generateExcelReportsPricesProduct, generatePdfReports } = require('../controllers/reports/products.controller');
+const { PRODUCT_ACCESS_ROUTE_CONTEXTS } = require('../constants/product-category-access');
+const { bindProductAccessContext } = require('../middlewares/bind-product-access-context');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
 router.use(expressfileUpload());
+
+Object.entries(PRODUCT_ACCESS_ROUTE_CONTEXTS).forEach(([routeSegment, context]) => {
+    const bindContext = bindProductAccessContext(context);
+    router.get(`/operational/${routeSegment}`, [
+        validarJWT,
+        bindContext,
+    ], getProductPaginate);
+    router.get(`/operational/${routeSegment}/select`, [
+        validarJWT,
+        bindContext,
+    ], getProductsForSelect);
+});
+
+router.get('/differences/select', [
+    validarJWT,
+], getDifferenceProductsForSelect);
 
 /**
  * @swagger
@@ -30,6 +49,7 @@ router.use(expressfileUpload());
  */
 router.get('/', [
     validarJWT,
+    authorizeModulePermission('PRODUCTOS', 'view'),
 ], getProductPaginate);
 
 /**
@@ -67,6 +87,7 @@ router.get('/', [
  */
 router.get('/select', [
     validarJWT,
+    authorizeModulePermission('PRODUCTOS', 'view'),
 ], getProductsForSelect);
 
 /**

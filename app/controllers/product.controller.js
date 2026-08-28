@@ -14,6 +14,10 @@ const get_num_request = require("../helpers/generate-cod");
 const { fileMoveAndRemoveOld, deleteFile } = require("../helpers/file-upload");
 const path = require("path");
 const { Op } = require("sequelize");
+const {
+  intersectAllowedCategoryTypes,
+} = require('../services/product-category-access.service');
+const { attachAvailabilityToStocks } = require('../services/stock-availability.service');
 
 const ExcelJS = require("exceljs");
 
@@ -34,6 +38,7 @@ const getProductPaginate = async (req = request, res = response) => {
     } = req.query;
 
     const user = req.userAuth;
+    const operationalContext = req.productAccessContext;
     withStock = withStock === "true" ? true : false;
 
     let idsProductBySucursal = await ProductSucursals.findAll({
@@ -55,7 +60,7 @@ const getProductPaginate = async (req = request, res = response) => {
         { association: "prices", required: false, where: { status: true } },
         {
           association: "stocks",
-          attributes: ["stock", "stock_min"],
+          attributes: ["id", "stock", "stock_min", "id_product", "id_sucursal", "id_storage"],
           required: withStock ? true : false,
           where: {
             status: true,
@@ -75,8 +80,21 @@ const getProductPaginate = async (req = request, res = response) => {
       ],
     };
 
-    // ✅ Filtro por tipo de categoría (ej. RAW_MATERIAL) — antes del filtro id_category explícito
-    if (category_type) {
+    if (operationalContext) {
+      const effectiveTypes = intersectAllowedCategoryTypes(
+        user,
+        operationalContext,
+        category_type ? [category_type] : [],
+      );
+      optionsDb.include[0] = {
+        association: 'category',
+        required: true,
+        where: {
+          status: true,
+          type: { [Op.in]: effectiveTypes },
+        },
+      };
+    } else if (category_type) {
       const categoriesByType = await Category.findAll({
         where: { type: category_type, status: true },
         attributes: ["id"],
@@ -109,6 +127,7 @@ const getProductPaginate = async (req = request, res = response) => {
       ];
 
     let products = await paginate(Product, page, limit, type, query, optionsDb);
+    await attachAvailabilityToStocks(products.data.flatMap((product) => product.stocks || []));
 
     // filtro stock por sucursal asignada al usuario
     if (user.role != "ADMINISTRADOR") {
@@ -134,6 +153,12 @@ const getProductPaginate = async (req = request, res = response) => {
         product.dataValues.stocks      = stocksNew;
         product.dataValues.total_stock = stocksNew.reduce(
           (sum, product) => Number(sum) + Number(product.stock), 0,
+        );
+        product.dataValues.total_stock_in_review = stocksNew.reduce(
+          (sum, item) => Number(sum) + Number(item.dataValues.stock_in_review || 0), 0,
+        );
+        product.dataValues.total_available_stock = stocksNew.reduce(
+          (sum, item) => Number(sum) + Number(item.dataValues.available_stock || 0), 0,
         );
         product.dataValues.price_select = product?.prices[0]?.price ?? 0;
         return product;
@@ -512,6 +537,7 @@ const uploadFileProduct = async (req, res) => {
 const getProductsForSelect = async (req = request, res = response) => {
   try {
     const { query, limit = 10, category_type, category_ids, mermas } = req.query;
+    const operationalContext = req.productAccessContext;
     const where = { status: true };
 
     if (query) {
@@ -523,12 +549,23 @@ const getProductsForSelect = async (req = request, res = response) => {
 
     const include = [];
     const categoryWhere = {};
-    if (category_type) {
-      categoryWhere.type = category_type;
+    const requestedCategoryType = mermas === 'true'
+      ? 'RAW_MATERIAL'
+      : category_type;
+    if (operationalContext) {
+      categoryWhere.type = {
+        [Op.in]: intersectAllowedCategoryTypes(
+          req.userAuth,
+          operationalContext,
+          requestedCategoryType ? [requestedCategoryType] : [],
+        ),
+      };
+      categoryWhere.status = true;
+    } else if (requestedCategoryType) {
+      categoryWhere.type = requestedCategoryType;
     }
     if (mermas === 'true') {
       categoryWhere.name = 'MERMAS';
-      categoryWhere.type = 'RAW_MATERIAL';
       categoryWhere.status = true;
     }
     if (category_ids) {
@@ -561,6 +598,11 @@ const getProductsForSelect = async (req = request, res = response) => {
       errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
     });
   }
+};
+
+const getDifferenceProductsForSelect = (req = request, res = response) => {
+  req.query.category_ids = '22';
+  return getProductsForSelect(req, res);
 };
 
 /***
@@ -760,6 +802,7 @@ module.exports = {
   updateProductsCostos,
   getOneProduct,
   getProductsForSelect,
+  getDifferenceProductsForSelect,
   getReportProductCostExcel, // ✅
   getReportProductCostPdf,
 };

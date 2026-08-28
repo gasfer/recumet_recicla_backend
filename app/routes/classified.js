@@ -4,6 +4,8 @@ const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getClassifiedsPaginate, newClassified, destroyClassified, getClassifiedFindOne } = require('../controllers/classified.controller');
 const { getValidateCreate, validateIdClassified } = require('../middlewares/validators/classified');
 const { printClassifiedVoucher, generatePdfReports, generatePdfDetailsReports, generateExcelReports, generateExcelDetailsReports } = require('../controllers/reports/classified.controller');
+const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
+const { authorizeProductCategoryAccess, classifiedProductIds } = require('../middlewares/authorize-product-category-access');
 
 const router = Router();
 
@@ -62,7 +64,8 @@ router.get('/find/:id_classified', [
 router.post('/', [
     validarJWT,
     toUpperCaseConvert,
-    getValidateCreate
+    getValidateCreate,
+    authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.CLASSIFIEDS, action: 'create', extractProductIds: classifiedProductIds })
 ], newClassified);
 
 /**

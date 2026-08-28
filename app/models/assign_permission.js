@@ -16,6 +16,11 @@ module.exports = (sequelize, DataTypes) => {
     update: DataTypes.BOOLEAN,
     delete: DataTypes.BOOLEAN,
     reports: DataTypes.BOOLEAN,
+    allowed_category_types: {
+      type: DataTypes.ARRAY(DataTypes.STRING),
+      allowNull: false,
+      defaultValue: []
+    },
     status: DataTypes.BOOLEAN
   }, {
     sequelize,

@@ -30,6 +30,7 @@ const router = Router();
  */
 router.get('/', [
     validarJWT,
+    validarIsAdmin,
 ], getUsers);
 
 /**
@@ -44,6 +45,7 @@ router.get('/', [
  */
 router.post('/', [
     validarJWT,
+    validarIsAdmin,
     toUpperCaseConvert,
     getValidateCreate
 ], newUser);
@@ -66,6 +68,7 @@ router.post('/', [
  */
 router.put('/:id', [
     validarJWT,
+    validarIsAdmin,
     toUpperCaseConvert,
     getValidateUpdate
 ], updateUser);
@@ -88,6 +91,7 @@ router.put('/:id', [
  */
 router.put('/destroyAndActive/:id', [
     validarJWT,
+    validarIsAdmin,
     validateDelete
 ], activeInactiveUser);
 
@@ -103,6 +107,7 @@ router.put('/destroyAndActive/:id', [
  */
 router.put('/assign/permissions', [
     validarJWT,
+    validarIsAdmin,
     toUpperCaseConvert,
     validateAssignPermission
 ], updateAssignPermissions);
@@ -119,6 +124,7 @@ router.put('/assign/permissions', [
  */
 router.put('/assign/shift', [
     validarJWT,
+    validarIsAdmin,
     validateUpdateShifts
 ], updateAssignShift);
 
@@ -134,6 +140,7 @@ router.put('/assign/shift', [
  */
 router.put('/assign/sucursales', [
     validarJWT,
+    validarIsAdmin,
     validateUpdateAssignSucursales
 ], updateAssignSucursales);
 

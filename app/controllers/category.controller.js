@@ -2,15 +2,27 @@ const { response, request } = require('express');
 const { Category, sequelize } = require('../database/config');
 const { Op } = require('sequelize');
 const paginate = require('../helpers/paginate');
+const {
+    intersectAllowedCategoryTypes,
+} = require('../services/product-category-access.service');
 
 const getCategoryPaginate = async (req = request, res = response) => {
     try {
         const { query, page, limit, type, status, orderNew, category_type } = req.query;
+        const operationalContext = req.productAccessContext;
         const optionsDb = {
             order: [orderNew],
             where: { status },
         };
-        if (category_type) {
+        if (operationalContext) {
+            optionsDb.where.type = {
+                [Op.in]: intersectAllowedCategoryTypes(
+                    req.userAuth,
+                    operationalContext,
+                    category_type ? [category_type] : [],
+                ),
+            };
+        } else if (category_type) {
             optionsDb.where.type = category_type;
         }
         let categories = await paginate(Category, page, limit, type, query, optionsDb);
@@ -91,15 +103,24 @@ const activeInactiveCategory = async (req = request, res = response) => {
 const getCategoriesForSelect = async (req = request, res = response) => {
     try {
         const { category_type } = req.query;
+        const operationalContext = req.productAccessContext;
         const where = { status: true };
 
-        if (category_type) {
+        if (operationalContext) {
+            where.type = {
+                [Op.in]: intersectAllowedCategoryTypes(
+                    req.userAuth,
+                    operationalContext,
+                    category_type ? [category_type] : [],
+                ),
+            };
+        } else if (category_type) {
             where.type = category_type;
         }
 
         const categories = await Category.findAll({
             where,
-            attributes: ['id', 'name']
+            attributes: ['id', 'name', 'type']
         });
 
         return res.status(200).json({

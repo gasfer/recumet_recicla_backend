@@ -218,8 +218,25 @@ const transferVoucherIncludes = [
     ] },
 ];
 
-const sendVoucherPdf = (res, dataPdf, filename) => {
-    const docDefinition = { content: dataPdf, pageOrientation: 'landscape', styles };
+const HALF_LETTER_PORTRAIT = {
+    pageSize: { width: 396, height: 612 },
+    pageOrientation: 'portrait',
+    pageMargins: [18, 18, 18, 18],
+};
+
+const HALF_LETTER_LANDSCAPE = {
+    pageSize: { width: 396, height: 612 },
+    pageOrientation: 'landscape',
+    pageMargins: [18, 18, 18, 18],
+};
+
+const sendVoucherPdf = (res, dataPdf, filename, documentOptions = HALF_LETTER_PORTRAIT) => {
+    const docDefinition = {
+        content: dataPdf,
+        pageOrientation: 'landscape',
+        styles,
+        ...documentOptions,
+    };
     const printer = new PdfPrinter(fonts);
     const pdfDoc = printer.createPdfKitDocument(docDefinition);
     const chunks = [];
@@ -228,6 +245,8 @@ const sendVoucherPdf = (res, dataPdf, filename) => {
     pdfDoc.on('end', () => {
         res.setHeader('Content-Type', 'application/pdf;');
         res.setHeader('Content-disposition', `filename=${filename}.pdf`);
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.setHeader('Pragma', 'no-cache');
         res.send(Buffer.concat(chunks));
     });
     pdfDoc.end();
@@ -257,7 +276,7 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 { text: roundQuantity(transfer.detailsTransfers.reduce((total, detail) => total + Number(detail.quantity || 0), 0)), fontSize: 8, bold: true, alignment: 'center' },
             ],
         );
-        sendVoucherPdf(res, dataPdf, `guia-traslado-${transfer.cod}`);
+        sendVoucherPdf(res, dataPdf, `guia-traslado-${transfer.cod}`, HALF_LETTER_PORTRAIT);
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la Guía de traslado.' }] });
@@ -275,7 +294,11 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
             where: { id_transfer: transfer.id },
             include: [
                 { association: 'registeredProduct', attributes: ['cod', 'name'] },
-                { association: 'details', include: [{ association: 'product', attributes: ['cod', 'name'] }] },
+                { association: 'assignedUser', attributes: ['full_names'] },
+                { association: 'details', include: [
+                    { association: 'product', attributes: ['cod', 'name'] },
+                    { association: 'resolutionActions', include: [{ association: 'movementLinks' }] },
+                ] },
             ],
         });
         const voucherSummary = buildTransferVoucherSummary(transfer.detailsTransfers, transfer.status);
@@ -284,14 +307,14 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
         voucherSummary.rows.forEach((row, index) => {
             const detail = transfer.detailsTransfers[index];
             dataPdf[9].table.body.push([
-                { text: `${detail?.product?.cod || ''} - ${detail?.product?.name || ''}`, fontSize: 8 },
-                { text: detail?.product?.unit?.siglas, fontSize: 8, alignment: 'center' },
-                { text: row.sent, fontSize: 8, alignment: 'center' },
-                { text: row.received, fontSize: 8, alignment: 'center' },
-                { text: row.excess, fontSize: 8, alignment: 'center' },
-                { text: row.shortage, fontSize: 8, alignment: 'center' },
-                { text: row.differencePercentage, fontSize: 8, alignment: 'center' },
-                { text: row.observation, fontSize: 8, alignment: 'center' },
+                { text: `${detail?.product?.cod || ''} - ${detail?.product?.name || ''}`, fontSize: 7 },
+                { text: detail?.product?.unit?.siglas, fontSize: 7, alignment: 'center' },
+                { text: row.sent, fontSize: 7, alignment: 'center' },
+                { text: row.received, fontSize: 7, alignment: 'center' },
+                { text: row.excess, fontSize: 7, alignment: 'center' },
+                { text: row.shortage, fontSize: 7, alignment: 'center' },
+                { text: row.differencePercentage, fontSize: 7, alignment: 'center' },
+                { text: row.observation, fontSize: 7, alignment: 'center' },
             ]);
         });
         dataPdf[9].table.body.push([
@@ -306,19 +329,23 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
         ]);
 
         const reconciliationRows = reviewNotes.flatMap((note) => note.details.map((detail) => [
-            { text: `${detail.product.cod} - ${detail.product.name}`, fontSize: 8 },
-            { text: note.type === 'EXCEDENTE_PARA_REVISION' ? 'EXCEDENTE' : 'FALTANTE', fontSize: 8, alignment: 'center' },
-            { text: roundQuantity(detail.quantity_difference), fontSize: 8, alignment: 'center' },
+            { text: `${detail.product.cod} - ${detail.product.name}`, fontSize: 6 },
+            { text: note.type === 'EXCEDENTE_PARA_REVISION' ? 'EXCEDENTE' : 'FALTANTE', fontSize: 6, alignment: 'center' },
+            { text: roundQuantity(detail.quantity_difference), fontSize: 6, alignment: 'center' },
+            { text: roundQuantity(detail.quantity_resolved || 0), fontSize: 6, alignment: 'center' },
+            { text: note.reconciliation_status, fontSize: 6, alignment: 'center' },
+            { text: note.assignedUser?.full_names || 'SIN ASIGNAR', fontSize: 6 },
             { text: note.type === 'EXCEDENTE_PARA_REVISION'
                 ? `${detail.product.cod} - ${detail.product.name}`
-                : note.registeredProduct ? `${note.registeredProduct.cod} - ${note.registeredProduct.name}` : '-', fontSize: 8 },
+                : note.registeredProduct ? `${note.registeredProduct.cod} - ${note.registeredProduct.name}` : '-', fontSize: 6 },
+            { text: detail.resolutionActions.flatMap((action) => action.movementLinks.map((link) => `#${link.id_kardex_movement}`)).join(', ') || '-', fontSize: 6 },
         ]));
         if (reconciliationRows.length > 0) {
             const totalExcess = reviewNotes.filter((note) => note.type === 'EXCEDENTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
             const totalShortage = reviewNotes.filter((note) => note.type === 'FALTANTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
             dataPdf[10].stack.unshift(createReconciliationTable(reconciliationRows, totalExcess, totalShortage));
         }
-        sendVoucherPdf(res, dataPdf, `guia-recepcion-${transfer.cod}`);
+        sendVoucherPdf(res, dataPdf, `guia-recepcion-${transfer.cod}`, HALF_LETTER_LANDSCAPE);
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la Guía de recepción.' }] });
@@ -327,11 +354,11 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
 
 const createReconciliationTable = (rows, totalExcess, totalShortage) => ({
     margin: [0, 8, 0, 0],
-    table: { widths: ['*', 75, 75, '*'], body: [
-        [{ text: 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS', colSpan: 4, bold: true, fontSize: 8, fillColor: '#eeeeee' }, '', '', ''],
-        [{ text: 'PRODUCTO ORIGEN', bold: true, fontSize: 8 }, { text: 'TIPO', bold: true, fontSize: 8 }, { text: 'KG REGISTRADOS', bold: true, fontSize: 8 }, { text: 'PRODUCTO DESTINO', bold: true, fontSize: 8 }],
+    table: { widths: ['*', 30, 32, 32, 35, 48, '*', 34], body: [
+        [{ text: 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS', colSpan: 8, bold: true, fontSize: 6, fillColor: '#eeeeee' }, '', '', '', '', '', '', ''],
+        [{ text: 'PRODUCTO ORIGEN', bold: true, fontSize: 6 }, { text: 'TIPO', bold: true, fontSize: 6 }, { text: 'KG REG.', bold: true, fontSize: 6 }, { text: 'KG CONC.', bold: true, fontSize: 6 }, { text: 'ESTADO', bold: true, fontSize: 6 }, { text: 'RESPONSABLE', bold: true, fontSize: 6 }, { text: 'PRODUCTO DESTINO', bold: true, fontSize: 6 }, { text: 'KARDEX', bold: true, fontSize: 6 }],
         ...rows,
-        [{ text: 'TOTALES', bold: true, fontSize: 8 }, { text: `EXC: ${roundQuantity(totalExcess)}`, bold: true, fontSize: 8 }, { text: `FAL: ${roundQuantity(totalShortage)}`, bold: true, fontSize: 8 }, ''],
+        [{ text: 'TOTALES', bold: true, fontSize: 6 }, { text: `EXC: ${roundQuantity(totalExcess)}`, bold: true, fontSize: 6 }, { text: `FAL: ${roundQuantity(totalShortage)}`, bold: true, fontSize: 6 }, '', '', '', '', ''],
     ] },
 });
 
@@ -408,7 +435,7 @@ const createVoucherClosingSection = (transfer, includeReceptionObservations = fa
         {
             margin: [0, 3, 0, 0],
             columns: [
-                { text: `P/${transfer.type_registry} NRO:`, bold: true, style: 'text', width: 65 },
+                { text: `P/${transfer.type_registry} NRO:`, bold: true, style: 'text', width: includeReceptionObservations ? 95 : 65 },
                 { text: `${transfer.registry_number}`, style: 'text' },
                 { text: 'BALANZA:', bold: true, style: 'text', width: 58 },
                 { text: `${transfer?.scale?.name}`, style: 'text' },
@@ -440,25 +467,80 @@ const createVoucherClosingSection = (transfer, includeReceptionObservations = fa
 
 const dataPdfReturnReceptionVoucher = (transfer) => {
     const dataPdf = dataPdfReturnTransferVoucher(transfer);
-    dataPdf[3] = { text: 'GUÍA DE RECEPCIÓN', style: 'title2', bold: true, fontSize: 13 };
-    dataPdf[7] = {
+    dataPdf[0] = {
+        ...dataPdf[0],
+        width: 50,
+        absolutePosition: { x: 18, y: 12 },
+    };
+    dataPdf[1] = {
+        text: `RECEPCIÓN: ${transfer.cod}`,
+        style: 'fechaDocDetails',
+        absolutePosition: { y: 16 },
+    };
+    dataPdf[2] = {
+        text: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'),
+        style: 'fechaDocDetails',
+        absolutePosition: { y: 25 },
+    };
+    dataPdf[3] = {
+        text: 'GUÍA DE RECEPCIÓN',
+        style: 'title2',
+        bold: true,
+        fontSize: 11,
+        margin: [0, 38, 0, 12],
+    };
+    dataPdf[5] = {
+        columnGap: 8,
         columns: [
-            { text: 'Sucursal:', bold: true, style: 'text', width: 45 },
-            { text: `${transfer.sucursal_received.name}`, style: 'text' },
-            { text: 'Fecha recepción:', bold: true, style: 'text', width: 80 },
-            { text: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'), style: 'text' },
+            {
+                width: '55%',
+                fontSize: 7,
+                text: [
+                    { text: 'Sucursal: ', bold: true },
+                    { text: transfer.sucursal_send.name },
+                ],
+            },
+            {
+                width: '45%',
+                fontSize: 7,
+                text: [
+                    { text: 'Fecha envío: ', bold: true },
+                    { text: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss') },
+                ],
+            },
         ],
     };
-    dataPdf[9].table.widths = ['*', 30, 55, 55, 48, 48, 45, 70];
+    dataPdf[7] = {
+        columnGap: 8,
+        columns: [
+            {
+                width: '55%',
+                fontSize: 7,
+                text: [
+                    { text: 'Sucursal: ', bold: true },
+                    { text: transfer.sucursal_received.name },
+                ],
+            },
+            {
+                width: '45%',
+                fontSize: 7,
+                text: [
+                    { text: 'Fecha recepción: ', bold: true },
+                    { text: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss') },
+                ],
+            },
+        ],
+    };
+    dataPdf[9].table.widths = ['*', 22, 40, 44, 34, 34, 34, 44];
     dataPdf[9].table.body[0] = [
-        { text: 'DETALLE', fontSize: 8, fillColor: '#eeeeee', bold: true },
-        { text: 'UND', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
-        { text: 'CANT. ENVIADO', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
-        { text: 'CANT. RECEPCIONADO', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
-        { text: 'EXCEDENTE', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
-        { text: 'FALTANTE', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
-        { text: 'PORCENTAJE', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
-        { text: 'OBSERVACIÓN', alignment: 'center', fontSize: 8, fillColor: '#eeeeee', bold: true },
+        { text: 'DETALLE', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'UND', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'ENVIADO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'RECIBIDO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'EXCEDENTE', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'FALTANTE', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'DIF. %', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'OBS.', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
     ];
     dataPdf[10] = createVoucherClosingSection(transfer, true);
     return dataPdf;

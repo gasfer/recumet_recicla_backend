@@ -80,6 +80,10 @@ const validationSchema =  {
             negated: true,
             errorMessage: "El rol es obligatorio",
         },
+        isIn: {
+            options: [['ADMINISTRADOR', 'ENCARGADO', 'OPERADOR']],
+            errorMessage: 'El rol debe ser ADMINISTRADOR, ENCARGADO u OPERADOR',
+        },
         isLength: {
             errorMessage: 'El rol debe tener mínimo a 4 caracteres y máximo 174 caracteres',
             options: { min: 4, max: 174},
@@ -102,7 +106,14 @@ const getValidateUpdate= [
         id: {
             custom: { options: idExistUser},
         },
-        ...validationSchema
+        ...validationSchema,
+        password: {
+            optional: { options: { checkFalsy: true } },
+            isLength: {
+                errorMessage: 'La contraseña debe tener mínimo a 4 caracteres y máximo 174 caracteres',
+                options: { min: 4, max: 174},
+            },
+        },
     }),
     validatedResponse
 ];

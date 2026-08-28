@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
+const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,User,} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
@@ -7,6 +7,24 @@ const { whereDateForType } = require('../helpers/where_range');
 const { fileMoveAndRemoveOld } = require('../helpers/file-upload');
 const path = require('path');
 const fs = require('fs');
+const { hasAvailableStock } = require('../services/stock-availability.service');
+const purchaseAudit = require('../services/purchase-audit.service');
+
+const resolveAuthorizer = async (idAuthorizer, transaction) => {
+    if (!idAuthorizer) return null;
+    const user = await User.findByPk(idAuthorizer, { transaction });
+    if (!user || !['ADMINISTRADOR', 'ENCARGADO'].includes(user.role) || user.status === false || user.status === 'INACTIVE') {
+        const error = new Error('El usuario seleccionado no está habilitado para autorizar esta operación.');
+        error.status = 422;
+        throw error;
+    }
+    return user;
+};
+
+const auditRequestKey = (req, suffix) => {
+    const supplied = req.get('Idempotency-Key');
+    return supplied ? `purchase:${supplied}:${suffix}` : null;
+};
 
 const getInputFindOne = async (req = request, res = response) => {
     try {
@@ -19,7 +37,7 @@ const getInputFindOne = async (req = request, res = response) => {
                 { association: 'scale', attributes: ['name']},
                 { association: 'user', attributes: ['full_names','number_document']},
                 { association: 'bank'},
-                { association: 'detailsInput', attributes: {exclude: ['id','id_input','id_product','status','createdAt','updatedAt']}, 
+                { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false, attributes: {exclude: ['id_input','createdAt','updatedAt']}, 
                     include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
                                 attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
                 },
@@ -91,7 +109,7 @@ const getInputsPaginate = async (req = request, res = response) => {
                 { association: 'scale', attributes: ['name']},
                 { association: 'user', attributes: ['full_names','number_document']},
                 { association: 'bank'},
-                { association: 'detailsInput', attributes: {exclude: ['id','id_input','id_product','status','createdAt','updatedAt']}, 
+                { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false, attributes: {exclude: ['id_input','createdAt','updatedAt']}, 
                     include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
                                 attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
                 },
@@ -134,6 +152,13 @@ const newInput = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
         const { input_data, input_details } = req.body;
+        const createIdempotencyKey = auditRequestKey(req, 'create');
+        const repeatedCreate = await purchaseAudit.findEventByIdempotencyKey(createIdempotencyKey, t);
+        if (repeatedCreate) {
+            await t.rollback();
+            return res.status(200).json({ ok: true, msg: 'La compra ya fue registrada.', id_input: repeatedCreate.id_input, repeated: true });
+        }
+        const correlationId = purchaseAudit.createCorrelationId();
         const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
         //number default, not ficha
         if(type_registry === 'SIN FICHA') {
@@ -173,9 +198,12 @@ const newInput = async (req = request, res = response) => {
         await input.save({transaction: t});
         const id_input = input.id;
         /* Ingreso de detalles de la compra */
+        const createdDetails = [];
         for (const detail of input_details) {
             detail.id_input = id_input;
-            await DetailsInput.create(detail,{ transaction: t });
+            detail.created_by = req.userAuth.id;
+            const createdDetail = await DetailsInput.create(detail,{ transaction: t });
+            createdDetails.push(createdDetail);
             //**ACTUALIZAR COSTO PRODUCTO */
             //await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});
             //**ACTUALIZAR STOCK */
@@ -197,6 +225,8 @@ const newInput = async (req = request, res = response) => {
             }
         }
          /* Ingreso si es compra a credito */
+        let inputCredit = null;
+        let initialPayment = null;
         if(input_data.pay_to_credit){//si es compra a credito
             const monto_restante = Number(input_data.total) - Number(input_data.on_account);
             const input_credit = await AccountsPayable.create({
@@ -214,8 +244,9 @@ const newInput = async (req = request, res = response) => {
             const cod_credit = get_num_request('CP',count_accounts_payable,5);
             input_credit.cod = cod_credit;
             await input_credit.save({transaction: t});
+            inputCredit = input_credit;
             if(Number(input_data.on_account) > 0){
-                await AbonosAccountsPayable.create({
+                initialPayment = await AbonosAccountsPayable.create({
                     id_account_payable :input_credit.id,
                     date_abono :new Date(),
                     monto_abono :input_data.on_account,
@@ -225,6 +256,31 @@ const newInput = async (req = request, res = response) => {
                     status : true,
                 }, { transaction: t });
             }
+        }
+        await purchaseAudit.createEvent({
+            transaction: t, correlationId, idempotencyKey: createIdempotencyKey, input,
+            actorUserId: req.userAuth.id, entityType: purchaseAudit.ENTITY_TYPES.PURCHASE,
+            entityId: input.id, eventType: purchaseAudit.EVENT_TYPES.PURCHASE_CREATED,
+            afterData: { ...purchaseAudit.pick(input, purchaseAudit.AUDITABLE_INPUT_FIELDS), details: createdDetails.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS)) },
+            changedFields: [{ field: 'status', before: null, after: input.status }],
+        });
+        for (const detail of createdDetails) {
+            await purchaseAudit.createEvent({ transaction: t, correlationId, input, actorUserId: req.userAuth.id,
+                entityType: purchaseAudit.ENTITY_TYPES.DETAIL, entityId: detail.id, detailId: detail.id,
+                eventType: purchaseAudit.EVENT_TYPES.DETAIL_ADDED,
+                afterData: purchaseAudit.pick(detail, purchaseAudit.AUDITABLE_DETAIL_FIELDS) });
+        }
+        if (inputCredit) {
+            await purchaseAudit.createEvent({ transaction: t, correlationId, input, actorUserId: req.userAuth.id,
+                entityType: purchaseAudit.ENTITY_TYPES.ACCOUNT, entityId: inputCredit.id, accountId: inputCredit.id,
+                eventType: purchaseAudit.EVENT_TYPES.ACCOUNT_CREATED,
+                afterData: purchaseAudit.pick(inputCredit, purchaseAudit.AUDITABLE_ACCOUNT_FIELDS) });
+        }
+        if (initialPayment) {
+            await purchaseAudit.createEvent({ transaction: t, correlationId, input, actorUserId: req.userAuth.id,
+                entityType: purchaseAudit.ENTITY_TYPES.PAYMENT, entityId: initialPayment.id, accountId: inputCredit.id, paymentId: initialPayment.id,
+                eventType: purchaseAudit.EVENT_TYPES.PAYMENT_CREATED,
+                afterData: purchaseAudit.pick(initialPayment, purchaseAudit.AUDITABLE_PAYMENT_FIELDS) });
         }
          /* Ingreso historico */
         await History.create({
@@ -259,9 +315,20 @@ const updateInput = async (req = request, res = response) => {
     });
     try {
         const { id_input } = req.params;
+        const updateIdempotencyKey = auditRequestKey(req, 'update');
+        const repeatedUpdate = await purchaseAudit.findEventByIdempotencyKey(updateIdempotencyKey, t);
+        if (repeatedUpdate) {
+            await t.rollback();
+            return res.status(200).json({ ok: true, msg: 'La modificación ya fue registrada.', id_input: repeatedUpdate.id_input, repeated: true });
+        }
         const { input_data, input_details } = req.body;
         const { id_sucursal, id_provider, id_storage, registry_number, type_registry } = input_data;
-        input_data.id_user = req.userAuth.id;
+        const reason = String(input_data.audit_reason || req.body.audit_reason || '').trim();
+        const requestedAuthorizerId = input_data.id_authorizer_user || req.body.id_authorizer_user;
+        delete input_data.id_user;
+        delete input_data.audit_reason;
+        delete input_data.id_authorizer_user;
+        input_data.updated_by = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         const input_old = await Input.findByPk(id_input,{
             include: [ 
@@ -269,11 +336,27 @@ const updateInput = async (req = request, res = response) => {
                 { association: 'scale'},
                 { association: 'user'},
                 { association: 'bank'},
-                { association: 'detailsInput'},
+                { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false},
                 { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
             ],
+            lock: t.LOCK.UPDATE,
             transaction: t
         });
+        if (!input_old) {
+            await t.rollback();
+            return res.status(404).json({ ok: false, errors: [{ msg: 'La compra no existe.' }] });
+        }
+        const correlationId = purchaseAudit.createCorrelationId();
+        const beforeInput = purchaseAudit.pick(input_old, purchaseAudit.AUDITABLE_INPUT_FIELDS);
+        const beforeDetails = input_old.detailsInput.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
+        const requestedDetailsForDiff = input_details.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
+        const detailChanges = purchaseAudit.diffDetails(beforeDetails, requestedDetailsForDiff);
+        const priceChanged = detailChanges.some((change) => change.kind === 'PRICE_CHANGED');
+        if (priceChanged && reason.length < 5) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: [{ msg: 'Indique un motivo de al menos 5 caracteres para modificar precios.' }] });
+        }
+        const authorizer = priceChanged ? await resolveAuthorizer(requestedAuthorizerId, t) : null;
         if (type_registry === 'SIN FICHA') {
             if (!input_old.registry_number || input_old.type_registry != 'SIN FICHA') {
                 const lastInput = await Input.findOne({
@@ -309,7 +392,6 @@ const updateInput = async (req = request, res = response) => {
         }
         //** Reset details and stock and update input */
         await Input.update(input_data,{where:{id: id_input}, transaction: t});
-        await DetailsInput.destroy({where: {id: [...input_old.detailsInput.map(resp=>resp.id)]}, transaction: t });   
         //*Descuento stock*/
         for (const detail_old of input_old.detailsInput){
             const stock = await Stock.findOne({
@@ -319,14 +401,33 @@ const updateInput = async (req = request, res = response) => {
                 transaction: t
             });
             if(stock) {
+                const availability = await hasAvailableStock(stock, detail_old.quantity, t);
+                if (!availability.sufficient) {
+                    await t.rollback();
+                    return res.status(422).json({
+                        ok: false,
+                        errors: [{ msg: `No se puede modificar la compra: el producto ${detail_old.id_product} tiene sólo ${availability.available_stock} de stock disponible.` }],
+                    });
+                }
                 stock.stock = Number(stock.stock) - Number(detail_old.quantity);
                 await stock.save({ transaction: t });
             }
         }
-        //*** New details and stock */
+        //*** Actualizar detalles conservando su identidad y reponer stock */
+        const remainingOldDetails = new Map(input_old.detailsInput.map((item) => [Number(item.id), item]));
+        const oldByProduct = new Map(input_old.detailsInput.map((item) => [Number(item.id_product), item]));
+        const persistedDetails = [];
         for (const detail of input_details) {
             detail.id_input = id_input;
-            await DetailsInput.create(detail,{ transaction: t });   
+            const existing = detail.id ? remainingOldDetails.get(Number(detail.id)) : oldByProduct.get(Number(detail.id_product));
+            let persistedDetail;
+            if (existing && remainingOldDetails.has(Number(existing.id))) {
+                remainingOldDetails.delete(Number(existing.id));
+                persistedDetail = await existing.update({ ...detail, status: detail.status || 'ACTIVE', updated_by: req.userAuth.id, removed_by: null, removed_at: null, removal_reason: null }, { transaction: t });
+            } else {
+                persistedDetail = await DetailsInput.create({ ...detail, status: detail.status || 'ACTIVE', created_by: req.userAuth.id }, { transaction: t });
+            }
+            persistedDetails.push(persistedDetail);
              //**ACTUALIZAR COSTO PRODUCTO */
             // await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});     
             const stock = await Stock.findOne({
@@ -346,10 +447,15 @@ const updateInput = async (req = request, res = response) => {
                 await stock.save({ transaction: t });
             }
         }
+        for (const removedDetail of remainingOldDetails.values()) {
+            await removedDetail.update({ status: 'INACTIVE', removed_by: req.userAuth.id, removed_at: new Date(), removal_reason: reason || 'RETIRADO DURANTE LA EDICIÓN DE LA COMPRA' }, { transaction: t });
+        }
         //**Update abono input credit */
         /** si la compra era a crédito
          * Por ende validamos que no se tengan varios abonos. si son varios. no podemos editar o anular abonos.
          */
+        let auditedAccount = input_old.accounts_payable || null;
+        let accountBefore = auditedAccount ? purchaseAudit.pick(auditedAccount, purchaseAudit.AUDITABLE_ACCOUNT_FIELDS) : null;
         if(input_old.type == 'CREDITO' && input_old?.accounts_payable?.abonosAccountsPayable?.length > 1) {
             if(input_old.total != input_data.total ){
                 //**no se podría modificar la compra por que se tienen varios abonos.
@@ -364,42 +470,84 @@ const updateInput = async (req = request, res = response) => {
             }
             //si modifico el monto a cuenta, pero como tiene varios abonos no editamos ni agregamos. //Función en cuentas por pagar
         } else {
-            /** Buscamos el credito y si existe lo eliminamos y procedemos a crear otro, Si existe*/
-            const accountsPayable_old = await AccountsPayable.findByPk(input_old?.accounts_payable?.id,{transaction: t });
-            if(accountsPayable_old){
-                await AbonosAccountsPayable.destroy({where: { id_account_payable: accountsPayable_old.id}, transaction: t });
-                await AccountsPayable.destroy({where: { id: accountsPayable_old.id }, transaction: t });
-            }
-            //**New input credit */
+            const accountsPayableOld = input_old?.accounts_payable?.id
+                ? await AccountsPayable.findByPk(input_old.accounts_payable.id, { lock: t.LOCK.UPDATE, transaction: t })
+                : null;
             if(input_data.pay_to_credit){
                 const monto_restante = Number(input_data.total) - Number(input_data.on_account);
-                const input_credit = await AccountsPayable.create({
+                let inputCredit = accountsPayableOld;
+                const accountPayload = {
                     id_input, id_provider: input_data.id_provider,
                     description: `POR COMPRA #${input_old.cod}`,
-                    date_credit: new Date(),
+                    date_credit: inputCredit?.date_credit || new Date(),
                     total: input_data.total,
                     monto_abonado: input_data.on_account,
                     status_account: monto_restante === 0 ? 'PAGADO' : 'PENDIENTE',
                     monto_restante,
                     id_sucursal,
                     status: true,
-                }, { transaction: t });
-                const count_accounts_payable = await AccountsPayable.count({ where: {id_sucursal}, transaction: t });
-                const cod_credit = get_num_request('CP',count_accounts_payable,5);
-                input_credit.cod = cod_credit;
-                await input_credit.save({transaction: t});
+                    updated_by: req.userAuth.id, voided_by: null, voided_at: null, void_reason: null,
+                };
+                if (inputCredit) await inputCredit.update(accountPayload, { transaction: t });
+                else {
+                    inputCredit = await AccountsPayable.create(accountPayload, { transaction: t });
+                    const countAccountsPayable = await AccountsPayable.count({ where: {id_sucursal}, transaction: t });
+                    inputCredit.cod = get_num_request('CP', countAccountsPayable, 5);
+                    await inputCredit.save({ transaction: t });
+                }
+                auditedAccount = inputCredit;
+                const oldInitialPayment = input_old?.accounts_payable?.abonosAccountsPayable?.[0] || null;
                 if(Number(input_data.on_account) > 0){
-                    await AbonosAccountsPayable.create({
-                        id_account_payable :input_credit.id,
+                    const paymentPayload = {
+                        id_account_payable :inputCredit.id,
                         date_abono :new Date(),
                         monto_abono :input_data.on_account,
                         total_abonado :input_data.on_account,
                         restante_credito :Number(input_data.total) - Number(input_data.on_account),
                         id_user :req.userAuth.id,
                         status : true,
-                    }, { transaction: t });
+                        voided_by: null, voided_at: null, void_reason: null,
+                    };
+                    if (oldInitialPayment) await oldInitialPayment.update(paymentPayload, { transaction: t });
+                    else await AbonosAccountsPayable.create(paymentPayload, { transaction: t });
+                } else if (oldInitialPayment) {
+                    await oldInitialPayment.update({ status: false, voided_by: req.userAuth.id, voided_at: new Date(), void_reason: reason || 'CUOTA INICIAL RETIRADA DURANTE EDICIÓN' }, { transaction: t });
                 }
+            } else if (accountsPayableOld) {
+                await accountsPayableOld.update({ status: false, status_account: 'ANULADO', updated_by: req.userAuth.id, voided_by: req.userAuth.id, voided_at: new Date(), void_reason: reason || 'COMPRA CAMBIADA A CONTADO' }, { transaction: t });
+                await AbonosAccountsPayable.update({ status: false, voided_by: req.userAuth.id, voided_at: new Date(), void_reason: reason || 'COMPRA CAMBIADA A CONTADO' }, { where: { id_account_payable: accountsPayableOld.id, status: true }, transaction: t });
+                auditedAccount = accountsPayableOld;
             }
+        }
+        const updatedInput = await Input.findByPk(id_input, { transaction: t });
+        const afterInput = purchaseAudit.pick(updatedInput, purchaseAudit.AUDITABLE_INPUT_FIELDS);
+        const inputChanges = purchaseAudit.diff(beforeInput, afterInput);
+        if (inputChanges.length || detailChanges.length) {
+            await purchaseAudit.createEvent({ transaction: t, correlationId, idempotencyKey: updateIdempotencyKey, input: updatedInput,
+                actorUserId: req.userAuth.id, authorizerUserId: authorizer?.id,
+                entityType: purchaseAudit.ENTITY_TYPES.PURCHASE, entityId: updatedInput.id,
+                eventType: purchaseAudit.EVENT_TYPES.PURCHASE_UPDATED, reason,
+                beforeData: beforeInput, afterData: afterInput, changedFields: inputChanges });
+        }
+        const actualDetailChanges = purchaseAudit.diffDetails(beforeDetails, persistedDetails.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS)));
+        for (const change of actualDetailChanges) {
+            const detailId = change.after?.id || change.before?.id;
+            const eventType = change.kind === 'ADDED' ? purchaseAudit.EVENT_TYPES.DETAIL_ADDED
+                : change.kind === 'REMOVED' ? purchaseAudit.EVENT_TYPES.DETAIL_REMOVED
+                : change.kind === 'PRICE_CHANGED' ? purchaseAudit.EVENT_TYPES.PRICE_CHANGED : purchaseAudit.EVENT_TYPES.DETAIL_UPDATED;
+            await purchaseAudit.createEvent({ transaction: t, correlationId, input: updatedInput,
+                actorUserId: req.userAuth.id, authorizerUserId: authorizer?.id,
+                entityType: purchaseAudit.ENTITY_TYPES.DETAIL, entityId: detailId, detailId,
+                eventType, reason, beforeData: change.before, afterData: change.after, changedFields: change.changes });
+        }
+        if (auditedAccount) {
+            const accountAfter = purchaseAudit.pick(auditedAccount, purchaseAudit.AUDITABLE_ACCOUNT_FIELDS);
+            const accountChanges = purchaseAudit.diff(accountBefore || {}, accountAfter);
+            if (accountChanges.length) await purchaseAudit.createEvent({ transaction: t, correlationId, input: updatedInput,
+                actorUserId: req.userAuth.id, entityType: purchaseAudit.ENTITY_TYPES.ACCOUNT,
+                entityId: auditedAccount.id, accountId: auditedAccount.id,
+                eventType: !accountBefore ? purchaseAudit.EVENT_TYPES.ACCOUNT_CREATED : auditedAccount.status === false ? purchaseAudit.EVENT_TYPES.ACCOUNT_VOIDED : purchaseAudit.EVENT_TYPES.ACCOUNT_UPDATED,
+                reason, beforeData: accountBefore, afterData: accountAfter, changedFields: accountChanges });
         }
          /* Ingreso historico */
         await History.create({
@@ -421,22 +569,67 @@ const updateInput = async (req = request, res = response) => {
     } catch (error) {
         await t.rollback();
         console.log('ERROR UPDATE COMPRA: ' + error);
-        return res.status(500).json({
+        return res.status(error.status || 500).json({
           ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+          errors: [{ msg: error.status ? error.message : `Ocurrió un imprevisto interno | hable con soporte`}],
         });
     }
 }
+
+const previewAnularInput = async (req = request, res = response) => {
+    try {
+        const input = await Input.findOne({
+            where: { id: req.params.id_input, status: 'ACTIVE' },
+            include: [
+                { association: 'provider', attributes: ['id', 'full_names'] },
+                { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false, include: [{ association: 'product', attributes: ['id', 'cod', 'name'] }] },
+                { association: 'accounts_payable', required: false, include: [{ association: 'abonosAccountsPayable', required: false }] },
+            ],
+        });
+        if (!input) return res.status(404).json({ ok: false, errors: [{ msg: 'La compra activa no existe.' }] });
+        const account = input.accounts_payable;
+        return res.json({ ok: true, preview: {
+            purchase: { id: input.id, cod: input.cod, registry_number: input.registry_number, total: input.total, provider: input.provider },
+            materials: input.detailsInput.map((detail) => ({ id: detail.id, product: detail.product, quantity: detail.quantity, cost: detail.cost, total: detail.total })),
+            account_payable: account ? { id: account.id, cod: account.cod, total: account.total, paid: account.monto_abonado, pending: account.monto_restante, status: account.status_account, payments: account.abonosAccountsPayable } : null,
+            effects: ['La compra quedará anulada', 'El stock de los materiales será descontado', ...(account ? ['La cuenta por pagar quedará anulada; los pagos permanecerán en la trazabilidad'] : [])],
+        } });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo previsualizar la anulación.' }] });
+    }
+};
 
 const anularInput = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
         const {id_input} = req.params;
+        const voidIdempotencyKey = auditRequestKey(req, 'void');
+        const repeatedVoid = await purchaseAudit.findEventByIdempotencyKey(voidIdempotencyKey, t);
+        if (repeatedVoid) {
+            await t.rollback();
+            return res.status(200).json({ ok: true, msg: 'La compra ya fue anulada.', repeated: true });
+        }
+        const reason = String(req.body?.reason || req.query?.reason || '').trim();
+        if (reason.length < 5) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: [{ msg: 'Indique un motivo de al menos 5 caracteres para anular la compra.' }] });
+        }
         const input_anular = await Input.findOne({
             where: { id:id_input, status:'ACTIVE' },
-            include: [{association: 'detailsInput'}], transaction: t
+            include: [{association: 'detailsInput', where: { status: 'ACTIVE' }, required: false}, { association: 'accounts_payable', required: false, include: [{ association: 'abonosAccountsPayable', required: false }] }],
+            lock: t.LOCK.UPDATE, transaction: t
         });
+        if (!input_anular) {
+            await t.rollback();
+            return res.status(404).json({ ok: false, errors: [{ msg: 'La compra activa no existe.' }] });
+        }
+        const correlationId = purchaseAudit.createCorrelationId();
+        const beforeInput = purchaseAudit.pick(input_anular, purchaseAudit.AUDITABLE_INPUT_FIELDS);
         input_anular.status = 'INACTIVE';
+        input_anular.voided_by = req.userAuth.id;
+        input_anular.voided_at = new Date();
+        input_anular.void_reason = reason;
         await input_anular.save({transaction: t});
         const { id_sucursal, id_storage, } = input_anular;
         for (const detail of input_anular.detailsInput) {
@@ -445,10 +638,32 @@ const anularInput = async (req = request, res = response) => {
                 lock: true,
                 transaction: t
             });
+            const availability = await hasAvailableStock(stock, detail.quantity, t);
+            if (!availability.sufficient) {
+                await t.rollback();
+                return res.status(422).json({
+                    ok: false,
+                    errors: [{ msg: `No se puede anular la compra: el producto ${detail.id_product} tiene sólo ${availability.available_stock} de stock disponible.` }],
+                });
+            }
             stock.stock = Number(stock.stock) - Number(detail.quantity);
             await stock.save({ transaction: t });
         }
-        await AccountsPayable.update({status:false},{where: {id_input, status: true}, transaction: t});
+        const account = input_anular.accounts_payable;
+        if (account?.status) {
+            const accountBefore = purchaseAudit.pick(account, purchaseAudit.AUDITABLE_ACCOUNT_FIELDS);
+            await account.update({ status:false, status_account: 'ANULADO', voided_by: req.userAuth.id, voided_at: new Date(), void_reason: reason }, { transaction: t });
+            await purchaseAudit.createEvent({ transaction: t, correlationId, input: input_anular, actorUserId: req.userAuth.id,
+                entityType: purchaseAudit.ENTITY_TYPES.ACCOUNT, entityId: account.id, accountId: account.id,
+                eventType: purchaseAudit.EVENT_TYPES.ACCOUNT_VOIDED, reason,
+                beforeData: accountBefore, afterData: purchaseAudit.pick(account, purchaseAudit.AUDITABLE_ACCOUNT_FIELDS),
+                changedFields: purchaseAudit.diff(accountBefore, purchaseAudit.pick(account, purchaseAudit.AUDITABLE_ACCOUNT_FIELDS)) });
+        }
+        const afterInput = purchaseAudit.pick(input_anular, purchaseAudit.AUDITABLE_INPUT_FIELDS);
+        await purchaseAudit.createEvent({ transaction: t, correlationId, idempotencyKey: voidIdempotencyKey, input: input_anular,
+            actorUserId: req.userAuth.id, entityType: purchaseAudit.ENTITY_TYPES.PURCHASE,
+            entityId: input_anular.id, eventType: purchaseAudit.EVENT_TYPES.PURCHASE_VOIDED,
+            reason, beforeData: beforeInput, afterData: afterInput, changedFields: purchaseAudit.diff(beforeInput, afterInput) });
         await History.create({
             id_user: req.userAuth.id,
             description: `ANULO LA COMPRA CON #${input_anular.cod}`,
@@ -520,5 +735,6 @@ module.exports = {
     newInput,
     updateInput,
     anularInput,
+    previewAnularInput,
     uploadFileVoucher
 };

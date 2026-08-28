@@ -7,6 +7,7 @@ const { generatePdfReports, generateExcelReports, printAbonoAccountPayableVouche
 const { printAbonoMultipleAccountPayableVoucher } = require('../controllers/reports/accounts_payable/printBoletaAbonoMultiple');
 const expressfileUpload = require('express-fileupload');
 const { filesExist, filesValidateSize } = require('../middlewares/validators/validar-files');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
 
@@ -88,6 +89,7 @@ router.post('/payMultiProvider', [
  */
 router.post('/new-abono', [
     validarJWT,
+    authorizeModulePermission('CUENTAS POR PAGAR', 'create'),
     toUpperCaseConvert,
     getValidateCreate
 ], newAbonoAccountPayable);
@@ -117,6 +119,13 @@ router.put('/upload/voucher', [
  */
 router.delete('/destroy-abono/:id_abono', [
     validarJWT,
+    authorizeModulePermission('CUENTAS POR PAGAR', 'delete'),
+    validateDelete
+], deleteAbonoAccountPayable);
+
+router.delete('/void-payment/:id_abono', [
+    validarJWT,
+    authorizeModulePermission('CUENTAS POR PAGAR', 'delete'),
     validateDelete
 ], deleteAbonoAccountPayable);
 
@@ -138,6 +147,13 @@ router.delete('/destroy-abono/:id_abono', [
  */
 router.delete('/destroy-abono-multiple/:id_abono_multiple', [
     validarJWT,
+    authorizeModulePermission('CUENTAS POR PAGAR', 'delete'),
+    validateDeleteMultiple
+], deleteAbonoMultipleAccountPayable);
+
+router.delete('/void-multiple-payment/:id_abono_multiple', [
+    validarJWT,
+    authorizeModulePermission('CUENTAS POR PAGAR', 'delete'),
     validateDeleteMultiple
 ], deleteAbonoMultipleAccountPayable);
 

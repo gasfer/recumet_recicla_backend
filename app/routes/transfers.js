@@ -4,6 +4,8 @@ const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getTransfersPaginate, newTransfer, deleteTransfer, receivedTransfer, getTransferFindOne } = require('../controllers/transfers.controller');
 const { getValidateCreate, validateIdTransferPending, getValidateReceived, validateIdTransfer } = require('../middlewares/validators/transfers');
 const { printTransferVoucher, printTransferReceptionVoucher, generatePdfReports, generateExcelReports } = require('../controllers/reports/transfers.controller');
+const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
+const { authorizeProductCategoryAccess, detailProductIds } = require('../middlewares/authorize-product-category-access');
 
 const router = Router();
 
@@ -62,7 +64,8 @@ router.get('/find/:id_transfer', [
 router.post('/', [
     validarJWT,
     toUpperCaseConvert,
-    getValidateCreate
+    getValidateCreate,
+    authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.TRANSFERS, action: 'create', extractProductIds: detailProductIds('transfer_details') })
 ], newTransfer);
 
 /**

@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { AccountsPayable , AbonosAccountsPayable ,sequelize, History, AbonosAccountsPayableMultiple, ViewAbonosAccountPayableAll} = require('../database/config');
+const { AccountsPayable , AbonosAccountsPayable ,sequelize, History, AbonosAccountsPayableMultiple, ViewAbonosAccountPayableAll, Input} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { whereDateForType } = require('../helpers/where_range');
 const { Op } = require('sequelize');
@@ -8,6 +8,7 @@ const { fileMoveAndRemoveOld } = require('../helpers/file-upload');
 const notificationService = require('../services/notification.service');
 const path = require('path');
 const fs = require('fs');
+const purchaseAudit = require('../services/purchase-audit.service');
 
 
 const getAccountsPayablePaginate = async (req = request, res = response) => {
@@ -134,8 +135,15 @@ const newAbonoAccountPayable = async (req = request, res = response ) => {
         const body = req.body;
         body.status = true;
         const { id_account_payable } = body;
+        const idempotencyKey = req.get('Idempotency-Key') ? `payment:${req.get('Idempotency-Key')}:create:${id_account_payable}` : null;
+        const repeatedPayment = await purchaseAudit.findEventByIdempotencyKey(idempotencyKey, t);
+        if (repeatedPayment) {
+            await t.rollback();
+            return res.status(200).json({ ok: true, msg: 'El abono ya fue registrado.', id_abono_accounts_payable: repeatedPayment.id_abono_account_payable, repeated: true });
+        }
         const accountsPayable = await AccountsPayable.findByPk(id_account_payable,{ transaction: t });
-        const abonosAccountsPayable = await payAbonoAccount(accountsPayable,body,req.userAuth.id,false,t);
+        const correlationId = purchaseAudit.createCorrelationId();
+        const abonosAccountsPayable = await payAbonoAccount(accountsPayable,body,req.userAuth.id,false,t,correlationId,idempotencyKey);
         if(abonosAccountsPayable.ok){
             await t.commit();
             return res.status(201).json({
@@ -165,10 +173,26 @@ const deleteAbonoAccountPayable = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
         const { id_abono } = req.params;
+        const idempotencyKey = req.get('Idempotency-Key') ? `payment:${req.get('Idempotency-Key')}:void` : null;
+        const repeatedVoid = await purchaseAudit.findEventByIdempotencyKey(idempotencyKey, t);
+        if (repeatedVoid) {
+            await t.rollback();
+            return res.status(200).json({ ok: true, msg: 'El abono ya fue anulado.', repeated: true });
+        }
+        const reason = String(req.body?.reason || req.query?.reason || '').trim();
+        if (reason.length < 5) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: [{ msg: 'Indique un motivo de al menos 5 caracteres para anular el abono.' }] });
+        }
         const abonoAccountsPayable = await AbonosAccountsPayable.findByPk(id_abono,{ transaction: t });
+        if (!abonoAccountsPayable || abonoAccountsPayable.status === false) {
+            await t.rollback();
+            return res.status(404).json({ ok: false, errors: [{ msg: 'El abono activo no existe.' }] });
+        }
+        const paymentBefore = purchaseAudit.pick(abonoAccountsPayable, purchaseAudit.AUDITABLE_PAYMENT_FIELDS);
         await AbonosAccountsPayable.update({total_abonado:null,restante_credito:null},{ where: {id_account_payable:abonoAccountsPayable.id_account_payable},transaction: t })
         //cambio de estado del abono
-        await abonoAccountsPayable.update({status:false,},{ transaction: t });
+        await abonoAccountsPayable.update({status:false, voided_by: req.userAuth.id, voided_at: new Date(), void_reason: reason},{ transaction: t });
         const abono_anulado = Number(abonoAccountsPayable.monto_abono);
         //Cuenta por pagar montos modificados y estado
         const accountsPayable = await AccountsPayable.findByPk(abonoAccountsPayable.id_account_payable, { include: [{association:'input', attributes:['cod']}], transaction: t });
@@ -177,6 +201,14 @@ const deleteAbonoAccountPayable = async (req = request, res = response) => {
         accountsPayable.monto_abonado = newMontoAbonado;
         accountsPayable.monto_restante = Number(accountsPayable.total) - newMontoAbonado;
         await accountsPayable.save({transaction: t});
+        const input = await Input.findByPk(accountsPayable.id_input, { transaction: t });
+        await purchaseAudit.createEvent({ transaction: t, correlationId: purchaseAudit.createCorrelationId(),
+            idempotencyKey,
+            input, actorUserId: req.userAuth.id, entityType: purchaseAudit.ENTITY_TYPES.PAYMENT,
+            entityId: abonoAccountsPayable.id, accountId: accountsPayable.id, paymentId: abonoAccountsPayable.id,
+            eventType: purchaseAudit.EVENT_TYPES.PAYMENT_VOIDED, reason,
+            beforeData: paymentBefore, afterData: purchaseAudit.pick(abonoAccountsPayable, purchaseAudit.AUDITABLE_PAYMENT_FIELDS),
+            changedFields: purchaseAudit.diff(paymentBefore, purchaseAudit.pick(abonoAccountsPayable, purchaseAudit.AUDITABLE_PAYMENT_FIELDS)) });
         /*Buscar si se hizo en pago multiple*/
         const abonosMultiple = await AbonosAccountsPayableMultiple.findOne({where: {
             [Op.and]: [
@@ -228,7 +260,7 @@ const deleteAbonoAccountPayable = async (req = request, res = response) => {
         await t.commit();
         return res.status(201).json({
             ok: true,
-            msg:'Abono eliminado exitosamente'
+            msg:'Abono anulado exitosamente'
         });   
     } catch (error) {
         await t.rollback();
@@ -244,11 +276,28 @@ const deleteAbonoMultipleAccountPayable = async (req = request, res = response) 
     const t = await sequelize.transaction();
     try {
         const { id_abono_multiple } = req.params;
+        const idempotencyBase = req.get('Idempotency-Key') ? `payment-multiple:${req.get('Idempotency-Key')}:void` : null;
+        const reason = String(req.body?.reason || req.query?.reason || '').trim();
+        if (reason.length < 5) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: [{ msg: 'Indique un motivo de al menos 5 caracteres para anular los abonos.' }] });
+        }
+        const correlationId = purchaseAudit.createCorrelationId();
         const abonosAccountsPayableMultiple = await AbonosAccountsPayableMultiple.findByPk(id_abono_multiple,{ transaction: t });
+        if (!abonosAccountsPayableMultiple || abonosAccountsPayableMultiple.status === false) {
+            await t.rollback();
+            return res.status(404).json({ ok: false, errors: [{ msg: 'El pago múltiple activo no existe.' }] });
+        }
+        const repeatedVoid = await purchaseAudit.findEventByIdempotencyKey(idempotencyBase ? `${idempotencyBase}:payment:${abonosAccountsPayableMultiple.ids_abonos_payables?.[0]}` : null, t);
+        if (repeatedVoid) {
+            await t.rollback();
+            return res.status(200).json({ ok: true, msg: 'Los abonos ya fueron anulados.', repeated: true });
+        }
         const abonosFromPayMultiple =  await AbonosAccountsPayable.findAll({ where: {id: {[Op.in]: abonosAccountsPayableMultiple.ids_abonos_payables }}},{ transaction: t });
         for (const abono_old of abonosFromPayMultiple) {
             //dar de baja abono
-            await AbonosAccountsPayable.update({status:false},{ where: {id:abono_old.id},transaction: t });
+            const paymentBefore = purchaseAudit.pick(abono_old, purchaseAudit.AUDITABLE_PAYMENT_FIELDS);
+            await abono_old.update({status:false, voided_by: req.userAuth.id, voided_at: new Date(), void_reason: reason},{ transaction: t });
             const abono_anulado = Number(abono_old.monto_abono);
             const accountsPayable = await AccountsPayable.findByPk(abono_old.id_account_payable, { transaction: t });
             accountsPayable.status_account = 'PENDIENTE';
@@ -256,6 +305,15 @@ const deleteAbonoMultipleAccountPayable = async (req = request, res = response) 
             accountsPayable.monto_abonado = newMontoAbonado;
             accountsPayable.monto_restante = Number(accountsPayable.total) - newMontoAbonado;
             await accountsPayable.save({transaction: t});
+            const input = await Input.findByPk(accountsPayable.id_input, { transaction: t });
+            await purchaseAudit.createEvent({ transaction: t, correlationId,
+                idempotencyKey: idempotencyBase ? `${idempotencyBase}:payment:${abono_old.id}` : null,
+                input, actorUserId: req.userAuth.id,
+                entityType: purchaseAudit.ENTITY_TYPES.PAYMENT, entityId: abono_old.id,
+                accountId: accountsPayable.id, paymentId: abono_old.id,
+                eventType: purchaseAudit.EVENT_TYPES.PAYMENT_VOIDED, reason,
+                beforeData: paymentBefore, afterData: purchaseAudit.pick(abono_old, purchaseAudit.AUDITABLE_PAYMENT_FIELDS),
+                changedFields: purchaseAudit.diff(paymentBefore, purchaseAudit.pick(abono_old, purchaseAudit.AUDITABLE_PAYMENT_FIELDS)) });
             await History.create({
                 id_user: req.userAuth.id,
                 description: `ANULO ABONO ${accountsPayable.description}`,
@@ -282,11 +340,11 @@ const deleteAbonoMultipleAccountPayable = async (req = request, res = response) 
             id_reference: abonosAccountsPayableMultiple.id
         }, t, req.userAuth ? req.userAuth.id : null);
 
-        await abonosAccountsPayableMultiple.destroy({ transaction: t });
+        await abonosAccountsPayableMultiple.update({ status: false }, { transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,
-            msg:'Abono eliminado exitosamente'
+            msg:'Abonos anulados exitosamente'
         });   
     } catch (error) {
         await t.rollback();
@@ -351,6 +409,7 @@ const getAccountAllProvider = async (req = request, res = response) => {
 const payAccountMultiple = async (req = request, res = response) => {
     const t = await sequelize.transaction();
     try {
+        const correlationId = purchaseAudit.createCorrelationId();
         const { id_provider, monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_sucursal, id_bank_origin, account_origin, number_transaction} = req.body;
         if (!monto_abono || isNaN(monto_abono) || !date_abono) {
             return res.status(422).json({
@@ -372,6 +431,12 @@ const payAccountMultiple = async (req = request, res = response) => {
             ],
             transaction: t}
         );
+        const idempotencyBase = req.get('Idempotency-Key') ? `payment-multiple:${req.get('Idempotency-Key')}` : null;
+        const repeatedPayment = accountsPayable.length ? await purchaseAudit.findEventByIdempotencyKey(idempotencyBase ? `${idempotencyBase}:account:${accountsPayable[0].id}` : null, t) : null;
+        if (repeatedPayment) {
+            await t.rollback();
+            return res.status(200).json({ ok: true, msg: 'El pago múltiple ya fue registrado.', repeated: true });
+        }
         const total_restante = await AccountsPayable.sum('AccountsPayable.monto_restante', {where, transaction: t});
         let remainingAmount = parseFloat(monto_abono);  // El monto por pagar
         // Si no hay cuentas por pagar
@@ -408,7 +473,7 @@ const payAccountMultiple = async (req = request, res = response) => {
             }
             const body = req.body; //{monto_abono, date_abono, type_payment, comments, account_output, id_bank} = body;
             body.monto_abono =  newAbono;
-            const abonosAccountsPayable = await payAbonoAccount(account,body,req.userAuth.id,true,t);
+            const abonosAccountsPayable = await payAbonoAccount(account,body,req.userAuth.id,true,t,correlationId,idempotencyBase ? `${idempotencyBase}:account:${account.id}` : null);
             if(!abonosAccountsPayable.ok) {
                 await t.rollback();
                 return res.status(422).json({
@@ -446,7 +511,7 @@ const payAccountMultiple = async (req = request, res = response) => {
 }
 
 
-const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
+const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t,correlationId = purchaseAudit.createCorrelationId(),idempotencyKey = null) => {
     try {
         const  {monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_bank_origin, account_origin, number_transaction} = body;
         const decimal = await getNumberDecimal();
@@ -468,6 +533,13 @@ const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
             restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_output,id_bank,from_pay_multiple,
             id_bank_origin, account_origin, number_transaction
         },{ transaction: t });
+        const input = await Input.findByPk(account.id_input, { transaction: t });
+        await purchaseAudit.createEvent({ transaction: t, correlationId, idempotencyKey,
+            input, actorUserId: userAuthId, entityType: purchaseAudit.ENTITY_TYPES.PAYMENT,
+            entityId: abonosAccountsPayable.id, accountId: account.id, paymentId: abonosAccountsPayable.id,
+            eventType: purchaseAudit.EVENT_TYPES.PAYMENT_CREATED,
+            beforeData: null, afterData: purchaseAudit.pick(abonosAccountsPayable, purchaseAudit.AUDITABLE_PAYMENT_FIELDS),
+            changedFields: [{ field: 'monto_abono', before: null, after: Number(monto_abono) }, { field: 'monto_restante', before: Number(account.monto_restante) + Number(monto_abono), after: Number(account.monto_restante) }] });
         /* Ingreso historico */
         await History.create({
             id_user: userAuthId,

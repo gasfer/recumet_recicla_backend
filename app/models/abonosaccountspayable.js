@@ -45,6 +45,9 @@ module.exports = (sequelize, DataTypes) => {
     id_bank_origin: DataTypes.INTEGER,
     payment_voucher: DataTypes.STRING,
     number_transaction: DataTypes.STRING,
+    voided_by: DataTypes.INTEGER,
+    voided_at: DataTypes.DATE,
+    void_reason: DataTypes.TEXT,
   }, {
     sequelize,
     modelName: 'AbonosAccountsPayable',

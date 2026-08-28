@@ -8,11 +8,11 @@ const { verifyAssignShift } = require('../helpers/verify-assign-user');
 const login = async (req, res = response) => {
     const {email, password} = req.body;
     try {
-        const history = await History.create({
+        const historyData = {
             module: 'AUTENTICACION',
-            query: JSON.stringify({email, password}),
+            query: JSON.stringify({email}),
             status: true
-        });
+        };
         let user = await User.findOne({
             where:{ email },
             attributes: {exclude: ['updatedAt','createdAt']},
@@ -23,9 +23,7 @@ const login = async (req, res = response) => {
             ]
         });
         if(!user) {
-            history.type = 'NO EXISTE USUARIO';
-            history.description = `SE INTENTO AUTENTICAR UN USUARIO NO EXISTENTE: ${email}`;
-            await history.save();
+            await History.create({ ...historyData, type: 'NO EXISTE USUARIO', description: `SE INTENTO AUTENTICAR UN USUARIO NO EXISTENTE: ${email}` });
             return res.status(401).json({
                 ok: false,
                 errors: [{
@@ -33,12 +31,9 @@ const login = async (req, res = response) => {
                     }],
             });
         }
-        const validPassword = bcrypt.compareSync(password, user.password);
+        const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword){
-            history.id_user = user.id;
-            history.type = 'CONTRASEÑA INCORRECTA';
-            history.description = `SE INTENTO AUTENTICAR EL USUARIO ${user.full_names} SIN ÉXITO YA QUE NO ES LA CONTRASEÑA CORRECTA`;
-            await history.save();
+            await History.create({ ...historyData, id_user: user.id, type: 'CONTRASEÑA INCORRECTA', description: `SE INTENTO AUTENTICAR EL USUARIO ${user.full_names} SIN ÉXITO YA QUE NO ES LA CONTRASEÑA CORRECTA` });
             return res.status(401).json({
                 ok: false,
                 errors: [{
@@ -47,10 +42,7 @@ const login = async (req, res = response) => {
             });
         }
         if (!user.status){
-            history.id_user = user.id;
-            history.type = 'USUARIO INACTIVO';
-            history.description = `SE INTENTO AUTENTICAR EL USUARIO ${user.full_names} SIN ÉXITO YA QUE SE ENCUENTRA EN ESTO INACTIVO`;
-            await history.save();
+            await History.create({ ...historyData, id_user: user.id, type: 'USUARIO INACTIVO', description: `SE INTENTO AUTENTICAR EL USUARIO ${user.full_names} SIN ÉXITO YA QUE SE ENCUENTRA EN ESTADO INACTIVO` });
             return res.status(401).json({
                 ok: false,
                 errors: [{
@@ -59,10 +51,7 @@ const login = async (req, res = response) => {
             });
         }
         if(!verifyAssignShift(user.assign_shift)  && user.role != 'ADMINISTRADOR'){
-            history.id_user = user.id;
-            history.type = 'HORARIO NO ASIGNADO';
-            history.description = `SE INTENTO AUTENTICAR EL USUARIO ${user.full_names} SIN ÉXITO YA QUE NO PUEDE INGRESAR POR SUS TURNOS`;
-            await history.save();
+            await History.create({ ...historyData, id_user: user.id, type: 'HORARIO NO ASIGNADO', description: `SE INTENTO AUTENTICAR EL USUARIO ${user.full_names} SIN ÉXITO YA QUE NO PUEDE INGRESAR POR SUS TURNOS` });
             return res.status(401).json({
                 ok: false,
                 errors: [{
@@ -70,14 +59,9 @@ const login = async (req, res = response) => {
                     }],
             });
         }
-        const decimals = await getNumberDecimal();
-        const token = await generarJWT(user.id);
+        const [decimals, token] = await Promise.all([getNumberDecimal(), generarJWT(user.id)]);
         delete user.dataValues.password;
-        history.id_user = user.id;
-        history.query = JSON.stringify({email});
-        history.type = 'INGRESO AL SISTEMA';
-        history.description = `EL USUARIO: ${user.full_names} INGRESO Al SISTEMA`;
-        await history.save();
+        await History.create({ ...historyData, id_user: user.id, type: 'INGRESO AL SISTEMA', description: `EL USUARIO: ${user.full_names} INGRESO AL SISTEMA` });
         res.status(200).json({
             ok: true,
             user,

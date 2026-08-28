@@ -6,7 +6,7 @@ module.exports = {
     database: process.env.DB_DATABASE,
     host:     process.env.DB_HOST,
     dialect:  process.env.DB_DIALECT,
-    logging:  process.env.DB_LOGGING == 'true' ? true : false,
+    logging:  process.env.DB_LOGGING === 'true' ? console.log : false,
     dialectOptions:{
         useUTC:false,
         timezone:'America/La_Paz'

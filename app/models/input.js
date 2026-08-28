@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
       Input.belongsTo(models.Bank,{as: 'bank', foreignKey:'id_bank'});
       Input.belongsTo(models.User,{as: 'user', foreignKey:'id_user'});
       Input.belongsTo(models.Sucursal,{as: 'sucursal', foreignKey:'id_sucursal'});
+      Input.hasMany(models.PurchaseAuditEvent,{as: 'auditEvents', foreignKey:'id_input'});
     }
   }
   Input.init({
@@ -56,6 +57,10 @@ module.exports = (sequelize, DataTypes) => {
     with_pickup: DataTypes.BOOLEAN,
     payment_voucher: DataTypes.STRING,
     number_transaction: DataTypes.STRING,
+    updated_by: DataTypes.INTEGER,
+    voided_by: DataTypes.INTEGER,
+    voided_at: DataTypes.DATE,
+    void_reason: DataTypes.TEXT,
   }, {
     sequelize,
     modelName: 'Input',

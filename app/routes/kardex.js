@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
-const { getKardexPaginate, getKardexFisicoPaginate, getTotalStockRecumet } = require("../controllers/kardex.controller");
+const { getKardexPaginate, getKardexFisicoPaginate, getTotalStockRecumet, getStockDiagnosticHandler, syncStocksHandler } = require("../controllers/kardex.controller");
 const { generatePdfReports, generateExcelReports, generatePdfReportsKardexFisico, generateExcelReportsKardexFisico, generatePdfReportsExistencia, generateExcelReportsExistencia } = require('../controllers/reports/kardex.controller');
 const { generatePdfReportsTotalStock, generateExcelReportsTotalStock } = require('../controllers/reports/total-stock-recumet.controller');
 
@@ -13,6 +13,14 @@ const router = Router();
  *   name: Kardex
  *   description: Gestión de kardex de inventario
  */
+
+router.get('/diagnostic', [
+    validarJWT,
+], getStockDiagnosticHandler);
+
+router.put('/sync-stocks', [
+    validarJWT,
+], syncStocksHandler);
 
 /**
  * @swagger
