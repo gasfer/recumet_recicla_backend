@@ -1,3 +1,5 @@
+const { actionLabel, sendPermissionDenied } = require('../helpers/permission-denied');
+
 const authorizeModulePermission = (module, action = 'view') => {
   const middleware = (req, res, next) => {
     const user = req.userAuth;
@@ -12,12 +14,7 @@ const authorizeModulePermission = (module, action = 'view') => {
     ));
 
     if (!permission || permission[action] !== true) {
-      return res.status(403).json({
-        ok: false,
-        errors: [{
-          msg: `No tienes permiso para consultar el módulo ${module}.`,
-        }],
-      });
+      return sendPermissionDenied(res, `${actionLabel(action)} el módulo ${module}`);
     }
 
     return next();

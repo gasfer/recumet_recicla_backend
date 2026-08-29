@@ -33,6 +33,7 @@ const SHORTAGE_STRATEGIES = new Set([
 ]);
 const APPROVAL_REQUIRED = new Set(['FUENTE_EXTERNA', 'TOLERANCIA_AUTORIZADA', 'PERDIDA_CONFIRMADA', 'ACCION_MANUAL_VERIFICADA']);
 const EVIDENCE_REQUIRED = new Set(['FUENTE_EXTERNA', 'TOLERANCIA_AUTORIZADA', 'PERDIDA_CONFIRMADA']);
+const { permissionDeniedError } = require('../helpers/permission-denied');
 
 const workflowError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
 
@@ -158,7 +159,7 @@ const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause
     if (!detail) throw workflowError('Detalle de revisión no encontrado.', 404);
     const note = detail.reviewNote;
     assertStrategy(note, strategy);
-    if (APPROVAL_REQUIRED.has(strategy) && !actorCanApprove) throw workflowError('Esta estrategia requiere permiso de aprobación.', 403);
+    if (APPROVAL_REQUIRED.has(strategy) && !actorCanApprove) throw permissionDeniedError('aprobar esta estrategia de conciliación');
     if (EVIDENCE_REQUIRED.has(strategy)) {
       const evidenceCount = await TransferReviewEvidence.count({ where: { id_transfer_review_note: note.id }, transaction });
       if (evidenceCount === 0) throw workflowError('Esta estrategia requiere evidencia registrada antes de aprobarse.');

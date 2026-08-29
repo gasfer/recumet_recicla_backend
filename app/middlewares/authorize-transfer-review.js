@@ -4,6 +4,7 @@ const {
   REVIEW_PERMISSION_ACTIONS,
   REVIEW_PERMISSION_MODULE,
 } = require('../constants/transfer-review');
+const { actionLabel, sendPermissionDenied } = require('../helpers/permission-denied');
 
 const authorizeTransferReview = (action) => (req, res, next) => {
   if (req.userAuth?.role === 'ADMINISTRADOR') return next();
@@ -13,10 +14,7 @@ const authorizeTransferReview = (action) => (req, res, next) => {
     module === REVIEW_PERMISSION_MODULE && status !== false
   ));
   if (!permissionField || permission?.[permissionField] !== true) {
-    return res.status(403).json({
-      ok: false,
-      errors: [{ msg: `No tienes permiso para ${action} revisiones de traslados.` }],
-    });
+    return sendPermissionDenied(res, `${actionLabel(action)} revisiones de traslados`);
   }
   return next();
 };

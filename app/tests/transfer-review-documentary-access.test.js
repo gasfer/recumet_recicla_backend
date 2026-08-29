@@ -37,6 +37,8 @@ test('el permiso operativo concilia, pero no habilita el endpoint correctivo adm
   const corrective = responseRecorder();
   authorizeTransferReview('approve')({ userAuth }, corrective.response, () => { nextCalls += 1; });
   assert.equal(corrective.result.status, 403);
+  assert.match(corrective.result.body.errors[0].msg, /aprobar revisiones de traslados/);
+  assert.match(corrective.result.body.errors[0].msg, /soporte para solicitar la habilitación/);
   assert.equal(nextCalls, 1);
 });
 
@@ -58,6 +60,8 @@ test('rechaza la conciliacion antes del servicio cuando la boleta pertenece a ot
   }, response);
 
   assert.equal(result.status, 403);
+  assert.match(result.body.errors[0].msg, /consultar revisiones de esta sucursal/);
+  assert.match(result.body.errors[0].msg, /soporte para solicitar la habilitación/);
   assert.equal(serviceCalls, 0);
 });
 

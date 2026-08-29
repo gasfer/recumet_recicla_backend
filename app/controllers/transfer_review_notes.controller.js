@@ -11,6 +11,7 @@ const { REVIEW_PERMISSION_ACTIONS, REVIEW_PERMISSION_MODULE } = require('../cons
 const { getStockDiagnostic, getRetainedWithoutAdjustmentReport } = require('../services/stock-availability.service');
 const reconciliationManagementService = require('../services/transfer-reconciliation-management.service');
 const automatedResolutionService = require('../services/automated-transfer-review-resolution.service');
+const { permissionDeniedError, sendPermissionDenied } = require('../helpers/permission-denied');
 
 const noteInclude = [
   { association: 'transfer', include: [{ association: 'sucursal_send', attributes: ['name'] }, { association: 'sucursal_received', attributes: ['name'] }] },
@@ -64,7 +65,7 @@ const findAuthorizedNote = async (req) => {
   const note = await TransferReviewNote.findByPk(req.params.id, { include: noteInclude });
   if (!note) throw Object.assign(new Error('Nota de revisión no encontrada.'), { statusCode: 404 });
   if (!canAccessSucursal(req.userAuth, note.id_sucursal)) {
-    throw Object.assign(new Error('No tienes acceso a revisiones de esta sucursal.'), { statusCode: 403 });
+    throw permissionDeniedError('consultar revisiones de esta sucursal');
   }
   return note;
 };
@@ -82,7 +83,7 @@ const getManagedReconciliations = async (req = request, res = response) => {
   try {
     const requestedSucursal = req.query.id_sucursal ? Number(req.query.id_sucursal) : null;
     if (requestedSucursal && !canAccessSucursal(req.userAuth, requestedSucursal)) {
-      return res.status(403).json({ ok: false, errors: [{ msg: 'No tienes acceso a esta sucursal.' }] });
+      return sendPermissionDenied(res, 'consultar esta sucursal');
     }
     const allowed = allowedSucursalIds(req.userAuth);
     const idSucursal = requestedSucursal || (allowed?.length === 1 ? allowed[0] : null);
@@ -116,7 +117,7 @@ const getOpenReviews = async (req = request, res = response) => {
     const idSucursal = Number(req.query.id_sucursal);
     const idStorage = req.query.id_storage ? Number(req.query.id_storage) : null;
     if (!idSucursal) return res.status(422).json({ ok: false, errors: [{ msg: 'Debe indicar una sucursal.' }] });
-    if (!canAccessSucursal(req.userAuth, idSucursal)) return res.status(403).json({ ok: false, errors: [{ msg: 'No tienes acceso a esta sucursal.' }] });
+    if (!canAccessSucursal(req.userAuth, idSucursal)) return sendPermissionDenied(res, 'consultar esta sucursal');
     const reviews = await workflowService.listOpenReviews({ idSucursal, idStorage, limit: req.query.limit });
     return res.status(200).json({ ok: true, reviews, total: reviews.length });
   } catch (error) {
@@ -128,7 +129,7 @@ const getAssignableUsers = async (req = request, res = response) => {
   try {
     const idSucursal = Number(req.query.id_sucursal);
     if (!idSucursal) return res.status(422).json({ ok: false, errors: [{ msg: 'Debe indicar una sucursal.' }] });
-    if (!canAccessSucursal(req.userAuth, idSucursal)) return res.status(403).json({ ok: false, errors: [{ msg: 'No tienes acceso a esta sucursal.' }] });
+    if (!canAccessSucursal(req.userAuth, idSucursal)) return sendPermissionDenied(res, 'consultar esta sucursal');
     const users = await workflowService.listAssignableUsers(idSucursal);
     return res.status(200).json({ ok: true, users });
   } catch (error) {
@@ -140,7 +141,7 @@ const getTraceability = async (req = request, res = response) => {
   try {
     const traceability = await workflowService.getTransferTraceability(req.params.id_transfer);
     if (!canAccessSucursal(req.userAuth, traceability.id_sucursal_received)) {
-      return res.status(403).json({ ok: false, errors: [{ msg: 'No tienes acceso a esta recepción.' }] });
+      return sendPermissionDenied(res, 'consultar esta recepción');
     }
     return res.status(200).json({ ok: true, traceability });
   } catch (error) {
@@ -153,7 +154,7 @@ const getReviewReport = async (req = request, res = response) => {
     const requestedSucursal = req.query.id_sucursal ? Number(req.query.id_sucursal) : null;
     const allowed = allowedSucursalIds(req.userAuth);
     if (requestedSucursal && !canAccessSucursal(req.userAuth, requestedSucursal)) {
-      return res.status(403).json({ ok: false, errors: [{ msg: 'No tienes acceso a esta sucursal.' }] });
+      return sendPermissionDenied(res, 'consultar esta sucursal');
     }
     const idSucursal = requestedSucursal || (allowed?.length === 1 ? allowed[0] : null);
     if (allowed && !idSucursal) return res.status(422).json({ ok: false, errors: [{ msg: 'Debe seleccionar una sucursal autorizada.' }] });
@@ -178,7 +179,7 @@ const getReviewStockDiagnostic = async (req = request, res = response) => {
     const idSucursal = req.query.id_sucursal ? Number(req.query.id_sucursal) : null;
     const idStorage = req.query.id_storage ? Number(req.query.id_storage) : null;
     if (idSucursal && !canAccessSucursal(req.userAuth, idSucursal)) {
-      return res.status(403).json({ ok: false, errors: [{ msg: 'No tienes acceso a esta sucursal.' }] });
+      return sendPermissionDenied(res, 'consultar esta sucursal');
     }
     const rows = await getStockDiagnostic({ idSucursal, idStorage, limit: req.query.limit });
     return res.status(200).json({ ok: true, diagnostic: rows });
@@ -192,7 +193,7 @@ const getRetainedWithoutAdjustment = async (req = request, res = response) => {
     const idSucursal = req.query.id_sucursal ? Number(req.query.id_sucursal) : null;
     const idStorage = req.query.id_storage ? Number(req.query.id_storage) : null;
     if (idSucursal && !canAccessSucursal(req.userAuth, idSucursal)) {
-      return res.status(403).json({ ok: false, errors: [{ msg: 'No tienes acceso a esta sucursal.' }] });
+      return sendPermissionDenied(res, 'consultar esta sucursal');
     }
     const retained = await getRetainedWithoutAdjustmentReport({ idSucursal, idStorage, limit: req.query.limit });
     return res.status(200).json({ ok: true, retained, total: retained.length });

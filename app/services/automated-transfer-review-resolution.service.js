@@ -9,6 +9,7 @@ const { AUTOMATIC_RECONCILIATION_REASONS } = require('../constants/transfer-revi
 const operationalDocuments = require('./reconciliation-operational-document.service');
 const workflow = require('./transfer-review-workflow.service');
 const notificationService = require('./notification.service');
+const { permissionDeniedError } = require('../helpers/permission-denied');
 
 const EPSILON = 0.0001;
 const automaticError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
@@ -139,7 +140,7 @@ const validateAuthorizer = async ({ authorizerUserId, sucursalId, transaction })
     authorizer.assign_sucursales?.length > 0
     && authorizer.assign_permission?.some(({ reports }) => reports === true)
   ));
-  if (!allowed) throw automaticError('El autorizador no está activo o no tiene permiso para aprobar conciliaciones de esta sucursal.', 403);
+  if (!allowed) throw permissionDeniedError('aprobar conciliaciones de esta sucursal con el autorizador seleccionado');
   return authorizer;
 };
 

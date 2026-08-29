@@ -5,12 +5,13 @@ const { response, request } = require('express');
 const { User , assignPermission, assignShift, assignSucursales, sequelize} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require("sequelize");
+const { sendPermissionDenied } = require('../helpers/permission-denied');
 
 const rejectAdminTarget = async (res, idUser) => {
     const user = await User.findByPk(idUser);
     if (!user) return { error: res.status(404).json({ ok: false, errors: [{ msg: 'El usuario no existe.' }] }) };
     if (user.role === 'ADMINISTRADOR') {
-        return { error: res.status(403).json({ ok: false, errors: [{ msg: 'No se puede gestionar un usuario Administrador.' }] }) };
+        return { error: sendPermissionDenied(res, 'gestionar un usuario Administrador') };
     }
     return { user };
 };

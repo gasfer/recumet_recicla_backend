@@ -1,4 +1,5 @@
 const { findUnauthorizedProducts } = require('../services/product-category-access.service');
+const { sendPermissionDenied } = require('../helpers/permission-denied');
 
 const authorizeProductCategoryAccess = ({ context, action, extractProductIds }) => async (req, res, next) => {
   try {
@@ -10,13 +11,11 @@ const authorizeProductCategoryAccess = ({ context, action, extractProductIds }) 
     });
 
     if (unauthorizedProductIds.length > 0) {
-      return res.status(403).json({
-        ok: false,
-        errors: [{
-          msg: 'Uno o más productos no están permitidos para este usuario en el módulo actual.',
-          product_ids: unauthorizedProductIds,
-        }],
-      });
+      return sendPermissionDenied(
+        res,
+        `usar uno o más productos en el módulo ${context}`,
+        { product_ids: unauthorizedProductIds },
+      );
     }
 
     next();

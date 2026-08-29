@@ -4,6 +4,7 @@ const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const { attachAvailabilityToKardexRows, getStockDiagnostic, syncStocksFromKardex } = require('../services/stock-availability.service');
+const { sendPermissionDenied } = require('../helpers/permission-denied');
 
 const getKardexPaginate = async (req = request, res = response) => {
     try {
@@ -595,10 +596,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
 const getStockDiagnosticHandler = async (req = request, res = response) => {
     try {
         if (req.userAuth?.role !== 'ADMINISTRADOR') {
-            return res.status(403).json({
-                ok: false,
-                errors: [{ msg: 'No tienes permiso para consultar el diagnóstico. Módulo restringido a Administradores.' }]
-            });
+            return sendPermissionDenied(res, 'consultar el diagnóstico de existencias');
         }
 
         const { id_sucursal, id_storage, limit } = req.query;
@@ -624,10 +622,7 @@ const getStockDiagnosticHandler = async (req = request, res = response) => {
 const syncStocksHandler = async (req = request, res = response) => {
     try {
         if (req.userAuth?.role !== 'ADMINISTRADOR') {
-            return res.status(403).json({
-                ok: false,
-                errors: [{ msg: 'No tienes permiso para ejecutar la sincronización. Acceso restringido a Administradores.' }]
-            });
+            return sendPermissionDenied(res, 'ejecutar la sincronización de existencias');
         }
 
         const { id_sucursal, id_storage } = req.body;

@@ -55,6 +55,8 @@ test('el catálogo general exige el permiso de vista y mantiene bypass de Admini
     middleware({ userAuth: user }, res, () => { nextCalled = true; });
     assert.equal(res.statusCode, 403);
     assert.equal(nextCalled, false);
+    assert.match(res.body.errors[0].msg, /No tiene permiso para ver el módulo PRODUCTOS/);
+    assert.match(res.body.errors[0].msg, /soporte para solicitar la habilitación/);
   }
 
   for (const user of [
