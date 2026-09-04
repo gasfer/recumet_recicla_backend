@@ -21,6 +21,12 @@ Object.entries(PRODUCT_ACCESS_ROUTE_CONTEXTS).forEach(([routeSegment, context]) 
     ], getCategoriesForSelect);
 });
 
+// Catálogo auxiliar de solo lectura para filtros operativos de Inventario.
+// Administrar categorías continúa protegido por el módulo CATEGORIAS.
+router.get('/inventory/select', [
+    validarJWT,
+], getCategoriesForSelect);
+
 
 /**
  * @swagger

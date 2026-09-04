@@ -12,6 +12,15 @@ const imagePath = path.join(__dirname, '../../../uploads/logo.png');
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
+const {
+    buildHeader,
+    buildHr,
+    buildSectionTitle,
+    buildInfoRowDouble,
+    buildDetailTable,
+    buildClosingSection,
+    VOUCHER_THEME,
+} = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -76,8 +85,7 @@ const generatePdfReports = async (req = request, res = response) => {
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de clasificados' });
     }
 }
 
@@ -194,15 +202,18 @@ const generateExcelReports = async (req = request, res = response) => {
 const returnDataClassified = async (params) => {
     const {type_registry,id_product, id_sucursal, id_storage, status, filterBy, date1, date2, orderNew} = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"Classified"."date_classified"');
+    const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
+        ? [orderNew]
+        : [['date_classified', 'DESC']];
     const optionsDb = {
-        order: [orderNew],
+        order: orderList,
         where: {
             [Op.and]: [
                 id_sucursal   ? { id_sucursal   } : {},
                 id_storage    ? { id_storage   } : {},
                 type_registry ? { type_registry } : {},
                 id_product    ? { id_product   } : {},
-                { status },
+                status        ? { status } : {},
                 { date_classified: whereDate }
             ]
         },
@@ -417,6 +428,7 @@ const printClassifiedVoucher = async (req = request, res = response) =>{
         });
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnClassifiedVoucher(classified,classified.sucursal,decimal); //PDF 
+        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 4) || dataPdf[5];
         let quantity_total = 0;
         let units = [];
         classified.detailsClassified.forEach(detail => {
@@ -430,9 +442,9 @@ const printClassifiedVoucher = async (req = request, res = response) =>{
                 {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
                 {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
             ];
-            dataPdf[14].table.body.push(tableData);
+            detailTableNode.table.body.push(tableData);
         });
-        dataPdf[14].table.body.push(
+        detailTableNode.table.body.push(
             [
                 {text:'',colSpan: 2, border:[false,false,false,false]},
                 '',
@@ -440,6 +452,7 @@ const printClassifiedVoucher = async (req = request, res = response) =>{
                 {text: units.join(','), fontSize:8, alignment:'center'},
             ],
         );
+
         let docDefinition = {
             content: dataPdf,
             styles: styles,
@@ -457,112 +470,64 @@ const printClassifiedVoucher = async (req = request, res = response) =>{
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de clasificación' });
     }
 }
 
-const dataPdfReturnClassifiedVoucher = (classified,sucursal,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${sucursal.cellphone}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'CLASIFICADO: ' + classified.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: new Date(classified.date_classified).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'NOTA DE CLASIFICACIÓN', style: 'title',bold:true , fontSize:12},
-    { text: 'DATOS PRODUCTO:', style: 'datos_person', bold:true ,fontSize:10, margin:[0,0,8,0] },
-    {
-        columns: [
-            { text: `Producto:`, bold:true ,style: 'text',width: 45, },
-            { text: `${classified?.product?.name ?? '-'}`, style: 'text',  },
-            { text: `Cantidad:`, bold:true ,style: 'text',width: 50, },
-            { text: `${classified?.quantity_product ?? '-'}`, style: 'text',  },
-        ]
-    },
-    { text: 'DETALLE:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [55, '*', 50, 80],
-            body: [
-                [
-                    {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                ]
-            ]
-        }
-    },
-    classified?.comments ? {   
-        margin: [0,3,0,0],
-        columns: [
-            { text: 'OBSERVACIONES:', bold:true ,style: 'text',width: 90, },
-            { text: `${classified?.comments ?? ''}`, style: 'text',fontSize:8  },
-        ]
-    }: {},
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `P/${classified.type_registry} NRO:`, bold:true ,style: 'text',width: 65, },
-            { text: `${classified.number_registry}`, style: 'text',  },
-            { text: `BALANZA:`, bold:true, style: 'text',width: 52,  },
-            { text: `${classified.scale.name}`,  style: 'text',  },
-            { text: `ALMACÉN:`, bold:true, style: 'text',width: 52,  },
-            { text: `${classified.storage.name}`,  style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,40,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-            { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `Responsable de almacén` , style: 'text',alignment: 'center' },
-            { text: ``,style: 'text',alignment: 'center' },
-        ]
-    },
+const dataPdfReturnClassifiedVoucher = (classified, sucursal, decimal) => [
+    buildHeader({
+        title: 'NOTA DE CLASIFICACIÓN',
+        codePrefix: 'CLASIFICADO',
+        codeValue: classified.cod,
+        dateLabel: 'Fecha',
+        dateValue: moment(classified.date_classified).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: sucursal.name,
+            nit: sucursal.company?.nit,
+            phone: sucursal.cellphone,
+            email: sucursal.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildSectionTitle('DATOS PRODUCTO'),
+    buildInfoRowDouble(
+        'Producto:', classified?.product?.name ?? '-',
+        'Cantidad:', classified?.quantity_product ?? '-'
+    ),
+    buildSectionTitle('DETALLE'),
+    buildDetailTable({
+        widths: [55, '*', 50, 80],
+        headers: [
+            { text: 'CÓDIGO', alignment: 'center' },
+            { text: 'DETALLE' },
+            { text: 'CANT.', alignment: 'center' },
+            { text: 'UND', alignment: 'center' },
+        ],
+        rows: [],
+    }),
+    buildClosingSection({
+        observations: classified?.comments ? [{ title: 'OBSERVACIONES', text: classified.comments }] : [],
+        meta: [
+            { label: `P/${classified.type_registry} NRO:`, value: classified.number_registry, width: 70 },
+            { label: 'BALANZA:', value: classified.scale?.name || '', width: 52 },
+            { label: 'ALMACÉN:', value: classified.storage?.name || '', width: 52 },
+        ],
+        signatures: [
+            { role: 'Recibí conforme', name: '' },
+            { role: 'Entregue conforme', name: 'Responsable de almacén' },
+        ],
+        margin: [0, 8, 0, 0],
+        signatureSpace: 35,
+    }),
 ];
+
 
 module.exports = {
     generatePdfReports,
     generateExcelReports,
     generatePdfDetailsReports,
     generateExcelDetailsReports,
-    printClassifiedVoucher
-}
+    printClassifiedVoucher,
+    dataPdfReturnClassifiedVoucher,
+}

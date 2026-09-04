@@ -10,6 +10,7 @@ const {
   intersectAllowedCategoryTypes,
   findUnauthorizedProducts,
 } = require('../services/product-category-access.service');
+const { assignPermission } = require('../database/config');
 
 const userWithPermissions = permissions => ({
   role: 'OPERADOR',
@@ -39,6 +40,25 @@ test('Encargado respeta la matriz configurada por módulo', () => {
   assert.deepEqual(
     getAllowedCategoryTypes(user, PRODUCT_ACCESS_CONTEXTS.PURCHASES),
     ['RAW_MATERIAL', 'RESALE_ITEM'],
+  );
+});
+
+test('una instancia Sequelize concede los tipos permitidos para la acción update', () => {
+  const permission = assignPermission.build({
+    module: PRODUCT_ACCESS_CONTEXTS.PURCHASES,
+    allowed_category_types: ['RAW_MATERIAL', 'FINISHED_PRODUCT'],
+    status: true,
+    create: false,
+    update: true,
+  });
+
+  assert.deepEqual(
+    getAllowedCategoryTypes(
+      { role: 'ENCARGADO', assign_permission: [permission] },
+      PRODUCT_ACCESS_CONTEXTS.PURCHASES,
+      ['update'],
+    ),
+    ['RAW_MATERIAL', 'FINISHED_PRODUCT'],
   );
 });
 

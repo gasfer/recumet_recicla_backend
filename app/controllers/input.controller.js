@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,User,} = require('../database/config');
+const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
@@ -10,16 +10,8 @@ const fs = require('fs');
 const { hasAvailableStock } = require('../services/stock-availability.service');
 const purchaseAudit = require('../services/purchase-audit.service');
 
-const resolveAuthorizer = async (idAuthorizer, transaction) => {
-    if (!idAuthorizer) return null;
-    const user = await User.findByPk(idAuthorizer, { transaction });
-    if (!user || !['ADMINISTRADOR', 'ENCARGADO'].includes(user.role) || user.status === false || user.status === 'INACTIVE') {
-        const error = new Error('El usuario seleccionado no está habilitado para autorizar esta operación.');
-        error.status = 422;
-        throw error;
-    }
-    return user;
-};
+const { resolveAuthorizer } = require('../services/purchase-authorization.service');
+const { classifyInitialPricing } = require('../services/purchase-pricing-authorization-policy.service');
 
 const auditRequestKey = (req, suffix) => {
     const supplied = req.get('Idempotency-Key');
@@ -339,7 +331,7 @@ const updateInput = async (req = request, res = response) => {
                 { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false},
                 { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
             ],
-            lock: t.LOCK.UPDATE,
+            lock: { level: t.LOCK.UPDATE, of: Input },
             transaction: t
         });
         if (!input_old) {
@@ -351,12 +343,27 @@ const updateInput = async (req = request, res = response) => {
         const beforeDetails = input_old.detailsInput.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
         const requestedDetailsForDiff = input_details.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
         const detailChanges = purchaseAudit.diffDetails(beforeDetails, requestedDetailsForDiff);
-        const priceChanged = detailChanges.some((change) => change.kind === 'PRICE_CHANGED');
-        if (priceChanged && reason.length < 5) {
-            await t.rollback();
-            return res.status(422).json({ ok: false, errors: [{ msg: 'Indique un motivo de al menos 5 caracteres para modificar precios.' }] });
+        const pricingDecision = classifyInitialPricing({
+            originalInput: input_old,
+            originalDetails: input_old.detailsInput,
+            requestedInput: input_data,
+            requestedDetails: input_details,
+        });
+        let authorizer = null;
+        if (pricingDecision.requiresAuthorization) {
+            if (reason.length < 5) {
+                await t.rollback();
+                const authorizationMessage = pricingDecision.reason === 'pricing-window-expired'
+                    ? 'La ventana de regularización de 24 horas venció. Indique un motivo y un responsable de autorización.'
+                    : 'Esta edición requiere un motivo de al menos 5 caracteres y un responsable de autorización.';
+                return res.status(422).json({
+                    ok: false,
+                    code: 'PURCHASE_EDIT_AUTHORIZATION_REQUIRED',
+                    errors: [{ msg: authorizationMessage }],
+                });
+            }
+            authorizer = await resolveAuthorizer(requestedAuthorizerId, t);
         }
-        const authorizer = priceChanged ? await resolveAuthorizer(requestedAuthorizerId, t) : null;
         if (type_registry === 'SIN FICHA') {
             if (!input_old.registry_number || input_old.type_registry != 'SIN FICHA') {
                 const lastInput = await Input.findOne({
@@ -544,7 +551,7 @@ const updateInput = async (req = request, res = response) => {
             const accountAfter = purchaseAudit.pick(auditedAccount, purchaseAudit.AUDITABLE_ACCOUNT_FIELDS);
             const accountChanges = purchaseAudit.diff(accountBefore || {}, accountAfter);
             if (accountChanges.length) await purchaseAudit.createEvent({ transaction: t, correlationId, input: updatedInput,
-                actorUserId: req.userAuth.id, entityType: purchaseAudit.ENTITY_TYPES.ACCOUNT,
+                actorUserId: req.userAuth.id, authorizerUserId: authorizer?.id, entityType: purchaseAudit.ENTITY_TYPES.ACCOUNT,
                 entityId: auditedAccount.id, accountId: auditedAccount.id,
                 eventType: !accountBefore ? purchaseAudit.EVENT_TYPES.ACCOUNT_CREATED : auditedAccount.status === false ? purchaseAudit.EVENT_TYPES.ACCOUNT_VOIDED : purchaseAudit.EVENT_TYPES.ACCOUNT_UPDATED,
                 reason, beforeData: accountBefore, afterData: accountAfter, changedFields: accountChanges });
@@ -571,6 +578,7 @@ const updateInput = async (req = request, res = response) => {
         console.log('ERROR UPDATE COMPRA: ' + error);
         return res.status(error.status || 500).json({
           ok: false,
+          ...(error.code ? { code: error.code } : {}),
           errors: [{ msg: error.status ? error.message : `Ocurrió un imprevisto interno | hable con soporte`}],
         });
     }

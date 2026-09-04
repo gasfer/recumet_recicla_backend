@@ -10,6 +10,13 @@ const NumeroALetras = require("../../../helpers/numeros-aletras");
 const fonts = require('../../../helpers/generator-pdf/fonts');
 const styles = require('../../../helpers/generator-pdf/styles');
 const PdfPrinter = require('pdfmake');
+const {
+    buildHeader,
+    buildHr,
+    buildInfoPanel,
+    buildClosingSection,
+    VOUCHER_THEME,
+} = require('../../../helpers/generator-pdf/voucher-template.helper');
 
 
 const printAbonoMultipleAccountReceivableVoucher = async (req = request, res = response) =>{
@@ -18,7 +25,7 @@ const printAbonoMultipleAccountReceivableVoucher = async (req = request, res = r
         const abono_account_receivable = await AbonosAccountsReceivableMultiple.findByPk(id_abono_account_receivable_multiple,{
             include: [ 
                 { association: 'client'},
-                { association: 'sucursal'}
+                { association: 'sucursal', include: [{ association: 'company' }] }
             ]
         });
         const accountsReceivables = await AccountsReceivable.findAll({order: [['id','ASC']], where: {id: {[Op.in]: abono_account_receivable.ids_account_receivables }}, 
@@ -106,55 +113,32 @@ const printAbonoMultipleAccountReceivableVoucher = async (req = request, res = r
 }
 
 const dataPdfReturnAbonoAccountReceivableMultipleVoucher = (abono_account_receivable,accountsReceivable,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: accountsReceivable.sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${accountsReceivable.sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${accountsReceivable?.sucursal?.cellphone ?? '-'}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${accountsReceivable.sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'CUENTA: ' + accountsReceivable.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: moment(abono_account_receivable.date_abono).format('dddd, D [de] MMMM [de] YYYY, h:mm:ss a'),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'COMPROBANTE ABONO', style: 'title',bold:true , fontSize:16},
-    { text: 'RECIBÍ DE:', style: 'datos_person', bold:true ,fontSize:10 },
-    {
-        columns: [
-            { text: `Nombre:`, bold:true ,style: 'text',width: 60, },
-            { text: `${abono_account_receivable?.client?.full_names ?? '-'}`, style: 'text',  },
-            { text: `Nro. Nit / Ci:`, bold:true ,style: 'text',width: 85, },
-            { text: `${abono_account_receivable?.client?.number_document ?? '-'}`, style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `La suma de:`, bold:true ,style: 'text',width: 60, },
-            { text: `Bs. ${Number(abono_account_receivable.monto_abono).toFixed(decimal)} \n  ${NumeroALetras(Number(abono_account_receivable.monto_abono).toFixed(decimal))}`, style: 'text',  },
-            { text: `Por concepto de:`, bold:true, style: 'text',width: 85,  },
-            { text: `${abono_account_receivable.comments ?? '-'}`,  style: 'text',  },
-        ]
-    },
+    buildHeader({
+        title: 'COMPROBANTE ABONO MÚLTIPLE',
+        codePrefix: 'CUENTA',
+        codeValue: accountsReceivable?.cod || '',
+        dateLabel: 'Fecha',
+        dateValue: moment(abono_account_receivable.date_abono).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: abono_account_receivable.sucursal?.name || accountsReceivable?.sucursal?.name,
+            nit: accountsReceivable?.sucursal?.company?.nit,
+            phone: accountsReceivable?.sucursal?.cellphone,
+            email: accountsReceivable?.sucursal?.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'RECIBÍ DE (CLIENTE)',
+            rows: [
+                { label: 'Nombre:', value: abono_account_receivable?.client?.full_names || '-', labelWidth: 60 },
+                { label: 'Nro. Nit/CI:', value: abono_account_receivable?.client?.number_document || '-', labelWidth: 60 },
+                { label: 'Monto abono:', value: `Bs. ${Number(abono_account_receivable.monto_abono).toFixed(decimal)} (${NumeroALetras(Number(abono_account_receivable.monto_abono).toFixed(decimal))})`, labelWidth: 80 },
+                { label: 'Concepto:', value: abono_account_receivable.comments || '-', labelWidth: 60 },
+            ]
+        }
+    ]),
 ];
 
 const addTableInputAbonosMultiple = (tableData,footer,accountsReceivable,abono_in_pay,decimal) => {
@@ -194,12 +178,12 @@ const addTableInputAbonosMultiple = (tableData,footer,accountsReceivable,abono_i
                 widths: [55, '*', 50, 50,50,50],
                 body: [
                     [
-                        {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                        {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                        {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                        {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                        {text:'P.U.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                        {text:'IMPORTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
+                        {text:'CÓDIGO', fontSize:8 ,fillColor: '#dde3ea', bold:true}, 
+                        {text:'DETALLE', fontSize:8,fillColor: '#dde3ea', bold:true}, 
+                        {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#dde3ea', bold:true},
+                        {text:'UND',alignment: 'center', fontSize:8,fillColor: '#dde3ea', bold:true},
+                        {text:'P.U.',alignment: 'center', fontSize:8,fillColor: '#dde3ea', bold:true}, 
+                        {text:'IMPORTE',alignment: 'center', fontSize:8,fillColor: '#dde3ea', bold:true},
                     ],
                     ...tableData,
                     ...footer
@@ -222,31 +206,19 @@ const addFooterAbonosMultiple = (abono_account_receivable,saldoTotal,decimal) =>
                 { text: `${saldoTotal.payIn}`,  style: 'text',  },
             ]
         },
-        {
-            margin: [0,40,0,0],
-            columns: [
-                { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-                { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-            ]
-        },
-        {
-            margin: [0,-5,0,0],
-            columns: [
-                { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-                { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-            ]
-        },
-        {
-            margin: [0,-2,0,0],
-            columns: [
-                { text: `${abono_account_receivable?.client?.full_names}` , style: 'text',alignment: 'center' },
-                { text: `${abono_account_receivable.sucursal.name}`,style: 'text',alignment: 'center' },
-            ]
-        },
+        buildClosingSection({
+            signatures: [
+                { role: 'Recibí conforme', name: abono_account_receivable?.client?.full_names || '' },
+                { role: 'Entregue conforme', name: abono_account_receivable.sucursal?.name || '' },
+            ],
+            margin: [0, 10, 0, 0],
+            signatureSpace: 35,
+        }),
     ]
 }
 
 
 module.exports = {
-    printAbonoMultipleAccountReceivableVoucher
-}
+    printAbonoMultipleAccountReceivableVoucher,
+    dataPdfReturnAbonoAccountReceivableMultipleVoucher,
+}

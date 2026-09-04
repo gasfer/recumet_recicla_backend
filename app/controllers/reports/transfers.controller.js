@@ -65,8 +65,7 @@ const generatePdfReports = async (req = request, res = response) => {
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de traslados' });
     }
 }
 
@@ -179,8 +178,11 @@ const generateExcelReports = async (req = request, res = response) => {
 const returnDataTransfer = async (params) => {
     const {id_sucursal_send, id_storage_send,id_storage_received, id_user_send,id_user_received, id_sucursal_received, status, filterBy, date1, date2,orderNew} = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"Transfers"."date_send"');
+    const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
+        ? [orderNew]
+        : [['date_send', 'DESC']];
     const optionsDb = {
-        order: [orderNew],
+        order: orderList,
         where: {
             [Op.and]: [
                 id_sucursal_send     ? { id_sucursal_send } : {},
@@ -189,7 +191,7 @@ const returnDataTransfer = async (params) => {
                 id_storage_received  ? { id_storage_received   } : {},
                 id_user_send         ? { id_user_send   } : {},
                 id_user_received     ? { id_user_received   } : {},
-                { status },
+                status               ? { status } : {},
                 { date_send: whereDate }
             ]
         },
@@ -343,7 +345,7 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
         if (reconciliationRows.length > 0) {
             const totalExcess = reviewNotes.filter((note) => note.type === 'EXCEDENTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
             const totalShortage = reviewNotes.filter((note) => note.type === 'FALTANTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
-            dataPdf[10].stack.unshift(createReconciliationTable(reconciliationRows, totalExcess, totalShortage));
+            dataPdf.splice(10, 0, createReconciliationTable(reconciliationRows, totalExcess, totalShortage));
         }
         sendVoucherPdf(res, dataPdf, `guia-recepcion-${transfer.cod}`, HALF_LETTER_LANDSCAPE);
     } catch (error) {
@@ -353,8 +355,9 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
 };
 
 const createReconciliationTable = (rows, totalExcess, totalShortage) => ({
+    pageBreak: rows.length > 12 ? 'before' : undefined,
     margin: [0, 8, 0, 0],
-    table: { widths: ['*', 30, 32, 32, 35, 48, '*', 34], body: [
+    table: { headerRows: 2, dontBreakRows: true, widths: ['*', 38, 32, 32, 42, 54, '*', 34], body: [
         [{ text: 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS', colSpan: 8, bold: true, fontSize: 6, fillColor: '#eeeeee' }, '', '', '', '', '', '', ''],
         [{ text: 'PRODUCTO ORIGEN', bold: true, fontSize: 6 }, { text: 'TIPO', bold: true, fontSize: 6 }, { text: 'KG REG.', bold: true, fontSize: 6 }, { text: 'KG CONC.', bold: true, fontSize: 6 }, { text: 'ESTADO', bold: true, fontSize: 6 }, { text: 'RESPONSABLE', bold: true, fontSize: 6 }, { text: 'PRODUCTO DESTINO', bold: true, fontSize: 6 }, { text: 'KARDEX', bold: true, fontSize: 6 }],
         ...rows,
@@ -442,7 +445,7 @@ const createVoucherClosingSection = (transfer, includeReceptionObservations = fa
             ],
         },
         {
-            margin: [0, 40, 0, 0],
+            margin: [0, includeReceptionObservations ? 10 : 40, 0, 0],
             columns: [
                 { text: '-----------------------------------------', bold: true, style: 'text', alignment: 'center' },
                 { text: '-----------------------------------------', bold: true, style: 'text', alignment: 'center' },
@@ -532,6 +535,8 @@ const dataPdfReturnReceptionVoucher = (transfer) => {
         ],
     };
     dataPdf[9].table.widths = ['*', 22, 40, 44, 34, 34, 34, 44];
+    dataPdf[9].table.headerRows = 1;
+    dataPdf[9].table.dontBreakRows = true;
     dataPdf[9].table.body[0] = [
         { text: 'DETALLE', fontSize: 6, fillColor: '#eeeeee', bold: true },
         { text: 'UND', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },

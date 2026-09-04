@@ -1,4 +1,5 @@
 const { actionLabel, sendPermissionDenied } = require('../helpers/permission-denied');
+const { readPermissionField, isPermissionActionGranted } = require('../helpers/permission-fields');
 
 const authorizeModulePermission = (module, action = 'view') => {
   const middleware = (req, res, next) => {
@@ -9,11 +10,11 @@ const authorizeModulePermission = (module, action = 'view') => {
       ? user.assign_permission
       : [];
     const permission = permissions.find(item => (
-      item.module === module
-      && item.status !== false
+      readPermissionField(item, 'module') === module
+      && readPermissionField(item, 'status') !== false
     ));
 
-    if (!permission || permission[action] !== true) {
+    if (!isPermissionActionGranted(permission, action)) {
       return sendPermissionDenied(res, `${actionLabel(action)} el módulo ${module}`);
     }
 

@@ -92,10 +92,12 @@ const loadReceivedTransfer = (models, notifications = []) => {
     const configPath = require.resolve('../app/database/config');
     const notificationPath = require.resolve('../app/services/notification.service');
     const reviewNoteServicePath = require.resolve('../app/services/transfer-review-note.service');
+    const automatedResolutionPath = require.resolve('../app/services/automated-transfer-review-resolution.service');
     const controllerPath = require.resolve('../app/controllers/transfers.controller');
     const cachedConfig = require.cache[configPath];
     const cachedNotification = require.cache[notificationPath];
     const cachedReviewNoteService = require.cache[reviewNoteServicePath];
+    const cachedAutomatedResolution = require.cache[automatedResolutionPath];
     const cachedController = require.cache[controllerPath];
 
     const modelsWithWorkflowDefaults = {
@@ -113,6 +115,12 @@ const loadReceivedTransfer = (models, notifications = []) => {
             notifyTransferReviewStakeholders: async (payload) => notifications.push(payload),
         },
     };
+    require.cache[automatedResolutionPath] = {
+        id: automatedResolutionPath,
+        filename: automatedResolutionPath,
+        loaded: true,
+        exports: { completePendingTransfer: async () => ({ completed: 0 }) },
+    };
     delete require.cache[controllerPath];
     delete require.cache[reviewNoteServicePath];
 
@@ -124,6 +132,8 @@ const loadReceivedTransfer = (models, notifications = []) => {
         else delete require.cache[notificationPath];
         if (cachedReviewNoteService) require.cache[reviewNoteServicePath] = cachedReviewNoteService;
         else delete require.cache[reviewNoteServicePath];
+        if (cachedAutomatedResolution) require.cache[automatedResolutionPath] = cachedAutomatedResolution;
+        else delete require.cache[automatedResolutionPath];
         if (cachedController) require.cache[controllerPath] = cachedController;
         else delete require.cache[controllerPath];
     };
@@ -204,6 +214,8 @@ test('recepción con excedente actualiza stock, Kardex y una nota independiente'
     assert.equal(result.status, 201);
     assert.equal(operations.commits, 1);
     assert.equal(operations.rollbacks, 0);
+    assert.equal(transfer.detailsTransfers[0].quantity_received, 7);
+    assert.equal(transfer.detailsTransfers[0].saveCalls, 1);
     assert.equal(operations.stockCreates[0].stock, 7);
     assert.deepEqual(operations.kardex.map(({ details, quantity, id_product }) => ({ details, quantity, id_product })), [
         { details: 'EXCEDENTE TRASPASO #TRAS00044', quantity: 2, id_product: 10 },
@@ -352,6 +364,10 @@ test('recepción con varios excedentes crea un movimiento y nota por producto', 
     assert.equal(result.status, 201);
     assert.deepEqual(operations.kardex.map(({ quantity, id_product }) => ({ quantity, id_product })), [
         { quantity: 2, id_product: 10 }, { quantity: 1.5, id_product: 11 },
+    ]);
+    assert.deepEqual(operations.kardex.map(({ date, registry_number }) => ({ date, registry_number })), [
+        { date: '2026-08-14T09:00:00.000Z', registry_number: 'SF-00044' },
+        { date: '2026-08-14T09:00:00.000Z', registry_number: 'SF-00044' },
     ]);
     assert.equal(operations.notes.length, 2);
     assert.ok(operations.notes.every(({ type }) => type === 'EXCEDENTE_PARA_REVISION'));

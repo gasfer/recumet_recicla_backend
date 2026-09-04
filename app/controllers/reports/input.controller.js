@@ -12,6 +12,15 @@ const imagePath = path.join(__dirname, '../../../uploads/logo.png');
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
+const {
+    buildHeader,
+    buildHr,
+    buildSectionTitle,
+    buildInfoPanel,
+    buildDetailTable,
+    buildClosingSection,
+    VOUCHER_THEME,
+} = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -100,8 +109,7 @@ const generatePdfReports = async (req = request, res = response) => {
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de compras' });
     }
 }
 
@@ -263,8 +271,11 @@ const returnDataInput = async (params) => {
         old_customer, with_pickup
     } = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
+    const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
+        ? [orderNew]
+        : [['date_voucher', 'DESC']];
     const optionsDb = {
-        order: [orderNew],
+        order: orderList,
         where: {
             [Op.and]: [
                 id_sucursal   ? { id_sucursal   } : {},
@@ -272,7 +283,7 @@ const returnDataInput = async (params) => {
                 type_pay      ? { type:type_pay } : {},
                 type_registry ? { type_registry } : {},
                 id_provider   ? { id_provider   } : {},
-                { status },
+                status        ? { status } : {},
                 { date_voucher: whereDate },
                 referral_sources ? { referral_sources } : {},
                 old_customer ? { old_customer: old_customer == 'SI' } : {},
@@ -643,6 +654,7 @@ const printInputVoucher = async (req = request, res = response) =>{
             };
         } else {
             dataPdf = dataPdfReturnInputVoucher(input,input.sucursal,decimal); //PDF 
+            const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4];
             let quantity_total = 0;
             let units = [];
             input.detailsInput.forEach(detail => {
@@ -658,17 +670,29 @@ const printInputVoucher = async (req = request, res = response) =>{
                     {text:Number(detail?.cost).toFixed(decimal), fontSize:8, alignment: 'right'},  
                     {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
                 ];
-                dataPdf[15].table.body.push(tableData);
+                detailTableNode.table.body.push(tableData);
             });
-            dataPdf[15].table.body.push(
+            detailTableNode.table.body.push(
                 [
                     {text:'',colSpan: 2, border:[true,false,false,false]},
                     '',
-                    {text: quantity_total,  fontSize:8, alignment:'center'},
+                    {
+                        text: `${Number(quantity_total).toLocaleString('es-BO', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}`,
+                        fontSize: 8,
+                        alignment: 'center',
+                        bold: true,
+                        fillColor: '#dde3ea'
+                    },
                     {text: units.join(','), fontSize:8, alignment:'center'},
                     {   border:[true,false,true,true],
-                        text: `SUB TOTAL: ${Number(input.sumas).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
+                        text: `SUB TOTAL: ${Number(input.sumas).toLocaleString('es-BO', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}`, colSpan: 2,fontSize:8,
+                        fillColor: '#dde3ea',alignment:'right', 
                         bold:true,
                     },
                 ],
@@ -679,61 +703,58 @@ const printInputVoucher = async (req = request, res = response) =>{
                     '',
                     {   border:[true,false,true,true],
                         text: `DESCUENTO: ${Number(input.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
+                        fillColor: '#dde3ea',alignment:'right', 
                         bold:true,
                     },
                 ],
                 [
                     {
                         text:'SON: ' + NumeroALetras(Number(input.total).toFixed(decimal)),
-                        style: 'sonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
+                        style: 'SonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
                     },
                     '',
                     '',
                     '',
                     {   border:[true,false,true,true],
-                        text: `TOTAL: ${Number(input.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#eeeeee',alignment:'right', 
+                        text: `TOTAL: ${Number(input.total).toLocaleString('es-BO', {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}`, colSpan: 2,fontSize:8,
+                        fillColor: '#dde3ea',alignment:'right', 
                         bold:true,
                     },
                 ]
             );
-            if(input.type === 'CREDITO') {
-                dataPdf[15].table.body.push(
-                    [
-                        {text:'',colSpan: 4, border:[true,false,false,false]},
-                        '',
-                        '',
-                        '',
-                        { text: 'A CREDITO',colSpan: 2 , fontSize:8,alignment:'center' }
-                    ],
-                    [
-                        {text:'',colSpan: 4, border:[true,false,false,false]},
-                        '',
-                        '',
-                        '',
-                        {   border:[true,false,true,true],
-                            text: `A CUENTA: ${Number(input.accounts_payable.monto_abonado).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                            fillColor: '#eeeeee',alignment:'right', 
-                            bold:true,
-                        },
-                    ],
-                    [
-                        {
-                            text:'SON: ' + NumeroALetras(Number(input.accounts_payable.monto_restante).toFixed(decimal)),
-                            style: 'sonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
-                        },
-                        '',
-                        '',
-                        '',
-                        {   border:[true,false,true,true],
-                            text: `SALDO: ${Number(input.accounts_payable.monto_restante).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                            fillColor: '#eeeeee',alignment:'right', 
-                            bold:true,
-                        },
-                    ]
+
+            if (input.payment_type != 'EFECTIVO') {
+                const accountsPayableNode = dataPdf.find(node => node && node.table && node.table.widths && node.table.widths.length === 5);
+                if (accountsPayableNode && input.accounts_payable) {
+                    input.accounts_payable.forEach(account => {
+                        const tableData = [
+                            {text:account?.cod, fontSize:8}, 
+                            {text:moment(account?.date_credit).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
+                            {text:account?.description, fontSize:8}, 
+                            {text:Number(account?.total).toFixed(decimal), fontSize:8}, 
+                            {text:Number(account?.monto_restante).toFixed(decimal), fontSize:8}, 
+                        ];
+                        accountsPayableNode.table.body.push(tableData);
+                    });
+                }
+            }
+            if (input.status == 'ANULADO') {
+                dataPdf.push(
+                    {
+                        text: 'ANULADO',
+                        fontSize: 40,
+                        bold: true,
+                        alignment: 'center',
+                        color: 'red',
+                        opacity: 0.3,
+                        margin: [0, 20, 0, 0]
+                    }
                 );  
             }
+
             docDefinition = {
                 content: dataPdf,
                 styles: styles,
@@ -752,125 +773,66 @@ const printInputVoucher = async (req = request, res = response) =>{
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de compra' });
     }
 }
 
-const dataPdfReturnInputVoucher = (input,sucursal,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${sucursal.cellphone}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'COMPRA: ' + input.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: new Date(input.date_voucher).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'NOTA DE COMPRA', style: 'title',bold:true , fontSize:12},
-    { text: 'DATOS PROVEEDOR:', style: 'datos_person', bold:true ,fontSize:10 },
-    {
-        columns: [
-            { text: `Nombre:`, bold:true ,style: 'text',width: 45, },
-            { text: `${input?.provider?.full_names ?? '-'}`, style: 'text',  },
-            { text: `Nro. Nit:`, bold:true ,style: 'text',width: 50, },
-            { text: `${input?.provider?.number_document ?? '-'}`, style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `Teléfono:`, bold:true ,style: 'text',width: 45, },
-            { text: `${input?.provider?.cellphone??'-'}`, style: 'text',  },
-            { text: `Dirección:`, bold:true, style: 'text',width: 50,  },
-            { text: `${input?.provider?.direction??'-'}`,  style: 'text',  },
-        ]
-    },
-    { text: 'DETALLE:', style: 'datos_person',bold:true ,fontSize:10 },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [55, '*', 50, 50,50,50],
-            body: [
-                [
-                    {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'P.U.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'IMPORTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                ]
+const dataPdfReturnInputVoucher = (input, sucursal, decimal) => [
+    buildHeader({
+        title: 'NOTA DE COMPRA',
+        codePrefix: 'COMPRA',
+        codeValue: input.cod,
+        dateLabel: 'Fecha',
+        dateValue: moment(input.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: sucursal.name,
+            nit: sucursal.company?.nit,
+            phone: sucursal.cellphone,
+            email: sucursal.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'DATOS PROVEEDOR',
+            rows: [
+                { label: 'Nombre:', value: input?.provider?.full_names || '-', labelWidth: 50 },
+                { label: 'Nro. Nit:', value: input?.provider?.number_document || '-', labelWidth: 50 },
+                { label: 'Teléfono:', value: input?.provider?.cellphone || '-', labelWidth: 50 },
+                { label: 'Dirección:', value: input?.provider?.direction || '-', labelWidth: 50 },
             ]
         }
-    },
-    input?.comments ? {   
-        margin: [0,3,0,0],
-        columns: [
-            { text: 'OBSERVACIONES:', bold:true ,style: 'text',width: 90, },
-            { text: `${input?.comments ?? ''}`, style: 'text',fontSize:8  },
-        ]
-    }: {},
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `P/${input.type_registry} NRO:`, bold:true ,style: 'text',width: 65, },
-            { text: `${input.registry_number}`, style: 'text',  },
-            { text: `BALANZA:`, bold:true, style: 'text',width: 58,  },
-            { text: `${input.scale.name}`,  style: 'text',  },
-            { text: `TIPO DE COMPRA:`, bold:true, style: 'text',width: 100,  },
-            { text: `${input.type === 'CONTADO' ? 'AL CONTADO': 'A CREDITO'}`,  style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,40,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-            { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-        ]
-    },
-      {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `PROVEEDOR: ${input?.provider?.full_names}`, style: 'text',alignment: 'center' },
-            { text: `RESPONSABLE CAJA`,style: 'text',alignment: 'center' },
-        ]
-    },
-  /*  {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `Responsable de almacén` , style: 'text',alignment: 'center' },
-            { text: `Proveedor`,style: 'text',alignment: 'center' },
-        ]
-    },*/
+    ]),
+    buildSectionTitle('DETALLE DE PRODUCTOS'),
+    buildDetailTable({
+        widths: [55, '*', 45, 35, 55, 60],
+        headers: [
+            { text: 'CÓDIGO', alignment: 'center' },
+            { text: 'DETALLE' },
+            { text: 'CANT.', alignment: 'center' },
+            { text: 'UND', alignment: 'center' },
+            { text: 'P.U.', alignment: 'center' },
+            { text: 'IMPORTE', alignment: 'center' },
+        ],
+        rows: [],
+    }),
+    buildClosingSection({
+        observations: input?.comments ? [{ title: 'OBSERVACIONES', text: input.comments }] : [],
+        meta: [
+            { label: `P/${input.type_registry} NRO:`, value: input.registry_number, width: 65 },
+            { label: 'BALANZA:', value: input.scale?.name || '', width: 55 },
+            { label: 'TIPO COMPRA:', value: input.type === 'CONTADO' ? 'AL CONTADO' : 'A CREDITO', width: 85 },
+        ],
+        signatures: [
+            { role: 'Recibí conforme', name: `PROVEEDOR: ${input?.provider?.full_names || ''}` },
+            { role: 'Entregue conforme', name: 'RESPONSABLE CAJA' },
+        ],
+        margin: [0, 8, 0, 0],
+        signatureSpace: 35,
+    }),
 ];
+
 
 const dataPdfReturnInputVoucherRollo = (input, sucursal, decimal) => {
     let body = [
@@ -1096,5 +1058,6 @@ module.exports = {
     generatePdfDetailsReports,
     generateExcelDetailsReports,
     printInputVoucher,
-    generatePdfDetailsCPPReports
-}
+    generatePdfDetailsCPPReports,
+    dataPdfReturnInputVoucher,
+}

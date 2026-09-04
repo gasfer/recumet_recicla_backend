@@ -10,6 +10,13 @@ const NumeroALetras = require("../../../helpers/numeros-aletras");
 const fonts = require('../../../helpers/generator-pdf/fonts');
 const styles = require('../../../helpers/generator-pdf/styles');
 const PdfPrinter = require('pdfmake');
+const {
+    buildHeader,
+    buildHr,
+    buildInfoPanel,
+    buildClosingSection,
+    VOUCHER_THEME,
+} = require('../../../helpers/generator-pdf/voucher-template.helper');
 
 
 const printAbonoMultipleAccountPayableVoucher = async (req = request, res = response) =>{
@@ -108,85 +115,35 @@ const printAbonoMultipleAccountPayableVoucher = async (req = request, res = resp
     }
 }
 
-const dataPdfReturnAbonoAccountPayableMultipleVoucher = (abono_account_payable,accountsPayable,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: accountsPayable.sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${accountsPayable.sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${accountsPayable?.sucursal?.cellphone ?? '-'}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${accountsPayable.sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'CUENTA: ' + accountsPayable.cod, style: 'fechaDoc', absolutePosition: {  y: 30 }
-    },
-    { text: moment(abono_account_payable.date_abono).format('dddd, D [de] MMMM [de] YYYY, h:mm:ss a'),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'COMPROBANTE ABONO', style: 'title',bold:true , fontSize:16},
-    { text: 'ENTREGUE A:', style: 'datos_person', bold:true ,fontSize:10 },
-    {
-        columns: [
-            { text: `Nombre:`, bold:true ,style: 'text',width: 60, },
-            { text: `${abono_account_payable?.provider?.full_names ?? '-'}`, style: 'text',  },
-            { text: `Nro. Nit:`, bold:true ,style: 'text',width: 85, },
-            { text: `${abono_account_payable?.provider?.number_document ?? '-'}`, style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `La suma de:`, bold: true, style: 'text', width: 60 },
-            { 
-                stack: [
-                    {
-                        table: {
-                            widths: ['*'],
-                            body: [[
-                                {
-                                    text: `Bs. ${Number(abono_account_payable.monto_abono).toFixed(decimal)}`,
-                                    style: 'text',
-                                    fontSize: 10,
-                                    margin: [1, 1, 1, 1],
-                                    fillColor: '#eeeeee'
-                                }
-                            ]]
-                        },
-                        layout: {
-                            hLineColor: () => 'black',
-                            vLineColor: () => 'black',
-                            hLineWidth: () => 1,
-                            vLineWidth: () => 1
-                        }
-                    },
-                    {
-                        text: NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(decimal)),
-                        style: 'text',
-                        fontSize: 9,
-                        margin: [0, 0, 0, 0]
-                    }
-                ]
-            },
-            { text: `Por concepto de:`, bold:true, style: 'text',width: 85,  },
-            { text: `${abono_account_payable.comments ?? '-'}`,  style: 'text',  },
-        ]
-    },
+const dataPdfReturnAbonoAccountPayableMultipleVoucher = (abono_account_payable, accountsPayable, decimal) => [
+    buildHeader({
+        title: 'COMPROBANTE ABONO MÚLTIPLE',
+        codePrefix: 'CUENTA',
+        codeValue: accountsPayable?.cod || '',
+        dateLabel: 'Fecha',
+        dateValue: moment(abono_account_payable.date_abono).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: abono_account_payable.sucursal?.name || accountsPayable?.sucursal?.name,
+            nit: accountsPayable?.sucursal?.company?.nit,
+            phone: accountsPayable?.sucursal?.cellphone,
+            email: accountsPayable?.sucursal?.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'ENTREGUE A (PROVEEDOR)',
+            rows: [
+                { label: 'Nombre:', value: abono_account_payable?.provider?.full_names || '-', labelWidth: 60 },
+                { label: 'Nro. Nit:', value: abono_account_payable?.provider?.number_document || '-', labelWidth: 60 },
+                { label: 'Monto abono:', value: `Bs. ${Number(abono_account_payable.monto_abono).toFixed(decimal)} (${NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(decimal))})`, labelWidth: 80 },
+                { label: 'Concepto:', value: abono_account_payable.comments || '-', labelWidth: 60 },
+            ]
+        }
+    ]),
 ];
+
 
 const addTableInputAbonosMultiple = (tableData, footer, accountsPayable, abono_in_pay, decimal) => {
     const quantity_total = tableData.reduce((sum, row) => sum + parseFloat(row[2]?.text || 0), 0);
@@ -421,30 +378,18 @@ const addFooterAbonosMultiple = (abono_account_payable,saldoTotal,decimal) => {
                 }
             ]
         },
-        {
-            margin: [0,40,0,0],
-            columns: [
-                { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-                { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-            ]
-        },
-        {
-            margin: [0,-5,0,0],
-            columns: [
-                { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-                { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-            ]
-        },
-        {
-            margin: [0,-2,0,0],
-            columns: [
-                { text: `${abono_account_payable?.provider?.full_names}` , style: 'text',alignment: 'center' },
-                { text: `${abono_account_payable.sucursal.name}`,style: 'text',alignment: 'center' },
-            ]
-        }
+        buildClosingSection({
+            signatures: [
+                { role: 'Recibí conforme', name: abono_account_payable?.provider?.full_names || '' },
+                { role: 'Entregue conforme', name: abono_account_payable.sucursal?.name || '' },
+            ],
+            margin: [0, 10, 0, 0],
+            signatureSpace: 35,
+        }),
     ];
 };
 
 module.exports = {
-    printAbonoMultipleAccountPayableVoucher
-}
+    printAbonoMultipleAccountPayableVoucher,
+    dataPdfReturnAbonoAccountPayableMultipleVoucher,
+}

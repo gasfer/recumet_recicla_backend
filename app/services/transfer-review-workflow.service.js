@@ -12,7 +12,7 @@ const {
 } = require('../database/config');
 const { REVIEW_STATUSES, DETAIL_REVIEW_STATUSES } = require('../constants/transfer-review');
 const notificationService = require('./notification.service');
-const { getReviewStockKardexDifferences } = require('./stock-availability.service');
+const { getReviewStockKardexDifferences, getStockKardexIrregularities } = require('./stock-availability.service');
 
 const commonNoteInclude = [
   { association: 'assignedUser', attributes: ['id', 'full_names'] },
@@ -216,7 +216,18 @@ const getTransferTraceability = async (transferId) => {
     ],
   });
   if (!transfer) throw Object.assign(new Error('Traslado no encontrado.'), { statusCode: 404 });
-  return transfer;
+  const irregularities = await getStockKardexIrregularities({
+    idSucursal: transfer.id_sucursal_received,
+    idStorage: transfer.id_storage_received,
+    limit: 2000,
+  });
+  const relatedIrregularities = irregularities.filter(({ traceable_transfers: traceableTransfers = [] }) => (
+    traceableTransfers.some(({ transfer_id: relatedTransferId }) => Number(relatedTransferId) === Number(transfer.id))
+  ));
+  return {
+    ...transfer.toJSON(),
+    stock_kardex_irregularities: relatedIrregularities,
+  };
 };
 
 const getReviewReport = async ({ page = 1, limit = 50, status, idSucursal, productId, assignedUserId, ageFromDays, ageToDays }) => {

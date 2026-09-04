@@ -33,14 +33,15 @@ const getKardexPaginate = async (req = request, res = response) => {
             ]
         };
         let kardexes = await paginate(ViewKardex, page, limit, type, query, optionsDb);
-        const movementIds = kardexes.data.map((item) => Number(item.id_movement)).filter(Number.isInteger);
+        const transferMovements = kardexes.data.filter((item) => item.type_movement === 'KMOVEMENT');
+        const movementIds = transferMovements.map((item) => Number(item.id_movement)).filter(Number.isInteger);
         if (movementIds.length > 0) {
             const notes = await TransferReviewNote.findAll({
                 where: { id_kardex_movement: { [Op.in]: movementIds } },
                 attributes: ['id', 'registry_number', 'type', 'id_kardex_movement'],
             });
             const notesByMovement = new Map(notes.map((note) => [Number(note.id_kardex_movement), note]));
-            kardexes.data.forEach((item) => {
+            transferMovements.forEach((item) => {
                 const note = notesByMovement.get(Number(item.id_movement));
                 if (note) item.dataValues.review_note = note;
             });

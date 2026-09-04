@@ -16,6 +16,8 @@ const createFixture = (t, {
   resolved = 0,
   assignedUserId = null,
   existingAction = null,
+  serializeTransactions = false,
+  failNotification = false,
 } = {}) => {
   const events = [];
   const actions = [];
@@ -56,8 +58,37 @@ const createFixture = (t, {
     destroy: async function destroy() { holds.splice(holds.indexOf(this), 1); },
   }];
 
-  t.mock.method(db.sequelize, 'transaction', async (callback) => callback(transaction));
-  t.mock.method(db.TransferReviewResolutionAction, 'findOne', async () => existingAction);
+  let transactionQueue = Promise.resolve();
+  const runTransaction = async (callback) => {
+    const snapshot = {
+      note: { ...note },
+      detail: { ...detail },
+      holds: holds.map((hold) => ({ ...hold })),
+      eventsLength: events.length,
+      actionsLength: actions.length,
+      evidencesLength: evidences.length,
+    };
+    try {
+      return await callback(transaction);
+    } catch (error) {
+      Object.assign(note, snapshot.note);
+      Object.assign(detail, snapshot.detail);
+      holds.splice(0, holds.length, ...snapshot.holds);
+      events.splice(snapshot.eventsLength);
+      actions.splice(snapshot.actionsLength);
+      evidences.splice(snapshot.evidencesLength);
+      throw error;
+    }
+  };
+  t.mock.method(db.sequelize, 'transaction', async (callback) => {
+    if (!serializeTransactions) return runTransaction(callback);
+    const queued = transactionQueue.then(() => runTransaction(callback));
+    transactionQueue = queued.catch(() => undefined);
+    return queued;
+  });
+  t.mock.method(db.TransferReviewResolutionAction, 'findOne', async ({ where }) => (
+    existingAction || actions.find(({ idempotency_key }) => idempotency_key === where.idempotency_key) || null
+  ));
   t.mock.method(db.TransferReviewResolutionAction, 'create', async (values) => {
     const action = { id: 71 + actions.length, ...values };
     actions.push(action);
@@ -102,7 +133,10 @@ const createFixture = (t, {
   });
   t.mock.method(db.TransferReviewNote, 'findByPk', async () => note);
   t.mock.method(db.User, 'findOne', async ({ where }) => ({ id: where.id, full_names: 'Supervisor de prueba', role: 'ENCARGADO', status: true }));
-  t.mock.method(notificationService, 'notifyTransferReviewStakeholders', async () => undefined);
+  t.mock.method(notificationService, 'notifyTransferReviewStakeholders', async () => {
+    if (failNotification) throw new Error('Fallo simulado antes de confirmar la transacción');
+    return undefined;
+  });
   t.mock.method(operationalVerificationService, 'verifyOperationalResolution', async ({ quantity }) => ({
     documentType: 'NOTA_CLASIFICACION_MERMA',
     documentId: 501,
@@ -360,4 +394,52 @@ test('un reintento idempotente no vuelve a tocar detalle, retenciones ni eventos
   assert.equal(fixture.actions.length, 0);
   assert.equal(fixture.events.length, 0);
   assert.equal(activeHoldTotal(fixture.holds), 10);
+});
+
+test('dos confirmaciones simultaneas se serializan sin duplicar acciones ni eventos', async (t) => {
+  const fixture = createFixture(t, { serializeTransactions: true });
+  const request = {
+    noteId: fixture.note.id,
+    detailId: fixture.detail.id,
+    reasonCode: 'MAYOR_CANTIDAD_RECIBIDA',
+    noteOrReference: 'Acta confirmada por ambos usuarios',
+    idempotencyKey: 'concurrent-close-1',
+    actorUserId: 9,
+  };
+
+  const [first, second] = await Promise.all([
+    documentaryCloseDetail(request),
+    documentaryCloseDetail({ ...request, actorUserId: 10 }),
+  ]);
+
+  assert.equal([first, second].filter(({ idempotent }) => !idempotent).length, 1);
+  assert.equal([first, second].filter(({ idempotent }) => idempotent).length, 1);
+  assert.equal(fixture.actions.length, 1);
+  assert.equal(fixture.events.filter(({ event_type }) => event_type === 'SIN_AJUSTE_INVENTARIO').length, 1);
+  assert.equal(fixture.events.filter(({ event_type }) => event_type === 'CERRADA_DOCUMENTALMENTE').length, 1);
+  assert.equal(activeHoldTotal(fixture.holds), 0);
+  assert.deepEqual(fixture.modelWrites, { stock: 0, kardex: 0 });
+});
+
+test('un fallo tardio revierte asignacion, conciliacion, retenciones y eventos', async (t) => {
+  const fixture = createFixture(t, { failNotification: true });
+
+  await assert.rejects(() => documentaryCloseDetail({
+    noteId: fixture.note.id,
+    detailId: fixture.detail.id,
+    reasonCode: 'MAYOR_CANTIDAD_RECIBIDA',
+    noteOrReference: 'Acta cuyo cierre falla antes del commit',
+    idempotencyKey: 'rollback-close-1',
+    actorUserId: 9,
+  }), /fallo simulado/i);
+
+  assert.equal(fixture.note.id_assigned_user, null);
+  assert.equal(fixture.note.resolved_at, null);
+  assert.equal(fixture.detail.quantity_resolved, 0);
+  assert.equal(fixture.detail.reconciliation_status, 'EN_REVISION');
+  assert.equal(activeHoldTotal(fixture.holds), 10);
+  assert.equal(fixture.actions.length, 0);
+  assert.equal(fixture.events.length, 0);
+  assert.equal(fixture.evidences.length, 0);
+  assert.deepEqual(fixture.modelWrites, { stock: 0, kardex: 0 });
 });

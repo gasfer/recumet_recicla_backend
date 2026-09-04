@@ -9,6 +9,7 @@ const {
 } = require('../helpers/permission-denied');
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 const { authorizeTransferReview } = require('../middlewares/authorize-transfer-review');
+const { assignPermission } = require('../database/config');
 
 const responseRecorder = () => {
   const result = {};
@@ -63,6 +64,21 @@ test('el Administrador conserva acceso fijo y el usuario autorizado continúa', 
     authorizeTransferReview('read')({ userAuth }, responseRecorder().response, () => { nextCalls += 1; });
     assert.equal(nextCalls, 1);
   }
+});
+
+test('una instancia Sequelize conserva el permiso update para resolver revisiones', () => {
+  const permission = assignPermission.build({
+    module: 'TRANSFER_REVIEW',
+    status: true,
+    update: true,
+  });
+  let nextCalls = 0;
+
+  authorizeTransferReview('resolve')({
+    userAuth: { role: 'ENCARGADO', assign_permission: [permission] },
+  }, responseRecorder().response, () => { nextCalls += 1; });
+
+  assert.equal(nextCalls, 1);
 });
 
 test('la revisión de traslados contextualiza la acción denegada en español', () => {

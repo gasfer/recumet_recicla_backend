@@ -112,6 +112,9 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
       SELECT DISTINCT ON (id_product, id_sucursal, id_storage)
         id_product, id_sucursal, id_storage, saldo
       FROM view_kardex_detalle
+      WHERE 1 = 1
+        ${idSucursal ? 'AND id_sucursal = :idSucursal' : ''}
+        ${idStorage ? 'AND id_storage = :idStorage' : ''}
       ORDER BY id_product, id_sucursal, id_storage, date DESC, id DESC
     ), held AS (
       SELECT h.id_product, h.id_sucursal, h.id_storage,
@@ -119,6 +122,8 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
         SUM(h.quantity) FILTER (WHERE h.disposition = 'RETENIDO_SIN_AJUSTE') AS retained_without_adjustment
       FROM transfer_review_inventory_holds h
       WHERE ${activeHoldFilter}
+        ${idSucursal ? 'AND h.id_sucursal = :idSucursal' : ''}
+        ${idStorage ? 'AND h.id_storage = :idStorage' : ''}
       GROUP BY h.id_product, h.id_sucursal, h.id_storage
     ), legacy_held AS (
       SELECT n.id_product, n.id_sucursal, n.id_storage,
@@ -127,6 +132,8 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
       INNER JOIN transfer_review_note_details d ON d.id_transfer_review_note = n.id
       WHERE n.reconciliation_status <> 'COMPLETADO'
         AND d.reconciliation_status <> 'COMPLETADO'
+        ${idSucursal ? 'AND n.id_sucursal = :idSucursal' : ''}
+        ${idStorage ? 'AND n.id_storage = :idStorage' : ''}
       GROUP BY n.id_product, n.id_sucursal, n.id_storage
     )
     SELECT p.cod, p.name, s.id_product, s.id_sucursal, s.id_storage,
@@ -185,20 +192,20 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
       AND trn.id_product = dt.id_product
     WHERE dt.id_product IN (:productIds)
       AND tr.status IN ('PENDING', 'RECEIVED')
-      AND (
-        dt.quantity_received IS NULL
-        OR ABS(dt.quantity - dt.quantity_received) > 0.0001
-      )
+      AND dt.quantity_received IS NOT NULL
+      AND ABS(dt.quantity - dt.quantity_received) > 0.0001
+      ${idSucursal ? 'AND tr.id_sucursal_received = :idSucursal' : ''}
+      ${idStorage ? 'AND tr.id_storage_received = :idStorage' : ''}
     ORDER BY tr.date_send DESC
   `, {
-    replacements: { productIds },
+    replacements: { productIds, idSucursal, idStorage },
     type: QueryTypes.SELECT,
   });
 
   // 3. Agrupar traslados trazables por id_product
   const traceMap = {};
   for (const row of traceableTransfers) {
-    const key = Number(row.id_product);
+    const key = availabilityKey(row.id_product, row.id_sucursal_received, row.id_storage_received);
     if (!traceMap[key]) traceMap[key] = [];
     // Evitar duplicar el mismo detalle
     const exists = traceMap[key].some(t => t.detail_id === row.detail_id);
@@ -208,8 +215,33 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
   // 4. Adjuntar trazabilidad a cada fila del diagnóstico
   return rows.map(row => ({
     ...row,
-    traceable_transfers: traceMap[Number(row.id_product)] || [],
+    traceable_transfers: traceMap[availabilityKey(row.id_product, row.id_sucursal, row.id_storage)] || [],
   }));
+};
+
+const normalizeStockKardexIrregularity = (row) => {
+  const physicalStock = Number(row.physical_stock);
+  const kardexBalance = Number(row.kardex_balance);
+  const difference = Number(row.physical_kardex_difference);
+  return {
+    ...row,
+    id_product: Number(row.id_product),
+    id_sucursal: Number(row.id_sucursal),
+    id_storage: Number(row.id_storage),
+    physical_stock: physicalStock,
+    stock_in_review: Number(row.stock_in_review),
+    available_stock: Number(row.available_stock),
+    kardex_balance: kardexBalance,
+    physical_kardex_difference: difference,
+    difference_direction: difference > 0 ? 'STOCK_GREATER_THAN_KARDEX' : 'KARDEX_GREATER_THAN_STOCK',
+  };
+};
+
+const getStockKardexIrregularities = async (filters = {}) => {
+  const diagnostic = await getStockDiagnostic(filters);
+  return diagnostic
+    .filter((row) => Math.abs(Number(row.physical_kardex_difference)) > 0.0001)
+    .map(normalizeStockKardexIrregularity);
 };
 
 const getRetainedWithoutAdjustmentReport = async ({ idSucursal, idStorage, limit = 500 } = {}) => sequelize.query(`
@@ -344,6 +376,8 @@ module.exports = {
   attachAvailabilityToKardexRows,
   hasAvailableStock,
   getStockDiagnostic,
+  getStockKardexIrregularities,
+  normalizeStockKardexIrregularity,
   getReviewStockKardexDifferences,
   getRetainedWithoutAdjustmentReport,
   syncStocksFromKardex,

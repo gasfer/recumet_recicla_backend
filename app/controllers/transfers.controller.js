@@ -115,6 +115,13 @@ const getTransfersPaginate = async (req = request, res = response) => {
         for (const input of transfers.data) {
             input.dataValues.total_quantity = input.detailsTransfers.reduce((acc, item) => acc + Number(item.quantity), 0);
             input.dataValues.reconciliation_status = deriveReceptionStatus(input.reviewNotes || []);
+            input.dataValues.has_reconciliation_history = (input.reviewNotes || []).length > 0;
+            input.dataValues.approved_reconciliations = (input.reviewNotes || []).filter(note =>
+                note.reconciliation_status === REVIEW_STATUSES.COMPLETED && Boolean(note.resolved_at)
+            ).length;
+            input.dataValues.reconciliation_history_label = !input.dataValues.has_reconciliation_history
+                ? 'Sin conciliaciones' : input.dataValues.approved_reconciliations > 0
+                    ? 'Con conciliaciones aprobadas' : 'Con historial de revisión';
             input.dataValues.pending_review_items = (input.reviewNotes || []).reduce((total, note) => (
                 total + (note.details || []).filter((detail) => detail.reconciliation_status !== REVIEW_STATUSES.COMPLETED).length
             ), 0);

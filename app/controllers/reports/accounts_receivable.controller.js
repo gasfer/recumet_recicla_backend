@@ -10,6 +10,15 @@ const { whereDateForType } = require("../../helpers/where_range");
 const imagePath = path.join(__dirname, '../../../uploads/logo.png');
 const ExcelJS = require('exceljs');
 const { getNumberDecimal } = require("../../helpers/company");
+const {
+    buildHeader,
+    buildHr,
+    buildSectionTitle,
+    buildInfoPanel,
+    buildDetailTable,
+    buildClosingSection,
+    VOUCHER_THEME,
+} = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -73,8 +82,7 @@ const generatePdfReports = async (req = request, res = response) => {
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de cuentas por cobrar' });
     }
 }
 
@@ -186,8 +194,11 @@ const generateExcelReports = async (req = request, res = response) => {
 const returnDataAccountReceivable = async (params) => {
     const {status_account, id_client, id_sucursal,type_registry,filterBy, date1, date2,orderNew} = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
+    const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
+        ? [orderNew]
+        : [['id', 'DESC']];
     const optionsDb = {
-        order: [orderNew],
+        order: orderList,
         where: {
             [Op.and]: [
                 id_client      ? { id_client      } : {},
@@ -268,8 +279,7 @@ const generatePdfReportsAbonosAll = async (req = request, res = response) => {
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de abonos' });
     }
 }
 
@@ -425,6 +435,7 @@ const printAbonoAccountReceivableVoucher = async (req = request, res = response)
         });
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnAbonoAccountReceivableVoucher(abono_account_receivable,abono_account_receivable.accountsReceivable,decimal); //PDF 
+        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4];
         let quantity_total = 0;
         let units = [];
         abono_account_receivable.accountsReceivable.output.detailsOutput.forEach(detail => {
@@ -440,19 +451,36 @@ const printAbonoAccountReceivableVoucher = async (req = request, res = response)
                 {text:Number(detail?.price).toFixed(decimal), fontSize:8, alignment: 'right'},  
                 {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
             ];
-            dataPdf[15].table.body.push(tableData);
+            detailTableNode.table.body.push(tableData);
         });
-        dataPdf[15].table.body.push(
+        detailTableNode.table.body.push(
+
             [
                 {text:'',colSpan: 2, border:[true,false,false,false]},
                 '',
-                {text: quantity_total,  fontSize:8, alignment:'center'},
+                {
+                    text: `${Number(quantity_total).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}`,
+                    fontSize: 8,
+                    alignment: 'center',
+                    bold: true,
+                    fillColor: '#eeeeee'
+                },                  
                 {text: units.join(','), fontSize:8, alignment:'center'},
-                {   border:[true,false,true,true],
-                    text: `SUB TOTAL: ${Number(abono_account_receivable.accountsReceivable.output.sub_total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
-                    bold:true,
-                },
+                {
+                    border: [true, false, true, true],
+                    text: `SUB TOTAL: ${Number(abono_account_receivable.accountsReceivable.output.sub_total).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}`,
+                    colSpan: 2,
+                    fontSize: 8,
+                    fillColor: '#eeeeee',
+                    alignment: 'right',
+                    bold: true
+                }
             ],
             [
                 {text:'',colSpan: 4, border:[true,false,false,false]},
@@ -473,11 +501,19 @@ const printAbonoAccountReceivableVoucher = async (req = request, res = response)
                 '',
                 '',
                 '',
-                {   border:[true,false,true,true],
-                    text: `TOTAL: ${Number(abono_account_receivable.accountsReceivable.output.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
-                    bold:true,
-                },
+                {
+                    border: [true, false, true, true],
+                    text: `TOTAL: ${Number(abono_account_receivable.accountsReceivable.output.total).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}`,
+                    colSpan: 2,
+                    fontSize: 8,
+                    fillColor: '#eeeeee',
+                    alignment: 'right',
+                    bold: true
+                  }
+                  
             ]
         );
         let docDefinition = {
@@ -497,111 +533,71 @@ const printAbonoAccountReceivableVoucher = async (req = request, res = response)
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de abono' });
     }
 }
 
-const dataPdfReturnAbonoAccountReceivableVoucher = (abono_account_receivable,accountsReceivable,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: accountsReceivable.sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${accountsReceivable.sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${accountsReceivable.sucursal.cellphone}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${accountsReceivable.sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'CUENTA: ' + accountsReceivable.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: new Date(abono_account_receivable.date_abono).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'COMPROBANTE ABONO', style: 'title',bold:true , fontSize:16},
-    { text: 'RECIBÍ DE:', style: 'datos_person', bold:true ,fontSize:10 },
-    {
-        columns: [
-            { text: `Nombre:`, bold:true ,style: 'text',width: 60, },
-            { text: `${accountsReceivable.output?.client?.full_names ?? '-'}`, style: 'text',  },
-            { text: `Nro. Nit / Ci:`, bold:true ,style: 'text',width: 85, },
-            { text: `${accountsReceivable.output?.client?.number_document ?? '-'}`, style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `La suma de:`, bold:true ,style: 'text',width: 60, },
-            { text: `Bs. ${Number(abono_account_receivable.monto_abono).toFixed(decimal)} \n  ${NumeroALetras(Number(abono_account_receivable.monto_abono).toFixed(decimal))}`, style: 'text',  },
-            { text: `Por concepto de:`, bold:true, style: 'text',width: 85,  },
-            { text: `Abono crédito ${accountsReceivable.cod} - Venta ${accountsReceivable.output.cod}, en fecha: ` + moment(abono_account_receivable.date_abono).format('DD/MM/YYYY HH:mm:ss'),  style: 'text',  },
-        ]
-    },
-    { text: 'DETALLE:', style: 'datos_person',bold:true ,fontSize:10 },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [55, '*', 50, 50,50,50],
-            body: [
-                [
-                    {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'P.U.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'IMPORTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                ]
+const dataPdfReturnAbonoAccountReceivableVoucher = (abono_account_receivable, accountsReceivable, decimal) => [
+    buildHeader({
+        title: 'COMPROBANTE ABONO',
+        codePrefix: 'CUENTA',
+        codeValue: accountsReceivable.cod,
+        dateLabel: 'Fecha',
+        dateValue: moment(abono_account_receivable.date_abono).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: accountsReceivable.sucursal?.name,
+            nit: accountsReceivable.sucursal?.company?.nit,
+            phone: accountsReceivable.sucursal?.cellphone,
+            email: accountsReceivable.sucursal?.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'RECIBÍ DE (CLIENTE)',
+            rows: [
+                { label: 'Nombre:', value: accountsReceivable.output?.client?.full_names || '-', labelWidth: 60 },
+                { label: 'Nro. Nit/CI:', value: accountsReceivable.output?.client?.number_document || '-', labelWidth: 60 },
+                { label: 'Monto abono:', value: `Bs. ${Number(abono_account_receivable.monto_abono).toFixed(decimal)} (${NumeroALetras(Number(abono_account_receivable.monto_abono).toFixed(decimal))})`, labelWidth: 80 },
+                { label: 'Concepto:', value: `Abono crédito ${accountsReceivable.cod} - Venta ${accountsReceivable.output?.cod || ''}`, labelWidth: 60 },
             ]
         }
-    },
+    ]),
+    buildSectionTitle('DETALLE DE PRODUCTOS'),
+    buildDetailTable({
+        widths: [55, '*', 50, 50, 50, 50],
+        headers: [
+            { text: 'CÓDIGO', alignment: 'center' },
+            { text: 'DETALLE' },
+            { text: 'CANT.', alignment: 'center' },
+            { text: 'UND', alignment: 'center' },
+            { text: 'P.U.', alignment: 'center' },
+            { text: 'IMPORTE', alignment: 'center' },
+        ],
+        rows: [],
+    }),
     {
-        margin: [0,3,0,0],
+        margin: [0, 3, 0, 0],
         columns: [
-            { text: `P/${accountsReceivable.output.type_registry} NRO:`, bold:true ,style: 'text',width: 80, },
-            { text: `${accountsReceivable.output.number_registry}`, style: 'text',  },
-            { text: `A CUENTA:`, bold:true, style: 'text',width: 58,  },
-            { text: `${Number(accountsReceivable.monto_abonado).toFixed(decimal)}`,  style: 'text',  },
-            { text: `SALDO:`, bold:true, style: 'text',width: 70,  },
-            { text: `${Number(accountsReceivable.monto_restante).toFixed(decimal)}`,  style: 'text',  },
+            { text: `P/${accountsReceivable.output.type_registry} NRO:`, bold: true, style: 'text', width: 80 },
+            { text: `${accountsReceivable.output.number_registry}`, style: 'text' },
+            { text: `A CUENTA:`, bold: true, style: 'text', width: 65 },
+            { text: `Bs. ${Number(accountsReceivable.monto_abonado).toFixed(decimal)}`, style: 'text' },
+            { text: `SALDO:`, bold: true, style: 'text', width: 55 },
+            { text: `Bs. ${Number(accountsReceivable.monto_restante).toFixed(decimal)}`, style: 'text' },
         ]
     },
-    {
-        margin: [0,40,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-            { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `${accountsReceivable.sucursal.name}`,style: 'text',alignment: 'center' },
-            { text: `${accountsReceivable.output?.client?.full_names}` , style: 'text',alignment: 'center' },
-        ]
-    },
+    buildClosingSection({
+        signatures: [
+            { role: 'Recibí conforme', name: accountsReceivable.sucursal?.name || '' },
+            { role: 'Entregue conforme', name: accountsReceivable.output?.client?.full_names || '' },
+        ],
+        margin: [0, 10, 0, 0],
+        signatureSpace: 35,
+    }),
 ];
+
 
 
 const printAccountReceivableVoucher = async (req = request, res = response) =>{
@@ -629,6 +625,8 @@ const printAccountReceivableVoucher = async (req = request, res = response) =>{
         });
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnAccountPayableVoucher(account_receivable,decimal); //PDF 
+        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4]; // Tabla de detalles de productos
+        const abonosTableNode = dataPdf.find(node => node?.table?.widths?.length === 5) || dataPdf[6]; // Tabla de abonos registrados
         let quantity_total = 0;
         let units = [];
         account_receivable.output.detailsOutput.forEach(detail => {
@@ -644,17 +642,17 @@ const printAccountReceivableVoucher = async (req = request, res = response) =>{
                 {text:Number(detail?.price).toFixed(decimal), fontSize:8, alignment: 'right'},  
                 {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
             ];
-            dataPdf[16].table.body.push(tableData);
+            detailTableNode.table.body.push(tableData);
         });
-        dataPdf[16].table.body.push(
+        detailTableNode.table.body.push(
             [
                 {text:'',colSpan: 2, border:[true,false,false,false]},
                 '',
-                {text: quantity_total,  fontSize:8, alignment:'center'},
+                {text: quantity_total,  fontSize:8, alignment:'center', bold: true, fillColor: '#dde3ea'},
                 {text: units.join(','), fontSize:8, alignment:'center'},
                 {   border:[true,false,true,true],
                     text: `SUB TOTAL: ${Number(account_receivable.output.sub_total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
+                    fillColor: '#dde3ea',alignment:'right', 
                     bold:true,
                 },
             ],
@@ -665,7 +663,7 @@ const printAccountReceivableVoucher = async (req = request, res = response) =>{
                 '',
                 {   border:[true,false,true,true],
                     text: `DESCUENTO: ${Number(account_receivable.output.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
+                    fillColor: '#dde3ea',alignment:'right', 
                     bold:true,
                 },
             ],
@@ -679,21 +677,22 @@ const printAccountReceivableVoucher = async (req = request, res = response) =>{
                 '',
                 {   border:[true,false,true,true],
                     text: `TOTAL: ${Number(account_receivable.output.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
+                    fillColor: '#dde3ea',alignment:'right', 
                     bold:true,
                 },
             ]
         );
         account_receivable.abonosAccountsReceivable.forEach(abono => {
             const tableData = [
-                {text:moment(abono.date_abono).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
-                {text:Number(abono?.monto_abono).toFixed(decimal), fontSize:9,alignment: 'center'}, 
-                {text:abono?.user.full_names, fontSize:8, alignment: 'length'}, 
-                {text:Number(abono?.restante_credito).toFixed(decimal), fontSize:9, alignment: 'center'}, 
-                {text:Number(abono?.total_abonado).toFixed(decimal), fontSize:9, alignment: 'center'},  
+                {text:moment(abono.date_abono).format('DD/MM/YYYY HH:mm:ss'), fontSize:8, alignment: 'center'}, 
+                {text:Number(abono?.monto_abono).toFixed(decimal), fontSize:8, alignment: 'right'}, 
+                {text:abono?.user?.full_names || '-', fontSize:8}, 
+                {text:Number(abono?.restante_credito).toFixed(decimal), fontSize:8, alignment: 'right'}, 
+                {text:Number(abono?.total_abonado).toFixed(decimal), fontSize:8, alignment: 'right'},  
             ];
-            dataPdf[18].table.body.push(tableData);
+            abonosTableNode.table.body.push(tableData);
         });
+
         let docDefinition = {
             content: dataPdf,
             styles: styles,
@@ -711,131 +710,79 @@ const printAccountReceivableVoucher = async (req = request, res = response) =>{
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el estado de cuenta por cobrar' });
     }
 }
 
-const dataPdfReturnAccountPayableVoucher = (accountsReceivable,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: accountsReceivable.sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${accountsReceivable.sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${accountsReceivable.sucursal.cellphone}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${accountsReceivable.sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'CUENTA: ' + accountsReceivable.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: moment(accountsReceivable.date_credit).format('DD/MM/YYYY HH:mm:ss'),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: `ESTADO DE CUENTA DE CREDITO - ${accountsReceivable.cod}`, style: 'title',bold:true , fontSize:16},
-    { text: 'DATOS:', style: 'datos_person', bold:true ,fontSize:10 },
-    {
-        columns: [
-            { text: `Descripcion:`, bold:true ,style: 'text',width: 60, },
-            { text: `${accountsReceivable.description ?? '-'}`, style: 'text',  },
-            { text: `Cliente:`, bold:true ,style: 'text',width: 85, },
-            { text: `${accountsReceivable.client?.number_document ?? ''} ${accountsReceivable?.client?.full_names}`, style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,1,0,0],
-        columns: [
-            { text: `Fecha:`, bold:true ,style: 'text',width: 60, },
-            { text:  moment(accountsReceivable.date_credit).format('DD/MM/YYYY HH:mm:ss'), style: 'text',  },
-            { text: `Monto de crédito:`, bold:true, style: 'text',width: 85,  },
-            { text: `${accountsReceivable.total}`,  fontSize:11, bold: true  },
-        ]
-    },
-    {
-        margin: [0,1,0,0],
-        columns: [
-            { text: `Estado:`, bold:true ,style: 'text' ,width: 60, },
-            { text:  `CREDITO ${accountsReceivable.status_account}`, fontSize:11, bold: true  },
-        ]
-    },
-    { text: 'DETALLE:', style: 'datos_person',bold:true ,fontSize:10 },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [55, '*', 50, 50,50,50],
-            body: [
-                [
-                    {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'P.U.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'IMPORTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                ]
+const dataPdfReturnAccountPayableVoucher = (accountsReceivable, decimal) => [
+    buildHeader({
+        title: 'ESTADO DE CUENTA DE CRÉDITO',
+        codePrefix: 'CUENTA',
+        codeValue: accountsReceivable.cod,
+        dateLabel: 'Fecha',
+        dateValue: moment(accountsReceivable.date_credit).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: accountsReceivable.sucursal?.name,
+            nit: accountsReceivable.sucursal?.company?.nit,
+            phone: accountsReceivable.sucursal?.cellphone,
+            email: accountsReceivable.sucursal?.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'DATOS DE CRÉDITO',
+            rows: [
+                { label: 'Cliente:', value: `${accountsReceivable.client?.number_document ?? ''} ${accountsReceivable.client?.full_names || '-'}`, labelWidth: 70 },
+                { label: 'Descripción:', value: accountsReceivable.description || '-', labelWidth: 70 },
+                { label: 'Monto crédito:', value: `Bs. ${Number(accountsReceivable.total).toFixed(decimal)}`, labelWidth: 70 },
+                { label: 'Estado:', value: `CRÉDITO ${accountsReceivable.status_account}`, labelWidth: 70 },
             ]
         }
-    },
-    { text: 'ABONOS:', style: 'datos_person',bold:true ,fontSize:10 },
+    ]),
+    buildSectionTitle('DETALLE DE PRODUCTOS'),
+    buildDetailTable({
+        widths: [55, '*', 45, 35, 55, 60],
+        headers: [
+            { text: 'CÓDIGO', alignment: 'center' },
+            { text: 'DETALLE' },
+            { text: 'CANT.', alignment: 'center' },
+            { text: 'UND', alignment: 'center' },
+            { text: 'P.U.', alignment: 'center' },
+            { text: 'IMPORTE', alignment: 'center' },
+        ],
+        rows: [],
+    }),
+    buildSectionTitle('ABONOS REGISTRADOS'),
+    buildDetailTable({
+        widths: [100, 80, '*', 80, 80],
+        headers: [
+            { text: 'FECHA, HORA ABONO', alignment: 'center' },
+            { text: 'MONTO ABONADO', alignment: 'center' },
+            { text: 'ABONADO POR' },
+            { text: 'RESTANTE', alignment: 'center' },
+            { text: 'TOTAL ABONADO', alignment: 'center' },
+        ],
+        rows: [],
+    }),
     {
-        style: 'tableExample',
-        table: {
-            widths: [90, 70, '*', 70,70],
-            body: [
-                [
-                    {text:'FECHA, HORA ABONO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO ABONADO', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'ABONADO POR',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'RESTANTE HASTA FECHA',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'TOTAL ABONADO HASTA FECHA',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                ]
-            ]
-        }
-    },
-    {
-        margin: [0,3,0,0],
+        margin: [0, 3, 0, 0],
         columns: [
-            { text: `TOTAL ABONADO:`, bold:true ,style: 'text',width: 120, },
-            { text: `${Number(accountsReceivable.monto_abonado).toFixed(decimal)}`, fontSize:10,  },
-            { text: `TOTAL RESTANTE:`, bold:true, style: 'text',width: 130,  },
-            { text: `${Number(accountsReceivable.monto_restante).toFixed(decimal)}`,  fontSize:10,  },
+            { text: 'TOTAL ABONADO:', bold: true, style: 'text', width: 110 },
+            { text: `Bs. ${Number(accountsReceivable.monto_abonado).toFixed(decimal)}`, bold: true, style: 'text', width: 100 },
+            { text: 'TOTAL RESTANTE:', bold: true, style: 'text', width: 110 },
+            { text: `Bs. ${Number(accountsReceivable.monto_restante).toFixed(decimal)}`, bold: true, style: 'text' },
         ]
     },
-    {
-        margin: [0,40,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-            { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `${accountsReceivable.sucursal.name}`,style: 'text',alignment: 'center' },
-            { text: `${accountsReceivable.client?.full_names}` , style: 'text',alignment: 'center' },
-        ]
-    },
+    buildClosingSection({
+        signatures: [
+            { role: 'Sucursal', name: accountsReceivable.sucursal?.name || '' },
+            { role: 'Cliente', name: accountsReceivable.client?.full_names || '' },
+        ],
+        margin: [0, 15, 0, 0],
+        signatureSpace: 35,
+    }),
 ];
 
 module.exports = {
@@ -844,5 +791,7 @@ module.exports = {
     printAbonoAccountReceivableVoucher,
     printAccountReceivableVoucher,
     generatePdfReportsAbonosAll,
-    generateExcelReportsAbonosAll
-}
+    generateExcelReportsAbonosAll,
+    dataPdfReturnAbonoAccountReceivableVoucher,
+    dataPdfReturnAccountPayableVoucher,
+}

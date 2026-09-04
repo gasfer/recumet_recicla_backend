@@ -8,7 +8,11 @@ const workflowService = require('../services/transfer-review-workflow.service');
 const resolutionService = require('../services/transfer-review-resolution.service');
 const documentaryService = require('../services/transfer-review-documentary.service');
 const { REVIEW_PERMISSION_ACTIONS, REVIEW_PERMISSION_MODULE } = require('../constants/transfer-review');
-const { getStockDiagnostic, getRetainedWithoutAdjustmentReport } = require('../services/stock-availability.service');
+const {
+  getStockDiagnostic,
+  getStockKardexIrregularities,
+  getRetainedWithoutAdjustmentReport,
+} = require('../services/stock-availability.service');
 const reconciliationManagementService = require('../services/transfer-reconciliation-management.service');
 const automatedResolutionService = require('../services/automated-transfer-review-resolution.service');
 const { permissionDeniedError, sendPermissionDenied } = require('../helpers/permission-denied');
@@ -118,8 +122,17 @@ const getOpenReviews = async (req = request, res = response) => {
     const idStorage = req.query.id_storage ? Number(req.query.id_storage) : null;
     if (!idSucursal) return res.status(422).json({ ok: false, errors: [{ msg: 'Debe indicar una sucursal.' }] });
     if (!canAccessSucursal(req.userAuth, idSucursal)) return sendPermissionDenied(res, 'consultar esta sucursal');
-    const reviews = await workflowService.listOpenReviews({ idSucursal, idStorage, limit: req.query.limit });
-    return res.status(200).json({ ok: true, reviews, total: reviews.length });
+    const [reviews, stockKardexIrregularities] = await Promise.all([
+      workflowService.listOpenReviews({ idSucursal, idStorage, limit: req.query.limit }),
+      getStockKardexIrregularities({ idSucursal, idStorage, limit: 2000 }),
+    ]);
+    return res.status(200).json({
+      ok: true,
+      reviews,
+      total: reviews.length,
+      stock_kardex_irregularities: stockKardexIrregularities,
+      irregularities_total: stockKardexIrregularities.length,
+    });
   } catch (error) {
     return sendWorkflowError(res, error);
   }

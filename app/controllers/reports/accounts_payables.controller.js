@@ -10,6 +10,15 @@ const { whereDateForType } = require("../../helpers/where_range");
 const imagePath = path.join(__dirname, '../../../uploads/logo.png');
 const ExcelJS = require('exceljs');
 const { getNumberDecimal } = require("../../helpers/company");
+const {
+    buildHeader,
+    buildHr,
+    buildSectionTitle,
+    buildInfoPanel,
+    buildDetailTable,
+    buildClosingSection,
+    VOUCHER_THEME,
+} = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -75,8 +84,7 @@ const generatePdfReports = async (req = request, res = response) => {
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de cuentas por pagar' });
     }
 }
 
@@ -192,8 +200,11 @@ const generateExcelReports = async (req = request, res = response) => {
 const returnDataAccountPayable = async (params) => {
     const {status_account, id_provider, id_sucursal,type_registry,filterBy, date1, date2,orderNew} = params;
     const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
+    const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
+        ? [orderNew]
+        : [['id', 'DESC']];
     const optionsDb = {
-        order: [orderNew],
+        order: orderList,
         where: {
             [Op.and]: [
                 id_provider    ? { id_provider   } : {},
@@ -273,8 +284,7 @@ const generatePdfReportsAbonosAll = async (req = request, res = response) => {
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de abonos' });
     }
 }
 
@@ -432,6 +442,7 @@ const printAbonoAccountPayableVoucher = async (req = request, res = response) =>
         });
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnAbonoAccountPayableVoucher(abono_account_payable,abono_account_payable.accountsPayable,decimal); //PDF 
+        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4];
         let quantity_total = 0;
         let units = [];
         abono_account_payable.accountsPayable.input.detailsInput.forEach(detail => {
@@ -447,9 +458,10 @@ const printAbonoAccountPayableVoucher = async (req = request, res = response) =>
                 {text:Number(detail?.cost).toFixed(decimal), fontSize:8, alignment: 'right'},  
                 {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
             ];
-            dataPdf[15].table.body.push(tableData);
+            detailTableNode.table.body.push(tableData);
         });
-        dataPdf[15].table.body.push(
+        detailTableNode.table.body.push(
+
             [
                 {text:'',colSpan: 2, border:[true,false,false,false]},
                 '',
@@ -528,110 +540,51 @@ const printAbonoAccountPayableVoucher = async (req = request, res = response) =>
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de abono' });
     }
 }
 
-const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsPayable,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: accountsPayable.sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${accountsPayable.sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${accountsPayable?.sucursal?.cellphone ?? '-'}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${accountsPayable.sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: 'CUENTA: ' + accountsPayable.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: new Date(abono_account_payable.date_abono).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'COMPROBANTE ABONO', style: 'title',bold:true , fontSize:16},
-    { text: 'ENTREGUE A:', style: 'datos_person', bold:true ,fontSize:10 },
-    {
-        columns: [
-            { text: `Nombre:`, bold:true ,style: 'text',width: 60, },
-            { text: `${accountsPayable.input?.provider?.full_names ?? '-'}`, style: 'text',  },
-            { text: `Nro. Nit:`, bold:true ,style: 'text',width: 85, },
-            { text: `${accountsPayable.input?.provider?.number_document ?? '-'}`, style: 'text',  },
-        ]
-    },
-    {
-        margin: [0,3,0,0],
-        columns: [
-            { text: `La suma de:`, bold:true ,style: 'text',width: 60, },
-            { 
-                stack: [
-                  {
-                    table: {
-                      widths: ['*'],
-                      body: [[
-                        {
-                          text: `Bs. ${Number(abono_account_payable.monto_abono).toLocaleString('es-BO', {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}`,
-                          style: 'text',
-                          fontSize: 10,
-                          margin: [0, 0, 0, 0],
-                          fillColor: '#eeeeee'
-                        }
-                      ]]
-                    },
-                    layout: {
-                      hLineColor: () => 'black',
-                      vLineColor: () => 'black',
-                      hLineWidth: () => 1,
-                      vLineWidth: () => 1
-                    }
-                  },
-                  {
-                    text: NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(2)),
-                    style: 'text',
-                    fontSize: 9,
-                    margin: [0, 2, 0, 0]
-                  }
-                ]
-              },              
-            { text: `Por concepto de:`, bold:true, style: 'text',width: 85,  },
-            { text: `Abono crédito ${accountsPayable.cod} - Compra ${accountsPayable.input.cod}, en fecha: ` + moment(abono_account_payable.date_abono).format('DD/MM/YYYY HH:mm:ss'),  style: 'text',  },
-        ]
-    },
-    { text: 'DETALLE:', style: 'datos_person',bold:true ,fontSize:10 },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [55, '*', 50, 50,50,50],
-            body: [
-                [
-                    {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'P.U.',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'IMPORTE',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                ]
+const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable, accountsPayable, decimal) => [
+    buildHeader({
+        title: 'COMPROBANTE ABONO',
+        codePrefix: 'CUENTA',
+        codeValue: accountsPayable.cod,
+        dateLabel: 'Fecha',
+        dateValue: moment(abono_account_payable.date_abono).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: accountsPayable.sucursal?.name,
+            nit: accountsPayable.sucursal?.company?.nit,
+            phone: accountsPayable.sucursal?.cellphone,
+            email: accountsPayable.sucursal?.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'ENTREGUE A (PROVEEDOR)',
+            rows: [
+                { label: 'Nombre:', value: accountsPayable.input?.provider?.full_names || '-', labelWidth: 60 },
+                { label: 'Nro. Nit:', value: accountsPayable.input?.provider?.number_document || '-', labelWidth: 60 },
+                { label: 'Monto abono:', value: `Bs. ${Number(abono_account_payable.monto_abono).toFixed(decimal)} (${NumeroALetras(Number(abono_account_payable.monto_abono).toFixed(2))})`, labelWidth: 80 },
+                { label: 'Concepto:', value: `Abono crédito ${accountsPayable.cod} - Compra ${accountsPayable.input?.cod || ''}`, labelWidth: 60 },
             ]
         }
-    },
+    ]),
+    buildSectionTitle('DETALLE DE PRODUCTOS'),
+    buildDetailTable({
+        widths: [55, '*', 50, 50, 50, 50],
+        headers: [
+            { text: 'CÓDIGO', alignment: 'center' },
+            { text: 'DETALLE' },
+            { text: 'CANT.', alignment: 'center' },
+            { text: 'UND', alignment: 'center' },
+            { text: 'P.U.', alignment: 'center' },
+            { text: 'IMPORTE', alignment: 'center' },
+        ],
+        rows: [],
+    }),
+
     {
         margin: [0,3,0,0],
         columns: [
@@ -739,28 +692,16 @@ const dataPdfReturnAbonoAccountPayableVoucher = (abono_account_payable,accountsP
         } : null
       ].filter(x => x !== null)
     },
-    {
-        margin: [0,40,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `Recibí conforme`, bold:true ,style: 'text', alignment: 'center' },
-            { text: `Entregue conforme`, bold:true,style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-2,0,0],
-        columns: [
-            { text: `${accountsPayable.input?.provider?.full_names}` , style: 'text',alignment: 'center' },
-            { text: `${accountsPayable.sucursal.name}`,style: 'text',alignment: 'center' },
-        ]
-    },
+    buildClosingSection({
+        signatures: [
+            { role: 'Recibí conforme', name: accountsPayable.input?.provider?.full_names || '' },
+            { role: 'Entregue conforme', name: accountsPayable.sucursal?.name || '' },
+        ],
+        margin: [0, 10, 0, 0],
+        signatureSpace: 35,
+    }),
 ];
+
 
 
 const printAccountPayableVoucher = async (req = request, res = response) =>{
@@ -788,6 +729,8 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
         });
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnAccountPayableVoucher(account_payable,decimal); //PDF 
+        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[3]; // Tabla de detalles de productos
+        const abonosTableNode = dataPdf.find(node => node?.table?.widths?.length === 5) || dataPdf[4]; // Tabla de abonos registrados
         let quantity_total = 0;
         let units = [];
         account_payable.input.detailsInput.forEach(detail => {
@@ -803,18 +746,21 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
                 {text:Number(detail?.cost).toFixed(decimal), fontSize:8, alignment: 'right'},  
                 {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
             ];
-            dataPdf[16].table.body.push(tableData);
+            detailTableNode.table.body.push(tableData);
         });
-        dataPdf[16].table.body.push(
+        detailTableNode.table.body.push(
             [
                 {text:'',colSpan: 2, border:[true,false,false,false]},
                 '',
                 {
-                    text: quantity_total,
+                    text: `${Number(quantity_total).toLocaleString('es-BO', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}`,
                     fontSize: 8,
                     alignment: 'center',
                     bold: true,
-                    fillColor: '#eeeeee', // Relleno gris
+                    fillColor: '#eeeeee',
                 },
                 {text: units.join(','), fontSize:8, alignment:'center'},
                 {
@@ -837,7 +783,7 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
                 '',
                 {   border:[true,false,true,true],
                     text: `DESCUENTO: ${Number(account_payable.input.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
+                    fillColor: '#dde3ea',alignment:'right', 
                     bold:true,
                 },
             ],
@@ -857,7 +803,7 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
                     })}`,
                     colSpan: 2,
                     fontSize: 8,
-                    fillColor: '#eeeeee',
+                    fillColor: '#dde3ea',
                     alignment: 'right',
                     bold: true,
                   }
@@ -865,14 +811,15 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
         );
         account_payable.abonosAccountsPayable.forEach(abono => {
             const tableData = [
-                {text:moment(abono.date_abono).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
-                {text:Number(abono?.monto_abono).toFixed(decimal), fontSize:9,alignment: 'center'}, 
-                {text:abono?.user.full_names, fontSize:8, alignment: 'length'}, 
-                {text:Number(abono?.restante_credito).toFixed(decimal), fontSize:9, alignment: 'center'}, 
-                {text:Number(abono?.total_abonado).toFixed(decimal), fontSize:9, alignment: 'center'},  
+                {text:moment(abono.date_abono).format('DD/MM/YYYY HH:mm:ss'), fontSize:8, alignment: 'center'}, 
+                {text:Number(abono?.monto_abono).toFixed(decimal), fontSize:8, alignment: 'right'}, 
+                {text:abono?.user?.full_names || '-', fontSize:8}, 
+                {text:Number(abono?.restante_credito).toFixed(decimal), fontSize:8, alignment: 'right'}, 
+                {text:Number(abono?.total_abonado).toFixed(decimal), fontSize:8, alignment: 'right'},  
             ];
-            dataPdf[18].table.body.push(tableData);
+            abonosTableNode.table.body.push(tableData);
         });
+
         let docDefinition = {
             content: dataPdf,
             styles: styles,
@@ -890,303 +837,79 @@ const printAccountPayableVoucher = async (req = request, res = response) =>{
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el estado de cuenta por pagar' });
     }
 }
 
 const dataPdfReturnAccountPayableVoucher = (accountsPayable, decimal) => [
-  {
-    image: "data:image/png;base64," + fs.readFileSync(imagePath, "base64"),
-    width: 60,
-    absolutePosition: { x: 30, y: 15 },
-  },
-  {
-    text: accountsPayable.sucursal.name,
-    style: "text",
-    absolutePosition: { x: 97, y: 25 },
-  },
-  {
-    text: "NIT:",
-    bold: true,
-    style: "text",
-    absolutePosition: { x: 97, y: 35 },
-  },
-  {
-    text: `${accountsPayable.sucursal.company.nit}`,
-    style: "text",
-    absolutePosition: { x: 120, y: 35 },
-  },
-  {
-    text: "TELÉFONO:",
-    bold: true,
-    style: "text",
-    absolutePosition: { x: 97, y: 45 },
-  },
-  {
-    text: `${accountsPayable.sucursal.cellphone}`,
-    style: "text",
-    absolutePosition: { x: 155, y: 45 },
-  },
-  {
-    text: "EMAIL:",
-    bold: true,
-    style: "text",
-    absolutePosition: { x: 97, y: 55 },
-  },
-  {
-    text: `${accountsPayable.sucursal.email}`,
-    style: "text",
-    absolutePosition: { x: 133, y: 55 },
-  },
-  {
-    text: "CUENTA: " + accountsPayable.cod,
-    style: "fechaDoc",
-    absolutePosition: { y: 30 },
-  },
-  {
-    text: moment(accountsPayable.date_credit).format("DD/MM/YYYY HH:mm:ss"),
-    style: "fechaDoc",
-    absolutePosition: { y: 40 },
-  },
-  {
-    text: `ESTADO DE CUENTA DE CREDITO - ${accountsPayable.cod}`,
-    style: "title",
-    bold: true,
-    fontSize: 16,
-  },
-  { text: "DATOS:", style: "datos_person", bold: true, fontSize: 10 },
-  {
-    columns: [
-      { text: `Descripción:`, bold: true, style: "text", width: 60 },
-      { text: `${accountsPayable.description ?? "-"}`, style: "text" },
-      { text: `Proveedor:`, bold: true, style: "text", width: 85 },
-      {
-        text: `${accountsPayable.provider?.number_document ?? ""} ${
-          accountsPayable?.provider?.full_names
-        }`,
-        style: "text",
-      },
-    ],
-  },
-  {
-    margin: [0, 1, 0, 0],
-    columns: [
-      { text: `Fecha:`, bold: true, style: "text", width: 60 },
-      {
-        text: moment(accountsPayable.date_credit).format("DD/MM/YYYY HH:mm:ss"),
-        style: "text",
-      },
-      { text: `Monto de crédito:`, bold: true, style: "text", width: 85 },
-      {
-        text: new Intl.NumberFormat("es-BO", {
-          style: "currency",
-          currency: "BOB",
-        }).format(accountsPayable.total),
-        fontSize: 11,
-        bold: true,
-      },
-    ],
-  },
-  {
-    margin: [0, 0, 0, 0],
-    columns: [
-      { text: `Estado:`, bold: true, style: "text", width: 60 },
-      {
-        text: `CREDITO ${accountsPayable.status_account}`,
-        fontSize: 11,
-        bold: true,
-      },
-    ],
-  },
-  { text: "DETALLE:", style: "datos_person", bold: true, fontSize: 10 },
-  {
-    style: "tableExample",
-    table: {
-      widths: [55, "*", 50, 50, 50, 50],
-      body: [
-        [
-          { text: "CÓDIGO", fontSize: 8, fillColor: "#eeeeee", bold: true },
-          { text: "DETALLE", fontSize: 8, fillColor: "#eeeeee", bold: true },
-          {
-            text: "CANT.",
-            alignment: "center",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
-          {
-            text: "UND",
-            alignment: "center",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
-          {
-            text: "P.U.",
-            alignment: "center",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
-          {
-            text: "IMPORTE",
-            alignment: "center",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
+    buildHeader({
+        title: `ESTADO DE CUENTA DE CRÉDITO`,
+        codePrefix: 'CUENTA',
+        codeValue: accountsPayable.cod,
+        dateLabel: 'Fecha',
+        dateValue: moment(accountsPayable.date_credit).format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: accountsPayable.sucursal?.name,
+            nit: accountsPayable.sucursal?.company?.nit,
+            phone: accountsPayable.sucursal?.cellphone,
+            email: accountsPayable.sucursal?.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'DATOS DE CRÉDITO',
+            rows: [
+                { label: 'Proveedor:', value: `${accountsPayable.provider?.number_document ?? ''} ${accountsPayable?.provider?.full_names || '-'}`, labelWidth: 70 },
+                { label: 'Descripción:', value: accountsPayable.description || '-', labelWidth: 70 },
+                { label: 'Monto crédito:', value: `Bs. ${Number(accountsPayable.total).toFixed(decimal)}`, labelWidth: 70 },
+                { label: 'Estado:', value: `CRÉDITO ${accountsPayable.status_account}`, labelWidth: 70 },
+            ]
+        }
+    ]),
+    buildSectionTitle('DETALLE DE PRODUCTOS'),
+    buildDetailTable({
+        widths: [55, '*', 45, 35, 55, 60],
+        headers: [
+            { text: 'CÓDIGO', alignment: 'center' },
+            { text: 'DETALLE' },
+            { text: 'CANT.', alignment: 'center' },
+            { text: 'UND', alignment: 'center' },
+            { text: 'P.U.', alignment: 'center' },
+            { text: 'IMPORTE', alignment: 'center' },
         ],
-      ],
-    },
-  },
-  { text: "ABONOS:", style: "datos_person", bold: true, fontSize: 10 },
-  {
-    style: "tableExample",
-    table: {
-      widths: [90, 70, "*", 70, 70],
-      body: [
-        [
-          {
-            text: "FECHA, HORA ABONO",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
-          {
-            text: "MONTO ABONADO",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
-          {
-            text: "ABONADO POR",
-            alignment: "center",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
-          {
-            text: "RESTANTE HASTA FECHA",
-            alignment: "center",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
-          {
-            text: "TOTAL ABONADO HASTA FECHA",
-            alignment: "center",
-            fontSize: 8,
-            fillColor: "#eeeeee",
-            bold: true,
-          },
+        rows: [],
+    }),
+    buildSectionTitle('ABONOS REGISTRADOS'),
+    buildDetailTable({
+        widths: [100, 80, '*', 80, 80],
+        headers: [
+            { text: 'FECHA, HORA ABONO', alignment: 'center' },
+            { text: 'MONTO ABONADO', alignment: 'center' },
+            { text: 'ABONADO POR' },
+            { text: 'RESTANTE', alignment: 'center' },
+            { text: 'TOTAL ABONADO', alignment: 'center' },
         ],
-      ],
+        rows: [],
+    }),
+    {
+        margin: [0, 3, 0, 0],
+        columns: [
+            { text: 'TOTAL ABONADO:', bold: true, style: 'text', width: 110 },
+            { text: `Bs. ${Number(accountsPayable.monto_abonado).toFixed(decimal)}`, bold: true, style: 'text', width: 100 },
+            { text: 'TOTAL RESTANTE:', bold: true, style: 'text', width: 110 },
+            { text: `Bs. ${Number(accountsPayable.monto_restante).toFixed(decimal)}`, bold: true, style: 'text' },
+        ]
     },
-  },
-  {
-    margin: [0, 0, 0, 0],
-    columns: [
-      { text: `TOTAL ABONADO:`, bold: true, style: "text", width: 120 },
-      {
-        table: {
-          body: [
-            [
-                {
-                    text: `Bs. ${Number(accountsPayable.monto_abonado).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}`,
-                    fontSize: 10,
-                    fillColor: '#eeeeee',
-                    border: [true, true, true, true],
-                  }
-            ],
-          ],
-        },
-        layout: {
-          hLineColor: () => 'black',
-          vLineColor: () => 'black',
-          hLineWidth: () => 1,
-          vLineWidth: () => 1,
-        },
-        margin: [0, 0, 0, 0],
-      },
-      { text: `TOTAL RESTANTE:`, bold: true, style: "text", width: 130 },
-      {
-        table: {
-          body: [
-            [
-                {
-                    text: `${Number(accountsPayable.monto_restante).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}`,
-                    fontSize: 10,
-                    fillColor: '#eeeeee',
-                    border: [true, true, true, true],
-                  }
-            ],
-          ],
-        },
-        layout: {
-          hLineColor: () => 'black',
-          vLineColor: () => 'black',
-          hLineWidth: () => 1,
-          vLineWidth: () => 1,
-        },
-      },
-    ],
-  },  
-  {
-    margin: [0, 40, 0, 0],
-    columns: [
-      {
-        text: `-----------------------------------------`,
-        bold: true,
-        style: "text",
-        alignment: "center",
-      },
-      {
-        text: `-----------------------------------------`,
-        bold: true,
-        style: "text",
-        alignment: "center",
-      },
-    ],
-  },
-  {
-    margin: [0, -5, 0, 0],
-    columns: [
-      {
-        text: `Recibí conforme`,
-        bold: true,
-        style: "text",
-        alignment: "center",
-      },
-      {
-        text: `Entregue conforme`,
-        bold: true,
-        style: "text",
-        alignment: "center",
-      },
-    ],
-  },
-  {
-    margin: [0, -2, 0, 0],
-    columns: [
-      {
-        text: `${accountsPayable.provider?.full_names}`,
-        style: "text",
-        alignment: "center",
-      },
-      {
-        text: `${accountsPayable.sucursal.name}`,
-        style: "text",
-        alignment: "center",
-      },
-    ],
-  },
+    buildClosingSection({
+        signatures: [
+            { role: 'Proveedor', name: accountsPayable.provider?.full_names || '' },
+            { role: 'Sucursal', name: accountsPayable.sucursal?.name || '' },
+        ],
+        margin: [0, 15, 0, 0],
+        signatureSpace: 35,
+    }),
 ];
 
 module.exports = {
@@ -1195,5 +918,7 @@ module.exports = {
     printAbonoAccountPayableVoucher,
     printAccountPayableVoucher,
     generatePdfReportsAbonosAll,
-    generateExcelReportsAbonosAll
-}
+    generateExcelReportsAbonosAll,
+    dataPdfReturnAbonoAccountPayableVoucher,
+    dataPdfReturnAccountPayableVoucher,
+}

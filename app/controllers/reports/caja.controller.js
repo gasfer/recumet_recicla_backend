@@ -9,6 +9,15 @@ const imagePath = path.join(__dirname, '../../../uploads/logo.png');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
 const { getTotalesAndMovements } = require('../caja_small.controller');
+const {
+    buildHeader,
+    buildHr,
+    buildSectionTitle,
+    buildInfoPanel,
+    buildDetailTable,
+    buildClosingSection,
+    VOUCHER_THEME,
+} = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -26,17 +35,22 @@ const printCaja = async (req = request, res = response) =>{
         const total_movements = await getTotalesAndMovements(caja_small.id,caja_small.monto_apertura);
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturnCajaVoucher(caja_small,total_movements,decimal); //PDF 
+        
+        // Tablas dinámicas de ingresos y egresos
+        const ingresosTable = dataPdf[4];
+        const egresosTable = dataPdf[6];
+
         total_movements.ingresos.forEach(ingreso => {
             const tableData = [
                 {text:ingreso?.description, fontSize:8}, 
                 {text:Number(ingreso?.monto).toFixed(decimal), fontSize:8, alignment: 'right'}, 
             ];
-            dataPdf[13].table.body.push(tableData);
+            ingresosTable.table.body.push(tableData);
         });
-        dataPdf[13].table.body.push(
+        ingresosTable.table.body.push(
             [
-                {text:'TOTAL INGRESOS', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                {text:Number(total_movements.total_ingresos).toFixed(decimal), fontSize:8,fillColor: '#eeeeee', bold:true,alignment: 'right'}, 
+                {text:'TOTAL INGRESOS', fontSize:8 ,fillColor: '#dde3ea', bold:true}, 
+                {text:Number(total_movements.total_ingresos).toFixed(decimal), fontSize:8,fillColor: '#dde3ea', bold:true,alignment: 'right'}, 
             ],
         );
         total_movements.gastos.forEach(gasto => {
@@ -44,12 +58,12 @@ const printCaja = async (req = request, res = response) =>{
                 {text:gasto?.description, fontSize:8}, 
                 {text:Number(gasto?.monto).toFixed(decimal), fontSize:8,alignment: 'right'}, 
             ];
-            dataPdf[15].table.body.push(tableData);
+            egresosTable.table.body.push(tableData);
         });
-        dataPdf[15].table.body.push(
+        egresosTable.table.body.push(
             [
-                {text:'TOTAL GASTOS', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                {text:Number(total_movements.total_gastos).toFixed(decimal), fontSize:8,fillColor: '#eeeeee', bold:true,alignment: 'right'}, 
+                {text:'TOTAL GASTOS', fontSize:8 ,fillColor: '#dde3ea', bold:true}, 
+                {text:Number(total_movements.total_gastos).toFixed(decimal), fontSize:8,fillColor: '#dde3ea', bold:true,alignment: 'right'}, 
             ],
         );
         let docDefinition = {
@@ -69,129 +83,87 @@ const printCaja = async (req = request, res = response) =>{
         pdfDoc.end();
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'Error al generar el arqueo de caja' });
     }
 }
 
-const dataPdfReturnCajaVoucher = (caja_small,total_movements,decimal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    {   text: caja_small.sucursal.name, style: 'text',
-        absolutePosition: { x:97, y: 25 }
-    },
-    {   text: 'NIT:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 35 }
-    },
-    {   text: `${caja_small.sucursal.company.nit}`, style: 'text',
-        absolutePosition: { x:120, y: 35 }
-    },
-    {   text: 'TELÉFONO:',bold:true, style: 'text',
-        absolutePosition: { x:97, y: 45 }
-    },
-    {   text: `${caja_small?.sucursal?.cellphone ?? '-'}`, style: 'text',
-        absolutePosition: { x:155, y: 45 }
-    },
-    {   text: 'EMAIL:', bold:true, style: 'text',
-        absolutePosition: { x:97, y: 55 }
-    },
-    {   text: `${caja_small.sucursal.email}`, style: 'text',
-        absolutePosition: { x:133, y: 55 }
-    },
-    { text: new Date().toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'ARQUEO DE CAJA', style: 'title',bold:true , fontSize:12},
-    {
-        margin:[0,5,0,0],
-        columns: [
-            { text: `Fecha apertura:`, bold:true ,style: 'text',width: 75, },
-            { text: `${moment(caja_small.date_apertura).format('DD/MM/YYYY HH:mm:ss')}`, style: 'text',  },
-            { text: `Fecha de cierre:`, bold:true ,style: 'text',width: 75, },
-            { text: `${caja_small?.date_cierre ? moment(caja_small?.date_cierre).format('DD/MM/YYYY HH:mm:ss'): '- (Caja abierta)'}`, style: 'text',  },
-        ]
-    },
-    {
-        margin:[0,5,0,0],
-        columns: [
-            { text: `Cajero:`, bold:true ,style: 'text',width: 75, },
-            { text: `${caja_small.user.full_names}`, style: 'text',  },
-            { text: `Monto apertura:`, bold:true ,style: 'text',width: 75, },
-            { text: `${Number(caja_small.monto_apertura).toFixed(decimal)}`, style: 'text',  },
-        ]
-    },
-    { text: 'INGRESOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [ '*', 80],
-            body: [
-                [
-                    {text:'DESCRIPCION', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO', fontSize:8,fillColor: '#eeeeee', bold:true,alignment: 'center'}, 
-                ]
+const dataPdfReturnCajaVoucher = (caja_small, total_movements, decimal) => [
+    buildHeader({
+        title: 'ARQUEO DE CAJA',
+        codePrefix: 'CAJA',
+        codeValue: caja_small.id,
+        dateLabel: 'Fecha',
+        dateValue: moment().format('DD/MM/YYYY HH:mm:ss'),
+        company: {
+            branchName: caja_small.sucursal?.name,
+            nit: caja_small.sucursal?.company?.nit,
+            phone: caja_small.sucursal?.cellphone,
+            email: caja_small.sucursal?.email,
+        },
+        logoWidth: 55,
+    }),
+    buildHr([0, 1, 0, 4]),
+    buildInfoPanel([
+        {
+            title: 'DATOS DE APERTURA Y CIERRE',
+            rows: [
+                { label: 'Fecha apertura:', value: moment(caja_small.date_apertura).format('DD/MM/YYYY HH:mm:ss'), labelWidth: 80 },
+                { label: 'Fecha cierre:', value: caja_small?.date_cierre ? moment(caja_small?.date_cierre).format('DD/MM/YYYY HH:mm:ss') : '- (Caja abierta)', labelWidth: 80 },
+                { label: 'Cajero:', value: caja_small.user?.full_names || '-', labelWidth: 80 },
+                { label: 'Monto apertura:', value: Number(caja_small.monto_apertura).toFixed(decimal), labelWidth: 80 },
             ]
         }
-    },
-    { text: 'EGRESOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
+    ]),
+    buildSectionTitle('INGRESOS'),
+    buildDetailTable({
+        widths: ['*', 90],
+        headers: [
+            { text: 'DESCRIPCIÓN' },
+            { text: 'MONTO', alignment: 'center' },
+        ],
+        rows: [],
+    }),
+    buildSectionTitle('EGRESOS'),
+    buildDetailTable({
+        widths: ['*', 90],
+        headers: [
+            { text: 'DESCRIPCIÓN' },
+            { text: 'MONTO', alignment: 'center' },
+        ],
+        rows: [],
+    }),
+    buildSectionTitle('RESUMEN DE SALDOS'),
     {
         style: 'tableExample',
         table: {
-            widths: [ '*', 80],
+            widths: ['*', 90],
             body: [
                 [
-                    {text:'DESCRIPCION', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'MONTO', fontSize:8,fillColor: '#eeeeee', bold:true,alignment: 'center'}, 
-                ]
-            ]
-        }
-    },
-    { text: 'SALDOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,3,0,0] },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [ '*', 80],
-            body: [
-                // [
-                //     {text:'INGRESOS TOTALES', fontSize:8 }, 
-                //     {text:Number(total_movements.total_ingresos).toFixed(decimal), fontSize:8, bold:true}, 
-                // ],
-                // [
-                //     {text:'EGRESOS TOTALES', fontSize:8 }, 
-                //     {text:Number(total_movements.total_gastos).toFixed(decimal), fontSize:8, bold:true}, 
-                // ],
-                [
-                    {text:'SALDO', fontSize:8 }, 
-                    {text:Number(total_movements.saldo).toFixed(decimal), fontSize:8, bold:true}, 
+                    { text: 'SALDO', fontSize: 8 }, 
+                    { text: Number(total_movements.saldo).toFixed(decimal), fontSize: 8, bold: true, alignment: 'right' }, 
                 ],
                 [
-                    {text:'MONTO INICIAL + SALDO', fontSize:9 ,fillColor: '#eeeeee'}, 
-                    {text:Number(total_movements.monto_apertura_mas_saldo).toFixed(decimal), fontSize:9, bold:true}, 
+                    { text: 'MONTO INICIAL + SALDO', fontSize: 9, fillColor: '#dde3ea' }, 
+                    { text: Number(total_movements.monto_apertura_mas_saldo).toFixed(decimal), fontSize: 9, bold: true, alignment: 'right', fillColor: '#dde3ea' }, 
                 ],
                 [
-                    {text:'MONTO DE CIERRE', fontSize:9 ,fillColor: '#eeeeee'}, 
-                    {text:caja_small.monto_cierre ? Number(caja_small.monto_cierre).toFixed(decimal) : '- (Caja abierta)', fontSize:9, bold:true}, 
+                    { text: 'MONTO DE CIERRE', fontSize: 9, fillColor: '#dde3ea' }, 
+                    { text: caja_small.monto_cierre ? Number(caja_small.monto_cierre).toFixed(decimal) : '- (Caja abierta)', fontSize: 9, bold: true, alignment: 'right', fillColor: '#dde3ea' }, 
                 ]
             ]
         }
     },
-    {
-        margin: [0,50,0,0],
-        columns: [
-            { text: `-----------------------------------------`, bold:true, style: 'text', alignment: 'center' },
-            { text: `-----------------------------------------`, bold:true, style: 'text',alignment: 'center' },
-        ]
-    },
-    {
-        margin: [0,-5,0,0],
-        columns: [
-            { text: `SUPERVISOR`, bold:true ,style: 'text', alignment: 'center' },
-            { text: `${caja_small.user.full_names}`, bold:true,style: 'text',alignment: 'center' },
-        ]
-    },
+    buildClosingSection({
+        signatures: [
+            { role: 'SUPERVISOR', name: '' },
+            { role: 'CAJERO', name: caja_small.user?.full_names || '' },
+        ],
+        margin: [0, 10, 0, 0],
+        signatureSpace: 35,
+    }),
 ];
 
 module.exports = {
-    printCaja
-}
+    printCaja,
+    dataPdfReturnCajaVoucher,
+}

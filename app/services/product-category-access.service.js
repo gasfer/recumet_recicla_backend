@@ -4,6 +4,7 @@ const {
   PRODUCT_CATEGORY_TYPES,
   PRODUCT_ACCESS_MODULES,
 } = require('../constants/product-category-access');
+const { readPermissionField, isPermissionActionGranted } = require('../helpers/permission-fields');
 
 class InvalidProductAccessContextError extends Error {}
 
@@ -25,7 +26,10 @@ const getModulePermission = (user, context) => {
   const permissions = Array.isArray(user?.assign_permission)
     ? user.assign_permission
     : [];
-  return permissions.find(item => item.module === normalizedContext && item.status !== false);
+  return permissions.find(item => (
+    readPermissionField(item, 'module') === normalizedContext
+    && readPermissionField(item, 'status') !== false
+  ));
 };
 
 const getAllowedCategoryTypes = (user, context, requiredActions = ['create', 'update']) => {
@@ -37,8 +41,8 @@ const getAllowedCategoryTypes = (user, context, requiredActions = ['create', 'up
   }
 
   const permission = getModulePermission(user, context);
-  if (!permission || !requiredActions.some(action => permission[action] === true)) return [];
-  return normalizeCategoryTypes(permission?.allowed_category_types);
+  if (!permission || !requiredActions.some(action => isPermissionActionGranted(permission, action))) return [];
+  return normalizeCategoryTypes(readPermissionField(permission, 'allowed_category_types'));
 };
 
 const intersectAllowedCategoryTypes = (user, context, requestedTypes = []) => {

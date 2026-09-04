@@ -26,6 +26,12 @@ Object.entries(PRODUCT_ACCESS_ROUTE_CONTEXTS).forEach(([routeSegment, context]) 
     ], getProductsForSelect);
 });
 
+// Catálogo auxiliar de solo lectura para filtros operativos de Inventario.
+// Administrar productos continúa protegido por el módulo PRODUCTOS.
+router.get('/inventory/select', [
+    validarJWT,
+], getProductsForSelect);
+
 router.get('/differences/select', [
     validarJWT,
 ], getDifferenceProductsForSelect);

@@ -107,3 +107,15 @@ test('los catálogos generales registran permisos administrativos separados', ()
     );
   }
 });
+
+test('los filtros de Inventario usan catálogos de solo lectura sin exigir gestión administrativa', () => {
+  for (const router of [require('../routes/product'), require('../routes/category')]) {
+    const route = router.stack.find(layer => layer.route?.path === '/inventory/select')?.route;
+    assert.ok(route, 'Falta registrar /inventory/select');
+    assert.equal(
+      route.stack.some(layer => layer.handle.modulePermission),
+      false,
+      'El filtro operativo no debe depender de PRODUCTOS o CATEGORIAS',
+    );
+  }
+});
