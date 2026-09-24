@@ -1,7 +1,7 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
-const { sequelize } = require('../database/config');
+const { sequelize, Stock } = require('../database/config');
 
 const availabilityKey = (productId, sucursalId, storageId) => `${productId}:${sucursalId}:${storageId}`;
 
@@ -108,14 +108,19 @@ const hasAvailableStock = async (stock, requestedQuantity, transaction) => {
 const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) => {
   // 1. Diagnóstico de desfase stock vs Kardex
   const rows = await sequelize.query(`
-    WITH latest AS (
-      SELECT DISTINCT ON (id_product, id_sucursal, id_storage)
-        id_product, id_sucursal, id_storage, saldo
+    WITH kardex_current AS (
+      SELECT
+        id_product,
+        id_sucursal,
+        id_storage,
+        COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS kardex_balance,
+        MAX(id) AS kardex_last_id,
+        MAX(date) AS kardex_last_date
       FROM view_kardex_detalle
-      WHERE 1 = 1
+      WHERE date <= CURRENT_TIMESTAMP
         ${idSucursal ? 'AND id_sucursal = :idSucursal' : ''}
         ${idStorage ? 'AND id_storage = :idStorage' : ''}
-      ORDER BY id_product, id_sucursal, id_storage, date DESC, id DESC
+      GROUP BY id_product, id_sucursal, id_storage
     ), held AS (
       SELECT h.id_product, h.id_sucursal, h.id_storage,
         SUM(h.quantity) AS quantity_in_review,
@@ -138,22 +143,25 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
     )
     SELECT p.cod, p.name, s.id_product, s.id_sucursal, s.id_storage,
       s.stock AS physical_stock,
+      s."updatedAt" AS stock_updated_at,
       COALESCE(h.quantity_in_review, 0) AS stock_in_review,
       COALESCE(h.retained_without_adjustment, 0) AS retained_without_adjustment,
       COALESCE(lh.quantity_in_review, 0) AS legacy_stock_in_review,
       COALESCE(h.quantity_in_review, 0) - COALESCE(lh.quantity_in_review, 0) AS hold_source_difference,
       GREATEST(s.stock - COALESCE(h.quantity_in_review, 0), 0) AS available_stock,
-      COALESCE(l.saldo, 0) AS kardex_balance,
-      s.stock - COALESCE(l.saldo, 0) AS physical_kardex_difference
+      COALESCE(k.kardex_balance, 0) AS kardex_balance,
+      k.kardex_last_id,
+      k.kardex_last_date,
+      s.stock - COALESCE(k.kardex_balance, 0) AS physical_kardex_difference
     FROM stocks s
     INNER JOIN products p ON p.id = s.id_product
     LEFT JOIN held h ON h.id_product = s.id_product AND h.id_sucursal = s.id_sucursal AND h.id_storage = s.id_storage
     LEFT JOIN legacy_held lh ON lh.id_product = s.id_product AND lh.id_sucursal = s.id_sucursal AND lh.id_storage = s.id_storage
-    LEFT JOIN latest l ON l.id_product = s.id_product AND l.id_sucursal = s.id_sucursal AND l.id_storage = s.id_storage
+    LEFT JOIN kardex_current k ON k.id_product = s.id_product AND k.id_sucursal = s.id_sucursal AND k.id_storage = s.id_storage
     WHERE s.status = true
       ${idSucursal ? 'AND s.id_sucursal = :idSucursal' : ''}
       ${idStorage ? 'AND s.id_storage = :idStorage' : ''}
-    ORDER BY ABS(s.stock - COALESCE(l.saldo, 0)) DESC, p.cod ASC
+    ORDER BY ABS(s.stock - COALESCE(k.kardex_balance, 0)) DESC, p.cod ASC
     LIMIT :limit
   `, {
     replacements: { idSucursal, idStorage, limit: Math.min(Number(limit) || 500, 2000) },
@@ -185,6 +193,7 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
       trn.registry_number AS review_note_registry,
       trn.type         AS review_note_type,
       trn.reconciliation_status AS review_note_status
+      ,CASE WHEN trn.id IS NOT NULL THEN 'CONFIRMADA' ELSE 'CANDIDATA' END AS relation_confidence
     FROM details_transfers dt
     INNER JOIN transfers tr ON tr.id = dt.id_transfer
     LEFT JOIN transfer_review_notes trn
@@ -212,11 +221,38 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
     if (!exists) traceMap[key].push(row);
   }
 
-  // 4. Adjuntar trazabilidad a cada fila del diagnóstico
-  return rows.map(row => ({
-    ...row,
-    traceable_transfers: traceMap[availabilityKey(row.id_product, row.id_sucursal, row.id_storage)] || [],
-  }));
+  // 4. Adjuntar trazabilidad y metadatos diagnósticos extendidos a cada fila (§5.1)
+  const now = new Date();
+  return rows.map(row => {
+    const difference = Number(row.physical_kardex_difference);
+    const absDifference = Math.abs(difference);
+    const candidates = traceMap[availabilityKey(row.id_product, row.id_sucursal, row.id_storage)] || [];
+
+    // Calcular antigüedad desde la última actualización de Stock
+    const stockUpdatedAt = row.stock_updated_at ? new Date(row.stock_updated_at) : null;
+    const ageInDays = stockUpdatedAt ? Math.floor((now - stockUpdatedAt) / 86_400_000) : null;
+
+    // Dirección explícita sin inferir cuál saldo es correcto (§5.1, Scenario: Dirección)
+    const direction = difference > 0 ? 'STOCK_MAYOR_QUE_KARDEX' : 'KARDEX_MAYOR_QUE_STOCK';
+
+    // Cada candidato preserva su relation_confidence: 'CANDIDATA' | 'CONFIRMADA'
+    // Una relación CANDIDATA no autoriza corrección por sí sola (spec §5.1).
+    const candidateDocuments = candidates.map(t => ({
+      ...t,
+      relation_confidence: t.relation_confidence || 'CANDIDATA',
+    }));
+
+    return {
+      ...row,
+      // Campos extendidos §5.1: dirección, magnitud, antigüedad, candidatos etiquetados
+      direction,
+      magnitude: absDifference,
+      age_in_days: ageInDays,
+      has_confirmed_relation: candidateDocuments.some(c => c.relation_confidence === 'CONFIRMADA'),
+      candidate_document_count: candidateDocuments.length,
+      traceable_transfers: candidateDocuments,
+    };
+  });
 };
 
 const normalizeStockKardexIrregularity = (row) => {
@@ -273,52 +309,6 @@ const getRetainedWithoutAdjustmentReport = async ({ idSucursal, idStorage, limit
   type: QueryTypes.SELECT,
 });
 
-// Corrige stocks.stock usando el último saldo de view_kardex_detalle como fuente canónica.
-// Retorna la lista de productos corregidos con valores anterior y nuevo.
-const syncStocksFromKardex = async ({ idSucursal, idStorage } = {}) => {
-  const diagnostic = await getStockDiagnostic({ idSucursal, idStorage, limit: 2000 });
-  const toSync = diagnostic.filter(row => Math.abs(Number(row.physical_kardex_difference)) > 0.0001);
-
-  if (toSync.length === 0) return [];
-
-  const t = await sequelize.transaction();
-  try {
-    const corrected = [];
-    for (const row of toSync) {
-      const newStock = Number(row.kardex_balance);
-      await sequelize.query(
-        `UPDATE stocks SET stock = :newStock, "updatedAt" = NOW()
-         WHERE id_product = :id_product AND id_sucursal = :id_sucursal AND id_storage = :id_storage AND status = true`,
-        {
-          replacements: {
-            newStock,
-            id_product: row.id_product,
-            id_sucursal: row.id_sucursal,
-            id_storage: row.id_storage,
-          },
-          type: QueryTypes.UPDATE,
-          transaction: t,
-        }
-      );
-      corrected.push({
-        id_product: row.id_product,
-        cod: row.cod,
-        name: row.name,
-        id_sucursal: row.id_sucursal,
-        id_storage: row.id_storage,
-        old_stock: Number(row.physical_stock),
-        new_stock: newStock,
-        difference: Number(row.physical_kardex_difference),
-      });
-    }
-    await t.commit();
-    return corrected;
-  } catch (err) {
-    await t.rollback();
-    throw err;
-  }
-};
-
 const getReviewStockKardexDifferences = async ({ noteId, transaction }) => sequelize.query(`
   WITH latest AS (
     SELECT DISTINCT ON (id_product, id_sucursal, id_storage)
@@ -367,6 +357,41 @@ const getReviewStockKardexDifferences = async ({ noteId, transaction }) => seque
   transaction,
 });
 
+const assertStockKardexIntegrity = async ({ productId, sucursalId, storageId, transaction, tolerance = 0.0001 } = {}) => {
+  const stock = await Stock.findOne({
+    where: { id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true },
+    transaction,
+  });
+
+  const physicalStock = stock ? Number(stock.stock) : 0;
+
+  const [currentKardex] = await sequelize.query(`
+    SELECT
+      COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS saldo
+    FROM view_kardex_detalle
+    WHERE id_product = :productId AND id_sucursal = :sucursalId AND id_storage = :storageId
+      AND date <= CURRENT_TIMESTAMP
+  `, {
+    replacements: { productId, sucursalId, storageId },
+    type: QueryTypes.SELECT,
+    transaction,
+  });
+
+  const kardexBalance = Number(currentKardex?.saldo || 0);
+  const difference = Number((physicalStock - kardexBalance).toFixed(4));
+  const consistent = Math.abs(difference) <= tolerance;
+
+  return {
+    consistent,
+    productId,
+    sucursalId,
+    storageId,
+    physicalStock,
+    kardexBalance,
+    difference,
+  };
+};
+
 module.exports = {
   availabilityKey,
   getReviewQuantities,
@@ -380,5 +405,5 @@ module.exports = {
   normalizeStockKardexIrregularity,
   getReviewStockKardexDifferences,
   getRetainedWithoutAdjustmentReport,
-  syncStocksFromKardex,
+  assertStockKardexIntegrity,
 };

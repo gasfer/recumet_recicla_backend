@@ -10,6 +10,9 @@ const moment = require("moment");
 const { whereDateForType } = require("../../helpers/where_range");
 const ExcelJS = require("exceljs");
 const { getNumberDecimal } = require("../../helpers/company");
+const { buildConsolidatedInventoryProjection } = require("../../services/inventory-consolidated-query.service");
+const { generateConsolidatedInventoryExcel } = require("../../services/inventory-consolidated-excel.service");
+const { REPORT_COLORS, solidFill, reportThinBorder } = require('../../constants/report-style.constants');
 moment.locale("es");
 
 const imagePath = path.join(__dirname, "../../../uploads/logo.png");
@@ -750,21 +753,12 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             "Saldo",
         ];
 
-        const thinBorder = {
-            top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-            left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-            bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-            right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
-        };
+        const thinBorder = reportThinBorder;
         
         const headerRow = worksheet.addRow(headers);
         headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
         headerRow.eachCell((cell) => {
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FF1A3FA8' } // Deep blue brand color
-            };
+            cell.fill = solidFill(REPORT_COLORS.header);
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
             cell.border = thinBorder;
         });
@@ -790,11 +784,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             
             for (let i = 1; i <= 4; i++) {
                 const cell = catFooterRow.getCell(i);
-                cell.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FFF8F9FA' }
-                };
+                cell.fill = solidFill(REPORT_COLORS.total);
                 cell.border = thinBorder;
             }
             catFooterRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
@@ -828,11 +818,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                 
                 for (let i = 1; i <= 4; i++) {
                     const cell = catRow.getCell(i);
-                    cell.fill = {
-                        type: 'pattern',
-                        pattern: 'solid',
-                        fgColor: { argb: 'FFE0F2FE' }
-                    };
+                    cell.fill = solidFill(REPORT_COLORS.subheader);
                     cell.border = thinBorder;
                 }
                 catRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
@@ -876,11 +862,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         ]);
         sucHeaderRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
         sucHeaderRow.eachCell((cell) => {
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFD2E2F7' }
-            };
+            cell.fill = solidFill(REPORT_COLORS.subheader);
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
             cell.border = thinBorder;
         });
@@ -918,22 +900,14 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         consRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
         for (let i = 1; i <= 3; i++) {
             const cell = consRow.getCell(i);
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFF4F6FC' }
-            };
+            cell.fill = solidFill(REPORT_COLORS.total);
             cell.border = thinBorder;
         }
         consRow.getCell(2).numFormat = `#,##0.${'0'.repeat(decimal)}`;
         consRow.getCell(3).numFormat = `#,##0.${'0'.repeat(decimal)}`;
 
-        consRow.getCell(4).fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FF038B21' } // Green background
-        };
-        consRow.getCell(4).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        consRow.getCell(4).fill = solidFill(REPORT_COLORS.grandTotal);
+        consRow.getCell(4).font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.text } };
         consRow.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
         consRow.getCell(4).border = thinBorder;
 
@@ -972,7 +946,35 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
     }
 };
 
+const generateExcelConsolidatedReportsTotalStock = async (req = request, res = response) => {
+    try {
+        const projection = await buildConsolidatedInventoryProjection(req.query);
+        const workbook = await generateConsolidatedInventoryExcel(projection);
+
+        const filename = `consolidado_inventario_${projection.metadata.fileDateStr}.xlsx`;
+        res.setHeader(
+            "Content-Type",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename=${filename}`
+        );
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (error) {
+        console.error("Error generating consolidated inventory Excel:", error);
+        const statusCode = error.statusCode || 500;
+        return res.status(statusCode).json({
+            ok: false,
+            errors: [{ msg: error.message || "Ocurrió un imprevisto interno | hable con soporte" }],
+        });
+    }
+};
+
 module.exports = {
     generatePdfReportsTotalStock,
     generateExcelReportsTotalStock,
+    generateExcelConsolidatedReportsTotalStock,
 };

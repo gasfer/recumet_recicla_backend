@@ -122,11 +122,26 @@ const AUTOMATIC_RECONCILIATION_REASONS = Object.freeze({
       FALTANTE_PARA_REVISION: Object.freeze(['CONFIRM_DIFFERENCE']),
     }),
   }),
+  ERROR_REGISTRO_RECEPCION: Object.freeze({
+    label: 'Error de registro en la recepción',
+    requiredReferences: Object.freeze([]),
+    solutions: Object.freeze({
+      EXCEDENTE_PARA_REVISION: Object.freeze(['REGISTER_RECEIPT_SURPLUS']),
+      FALTANTE_PARA_REVISION: Object.freeze(['REGISTER_RECEIPT_SHORTAGE']),
+    }),
+  }),
   PERDIDA_TRANSITO: Object.freeze({
     label: 'Pérdida o extravío en traslado',
     requiredReferences: Object.freeze(['ACTA_INCIDENCIA']),
     solutions: Object.freeze({
       FALTANTE_PARA_REVISION: Object.freeze(['CONFIRM_DIFFERENCE']),
+    }),
+  }),
+  FALTANTE_LOCALIZADO: Object.freeze({
+    label: 'Faltante localizado e ingresado físicamente',
+    requiredReferences: Object.freeze([]),
+    solutions: Object.freeze({
+      FALTANTE_PARA_REVISION: Object.freeze(['LOCATE_SHORTAGE']),
     }),
   }),
   ERROR_DIGITACION: Object.freeze({
@@ -139,6 +154,16 @@ const AUTOMATIC_RECONCILIATION_REASONS = Object.freeze({
   }),
 });
 
+const RECONCILIATION_SPECIFIC_EFFECTS = Object.freeze({
+  CONFIRM_DIFFERENCE: 'AJUSTAR',
+  REGISTER_RECEIPT_SHORTAGE: 'LIBERAR',
+  REGISTER_RECEIPT_SURPLUS: 'LIBERAR',
+  TRANSFER_RETURN: 'REVERTIR',
+  CLASSIFY_SHORTAGE: 'RECLASIFICAR',
+  CLASSIFY_EXCESS: 'RECLASIFICAR',
+  LOCATE_SHORTAGE: 'RECLASIFICAR',
+});
+
 module.exports = {
   REVIEW_STATUSES,
   DETAIL_REVIEW_STATUSES,
@@ -148,4 +173,5 @@ module.exports = {
   REVIEW_PERMISSION_ACTIONS,
   REVIEW_PERMISSION_MODULE,
   AUTOMATIC_RECONCILIATION_REASONS,
+  RECONCILIATION_SPECIFIC_EFFECTS,
 };

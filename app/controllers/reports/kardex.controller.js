@@ -9,6 +9,7 @@ const moment = require("moment");
 const { whereDateForType } = require("../../helpers/where_range");
 const ExcelJS = require("exceljs");
 const { getNumberDecimal } = require("../../helpers/company");
+const { enrichKardexHistory } = require("../../services/kardex-history-enrichment.service");
 moment.locale("es");
 
 const imagePath = path.join(__dirname, "../../../uploads/logo.png");
@@ -23,10 +24,18 @@ const formatEuro = (value, decimal = 2) => {
     });
 };
 
+const valuedText = (kardex, field, decimal = 2) => {
+    if (kardex.valuation?.status !== 'VALUED') return 'SIN VALORAR';
+    return formatEuro(kardex.valuation?.[field], decimal);
+};
+
+const responsibleName = (kardex) => kardex.responsible?.name || 'RESPONSABLE NO DISPONIBLE';
+
 const generatePdfReports = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2 } = req.query;
         const kardexes = await returnDataKardex(req.query);
+        await enrichKardexHistory(kardexes);
         const decimal = await getNumberDecimal();
         let dataPdf = dataPdfReturn(req.userAuth); //PDF
         kardexes.forEach((kardex) => {
@@ -55,6 +64,9 @@ const generatePdfReports = async (req = request, res = response) => {
 
                 { text: kardex?.sucursal.name, fontSize: 8 },
                 { text: kardex?.storage.name, fontSize: 8 },
+                { text: valuedText(kardex, 'applied_unit_cost', decimal), fontSize: 8, alignment: 'right' },
+                { text: kardex.valuation?.status === 'VALUED' ? valuedText(kardex, kardex.type === 'INPUT' ? 'input_value' : 'output_value', decimal) : 'SIN VALORAR', fontSize: 8, alignment: 'right' },
+                { text: responsibleName(kardex), fontSize: 8 },
             ];
             dataPdf[5].table.body.push(tableData);
         });
@@ -397,6 +409,7 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
     try {
         const { filterBy, date1, date2 } = req.query;
         const kardexes = await returnDataKardex(req.query);
+        await enrichKardexHistory(kardexes);
         const decimal = await getNumberDecimal();
         let totalFInput = 0,
             totalFOutput = 0,
@@ -604,7 +617,7 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x: 20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [40, 60, 80, "*", 35, 55, 59, 55, 55, 70, 70],
+            widths: [35, 50, 65, "*", 30, 45, 45, 45, 50, 50, 50, 55, 65],
             body: [
                 [
                     { text: "TIPO", fontSize: 8, fillColor: "#eeeeee", bold: true },
@@ -617,12 +630,6 @@ const dataPdfReturn = (auth) => [
                     { text: "DETALLE", fontSize: 8, fillColor: "#eeeeee", bold: true },
                     { text: "PRODUCTO", fontSize: 8, fillColor: "#eeeeee", bold: true },
                     { text: "UND", fontSize: 8, fillColor: "#eeeeee", bold: true },
-                    {
-                        text: "SALDO INICIAL",
-                        fontSize: 8,
-                        fillColor: "#eeeeee",
-                        bold: true,
-                    },
                     {
                         text: "CANT ENTRADA",
                         fontSize: 8,
@@ -650,6 +657,9 @@ const dataPdfReturn = (auth) => [
                         fillColor: "#eeeeee",
                         bold: true,
                     },
+                    { text: "COSTO APLICADO BS.", fontSize: 8, fillColor: "#eeeeee", bold: true },
+                    { text: "VALOR MOVIMIENTO BS.", fontSize: 8, fillColor: "#eeeeee", bold: true },
+                    { text: "RESPONSABLE", fontSize: 8, fillColor: "#eeeeee", bold: true },
                 ],
             ],
             layout: "lightHorizontalLines",
@@ -918,6 +928,10 @@ const generateExcelReports = async (req, res) => {
             "CANT_ENTRADA",
             "CANT_SALIDA",
             "CANT_SALDO",
+            "COSTO_APLICADO_BS",
+            "VALOR_MOVIMIENTO_BS",
+            "ESTADO_VALORACION",
+            "RESPONSABLE",
         ];
         worksheet.addRow(headers);
 
@@ -931,9 +945,15 @@ const generateExcelReports = async (req, res) => {
                 Number(kardex.quantity_input),
                 Number(kardex.quantity_output),
                 Number(kardex.saldo),
+                kardex.valuation?.status === 'VALUED' ? Number(kardex.valuation.applied_unit_cost) : 'SIN VALORAR',
+                kardex.valuation?.status === 'VALUED'
+                    ? Number(kardex.type === 'INPUT' ? kardex.valuation.input_value : kardex.valuation.output_value)
+                    : 'SIN VALORAR',
+                kardex.valuation?.status || 'UNVALUED',
+                responsibleName(kardex),
             ]);
 
-            [6, 7, 8].forEach(
+            [6, 7, 8, 9, 10].forEach(
                 (i) => (row.getCell(i).numFmt = `#,##0.${"0".repeat(decimal)}`)
             );
         });

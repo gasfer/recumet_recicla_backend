@@ -12,12 +12,26 @@ const classifications = require('../controllers/classified.controller');
 // No connection is opened: all persistence boundaries are replaced per test.
 function fixture(t) {
   const writes = [];
+  const kardexWrites = [];
+  const kardexState = { allowExplicitMovement: false, projectedBalance: null };
   const transaction = {
     commit: async () => writes.push('commit'),
     rollback: async () => writes.push('rollback'),
   };
   t.mock.method(db.sequelize, 'transaction', async () => transaction);
-  t.mock.method(db.sequelize, 'query', async () => []);
+  t.mock.method(db.sequelize, 'query', async (_sql, { replacements = {} } = {}) => (
+    kardexState.projectedBalance === null
+      ? [{ kardex_balance: stocks.find((stock) => (
+        stock.id_product === Number(replacements.productId)
+        && stock.id_sucursal === Number(replacements.sucursalId)
+        && stock.id_storage === Number(replacements.storageId)
+      ))?.stock || 0 }]
+      : [{
+      kardex_balance: typeof kardexState.projectedBalance === 'function'
+        ? kardexState.projectedBalance()
+        : kardexState.projectedBalance,
+      }]
+  ));
   const record = (data) => ({ ...data, save: async (options) => {
     assert.equal(options.transaction, transaction);
   } });
@@ -32,12 +46,20 @@ function fixture(t) {
     assert.equal(options.transaction, transaction);
     writes.push(data);
   });
-  const movements = t.mock.method(db.kardexMovements, 'create', async () => {
-    throw new Error('The ordinary module must not duplicate the document-derived Kardex entry');
+  t.mock.method(db.kardexMovements, 'findOne', async () => null);
+  const movements = t.mock.method(db.kardexMovements, 'create', async (data, options) => {
+    if (!kardexState.allowExplicitMovement) {
+      throw new Error('The ordinary module must not duplicate the document-derived Kardex entry');
+    }
+    assert.equal(options.transaction, transaction);
+    kardexWrites.push(data);
+    return { id: 101, ...data };
   });
-  t.mock.method(notifications, 'notifyAdmins', async (_data, tx) => assert.equal(tx, transaction));
+  t.mock.method(notifications, 'notifyAdmins', async (_data, tx) => {
+    assert.ok(tx === transaction || tx === null);
+  });
   const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
-  return { writes, transaction, record, stocks, movements, res,
+  return { writes, kardexWrites, kardexState, transaction, record, stocks, movements, res,
     actor: { id: 9, full_names: 'Test' } };
 }
 
@@ -70,10 +92,26 @@ test('crear traslado conserva documento, detalle, salida física e historial sin
   assert.equal(f.movements.mock.callCount(), 0);
 });
 
-test('anular traslado pendiente restaura stock y conserva documento e historial', async (t) => {
+test('crear traslado revierte antes del commit si altera la diferencia Stock–Kardex', async (t) => {
   const f = fixture(t);
+  f.kardexState.projectedBalance = 20;
+  t.mock.method(db.Transfers, 'count', async () => 2);
+  t.mock.method(db.Transfers, 'create', async (data) => f.record({ ...data, id: 7 }));
+  t.mock.method(db.DetailsTransfers, 'create', async (data) => ({ ...data }));
+  await transfers.newTransfer({ userAuth: f.actor, body: {
+    transfer_data: { id_sucursal_send: 2, id_storage_send: 3, id_sucursal_received: 5, type_registry: 'SIN FICHA' },
+    transfer_details: [{ id_product: 1, quantity: 6 }],
+  } }, f.res);
+  assert.equal(f.res.code, 500);
+  assert.equal(f.writes.at(-1), 'rollback');
+});
+
+test('anular traslado pendiente restaura stock y conserva salida y reposición en Kardex', async (t) => {
+  const f = fixture(t);
+  f.kardexState.allowExplicitMovement = true;
+  f.kardexState.projectedBalance = () => f.stocks[0].stock;
   const document = f.record({ id: 7, cod: 'TRAS00007', status: 'PENDING', id_sucursal_send: 2,
-    id_storage_send: 3, detailsTransfers: [{ id_product: 1, quantity: 6 }] });
+    id_storage_send: 3, detailsTransfers: [{ id: 70, id_product: 1, quantity: 6, cost: 4 }] });
   t.mock.method(db.Transfers, 'findOne', async ({ where }) => {
     assert.equal(where.status, 'PENDING');
     return document;
@@ -84,7 +122,43 @@ test('anular traslado pendiente restaura stock y conserva documento e historial'
   assert.equal(f.stocks[0].stock, 26);
   assert.equal(f.writes[0].action, 'DELETE');
   assert.equal(f.writes.at(-1), 'commit');
-  assert.equal(f.movements.mock.callCount(), 0);
+  assert.equal(f.movements.mock.callCount(), 1);
+  assert.deepEqual(f.kardexWrites.map((movement) => ({
+    type: movement.type,
+    quantity: movement.quantity,
+    source_type: movement.source_type,
+    source_id: movement.source_id,
+    source_detail_id: movement.source_detail_id,
+    effect_type: movement.effect_type,
+    idempotency_key: movement.idempotency_key,
+  })), [{
+    type: 'INPUT',
+    quantity: 6,
+    source_type: 'TRANSFER_CANCELLATION',
+    source_id: 7,
+    source_detail_id: 70,
+    effect_type: 'RESTORE_ORIGIN',
+    idempotency_key: 'TRANSFER_CANCELLATION:7:70:RESTORE_ORIGIN',
+  }]);
+  assert.match(f.kardexWrites[0].details, /REPOSICIÓN DE SALIDA/);
+});
+
+test('anular traslado conserva sin empeorar una diferencia histórica previa de Stock–Kardex', async (t) => {
+  const f = fixture(t);
+  f.kardexState.allowExplicitMovement = true;
+  f.kardexState.projectedBalance = () => f.stocks[0].stock - 1595.7;
+  const document = f.record({ id: 334, cod: 'TRAS00334', status: 'PENDING', id_sucursal_send: 2,
+    id_storage_send: 3, detailsTransfers: [{ id: 1688, id_product: 1, quantity: 10, cost: 0 }] });
+  t.mock.method(db.Transfers, 'findOne', async ({ where }) => {
+    assert.equal(where.status, 'PENDING');
+    return document;
+  });
+  await transfers.deleteTransfer({ userAuth: f.actor, params: { id_transfer: 334 } }, f.res);
+  assert.equal(f.res.code, 201);
+  assert.equal(document.status, 'ANULADO');
+  assert.equal(f.stocks[0].stock, 30);
+  assert.equal(f.movements.mock.callCount(), 1);
+  assert.equal(f.writes.at(-1), 'commit');
 });
 
 test('crear clasificación aplica salida e ingreso y conserva los correlativos ordinarios', async (t) => {

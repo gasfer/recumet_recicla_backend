@@ -9,6 +9,7 @@ module.exports = (sequelize, DataTypes) => {
       DetailsTransfers.belongsTo(models.Transfers,{as: 'transfers', foreignKey:'id_transfer'});
       DetailsTransfers.belongsTo(models.Product,{as: 'product', foreignKey:'id_product'});
       DetailsTransfers.hasMany(models.TransferReviewNoteDetail,{as: 'reviewNoteDetails', foreignKey:'id_detail_transfer'});
+      DetailsTransfers.hasMany(models.TransferHistoricalDifferenceCompletion,{as: 'historicalDifferenceCompletions', foreignKey:'id_detail_transfer'});
     }
   }
   DetailsTransfers.init({
@@ -23,6 +24,25 @@ module.exports = (sequelize, DataTypes) => {
       set(value) {
         this.setDataValue('quantity_received', value !== null && value !== undefined ? formattedDecimalQuantitySetter(value) : null);
       }
+    },
+    accounting_status: {
+      type: DataTypes.STRING,
+      defaultValue: 'CONTABILIZADO',
+    },
+    tolerance_decision: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    receipt_difference_percentage: {
+      type: DataTypes.DECIMAL,
+      allowNull: true,
+      set(value) {
+        this.setDataValue('receipt_difference_percentage', value !== null && value !== undefined ? formattedDecimalQuantitySetter(value) : null);
+      },
+    },
+    accounting_applied_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
     cost: {
       type: DataTypes.DECIMAL,

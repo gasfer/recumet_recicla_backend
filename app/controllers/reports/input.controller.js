@@ -152,6 +152,131 @@ const dataPdfReturn = (auth) => [
         }
     }
 ];
+
+const parseIds = (value) => String(value || '').split(',').map(Number).filter(Number.isFinite);
+
+const reportFilterSummary = (params) => {
+    const range = params.filterBy === 'RANGE'
+        ? `${params.date1 || 'Sin inicio'} a ${params.date2 || 'Sin fin'}`
+        : `${params.filterBy || 'Periodo'}: ${params.date1 || '-'}`;
+    return [`Periodo: ${range}`, ...(params.report_filters ? String(params.report_filters).split(' | ') : [
+        params.id_sucursal ? `Sucursal(es): ${params.id_sucursal}` : 'Sucursal(es): todas',
+        params.id_storage ? `Almacén(es): ${params.id_storage}` : 'Almacén(es): todos',
+        params.category_ids ? `Categoría(s): ${params.category_ids}` : 'Categoría(s): todas',
+        params.id_products ? `Producto(s): ${params.id_products}` : 'Producto(s): todos',
+    ])];
+};
+
+const generatePurchaseReportExcel = async (req = request, res = response) => {
+    try {
+        const inputs = await returnDataInput(req.query);
+        const decimal = await getNumberDecimal();
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'RECUMET S.R.L.';
+        const worksheet = workbook.addWorksheet('Reporte de compras', {
+            pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+            views: [{ state: 'frozen', ySplit: 6 }],
+        });
+        const headers = ['CÓDIGO', 'FECHA_COMPRA', 'TIPO_DOCUMENTO', 'NRO_DOCUMENTO', 'PROVEEDOR', 'DETALLE', 'TIPO', 'TIPO_PROVEEDOR', 'CANT_KG', 'TOTAL'];
+        const totalColumns = headers.length;
+        const logoPath = imagePath;
+
+        worksheet.mergeCells(1, 1, 3, 2);
+        worksheet.mergeCells(1, 3, 3, totalColumns);
+        const title = worksheet.getCell('C1');
+        title.value = 'REPORTE DE COMPRAS';
+        title.font = { name: 'Arial', size: 15, bold: true, color: { argb: 'FF1A3FA8' } };
+        title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } };
+        title.alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getRow(1).height = 22;
+        worksheet.getRow(2).height = 18;
+        worksheet.getRow(3).height = 18;
+        for (let row = 1; row <= 3; row++) {
+            for (let column = 1; column <= totalColumns; column++) {
+                worksheet.getCell(row, column).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEAF2FB' } };
+            }
+        }
+        if (fs.existsSync(logoPath)) {
+            const logo = workbook.addImage({ filename: logoPath, extension: 'png' });
+            worksheet.addImage(logo, { tl: { col: 0.35, row: 0.2 }, ext: { width: 54, height: 54 } });
+        }
+
+        const filters = reportFilterSummary(req.query);
+        filters.slice(0, 5).forEach((filter, index) => {
+            const firstColumn = (index * 2) + 1;
+            const lastColumn = firstColumn + 1;
+            worksheet.mergeCells(4, firstColumn, 4, lastColumn);
+            const cell = worksheet.getCell(4, firstColumn);
+            cell.value = filter;
+            cell.font = { name: 'Arial', size: 8, italic: true, color: { argb: 'FF475569' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F9FC' } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        });
+        worksheet.getRow(4).height = 28;
+        worksheet.addRow([]).height = 6;
+
+        const headerRow = worksheet.addRow(headers);
+        headerRow.height = 22;
+        headerRow.eachCell(cell => {
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        });
+
+        let totalKg = 0;
+        let totalAmount = 0;
+        const groups = new Map();
+        inputs.forEach(input => {
+            const provider = input.provider?.full_names || 'SIN PROVEEDOR';
+            groups.set(provider, [...(groups.get(provider) || []), input]);
+        });
+        for (const [provider, purchases] of groups) {
+            const providerRow = worksheet.addRow([`PROVEEDOR: ${provider}`]);
+            worksheet.mergeCells(providerRow.number, 1, providerRow.number, totalColumns);
+            providerRow.height = 20;
+            const providerCell = providerRow.getCell(1);
+            providerCell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+            providerCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5F0FA' } };
+            providerCell.alignment = { vertical: 'middle' };
+            let providerKg = 0;
+            let providerAmount = 0;
+            purchases.forEach(input => {
+                const quantity = Number(input.total_quantity) || 0;
+                const amount = Number(input.total) || 0;
+                providerKg += quantity; providerAmount += amount; totalKg += quantity; totalAmount += amount;
+                const row = worksheet.addRow([
+                    input.cod, moment(input.date_voucher).format('DD/MM/YYYY HH:mm:ss'), input.type_registry,
+                    input.registry_number, provider,
+                    input.detailsInput.map(detail => `${detail.product?.name || '-'} [${detail.quantity} ${detail.product?.unit?.siglas || ''}]`).join(', '),
+                    input.type, input.provider?.type?.name || '-', quantity, amount,
+                ]);
+                row.eachCell((cell, column) => {
+                    cell.font = { name: 'Arial', size: 9 };
+                    cell.alignment = { vertical: 'middle', wrapText: column === 6 };
+                });
+                row.getCell(9).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+                row.getCell(10).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+            });
+            const subtotal = worksheet.addRow(['SUBTOTAL PROVEEDOR', '', '', '', '', '', '', '', providerKg, providerAmount]);
+            subtotal.eachCell(cell => { cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF334155' } }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F7FA' } }; });
+            subtotal.getCell(9).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+            subtotal.getCell(10).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        }
+        const totalRow = worksheet.addRow(['TOTAL GENERAL', '', '', '', '', '', '', '', totalKg, totalAmount]);
+        totalRow.eachCell(cell => { cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4C956C' } }; });
+        totalRow.getCell(9).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        totalRow.getCell(10).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        [14, 20, 18, 18, 30, 55, 14, 22, 14, 16].forEach((width, index) => { worksheet.getColumn(index + 1).width = width; });
+        worksheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6, column: totalColumns } };
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename=reporte-compras.xlsx');
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar el reporte Excel de compras.' }] });
+    }
+};
 const generateExcelReports = async (req = request, res = response) => {
   try {
     const inputs = await returnDataInput(req.query);
@@ -268,8 +393,12 @@ const generateExcelReports = async (req = request, res = response) => {
 
 const returnDataInput = async (params) => {
     const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew, referral_sources, id_type_provider,
-        old_customer, with_pickup
+        old_customer, with_pickup, category_ids, id_products
     } = params;
+    const sucursalIds = parseIds(id_sucursal);
+    const storageIds = parseIds(id_storage);
+    const categoryIds = parseIds(category_ids);
+    const productIds = parseIds(id_products);
     const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
     const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
         ? [orderNew]
@@ -278,8 +407,8 @@ const returnDataInput = async (params) => {
         order: orderList,
         where: {
             [Op.and]: [
-                id_sucursal   ? { id_sucursal   } : {},
-                id_storage    ? { id_storage   } : {},
+                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
+                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
                 type_pay      ? { type:type_pay } : {},
                 type_registry ? { type_registry } : {},
                 id_provider   ? { id_provider   } : {},
@@ -298,7 +427,22 @@ const returnDataInput = async (params) => {
             },
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
-            { association: 'detailsInput', attributes: {include: ['quantity']} , include: [{ association: 'product', attributes: ['cod','name'], include: [{association: 'unit', attributes: ['name','siglas']}] } ]},
+            {
+                association: 'detailsInput',
+                attributes: {include: ['quantity']},
+                where: { status: 'ACTIVE' },
+                required: categoryIds.length > 0 || productIds.length > 0,
+                include: [{
+                    association: 'product',
+                    attributes: ['cod','name'],
+                    where: {
+                        ...(categoryIds.length ? { id_category: { [Op.in]: categoryIds } } : {}),
+                        ...(productIds.length ? { id: { [Op.in]: productIds } } : {}),
+                    },
+                    required: categoryIds.length > 0 || productIds.length > 0,
+                    include: [{association: 'unit', attributes: ['name','siglas']}],
+                }],
+            },
         ]
     };
     const inputs = await Input.findAll(optionsDb);
@@ -1055,9 +1199,10 @@ const dataPdfReturnInputVoucherMedia = (input, sucursal, decimal) => {
 module.exports = {
     generatePdfReports,
     generateExcelReports,
+    generatePurchaseReportExcel,
     generatePdfDetailsReports,
     generateExcelDetailsReports,
     printInputVoucher,
     generatePdfDetailsCPPReports,
     dataPdfReturnInputVoucher,
-}
+}

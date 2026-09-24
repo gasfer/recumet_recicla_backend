@@ -387,6 +387,12 @@ const idExistTransferPending = async (id = "") => {
     throw new Error(`El traslado con id: ${id}, no existe o esta recepcionado`);
   };
 }
+const idExistTransferReceived = async (id = "") => {
+  const idExist = await Transfers.findOne({where: {id,status:'RECEIVED'}});
+  if (!idExist) {
+    throw new Error(`El traslado con id: ${id}, no existe o no está recepcionado`);
+  };
+}
 const idExistTransfer = async (id = "") => {
   const idExist = await Transfers.findOne({where: {id}});
   if (!idExist) {
@@ -464,6 +470,7 @@ module.exports = {
   idExistAbonoAccountReceivable,
   idExistTransfer,
   idExistTransferPending,
+  idExistTransferReceived,
   idTypeProvider,
   numberDocumentExistProvider,
   idExistAbonoAccountPayableMultiple,

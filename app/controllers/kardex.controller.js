@@ -1,19 +1,41 @@
 const { response, request } = require('express');
-const { sequelize, ViewKardex, TransferReviewNote, History } = require('../database/config');
+const { sequelize, ViewKardex, TransferReviewNote } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
-const { attachAvailabilityToKardexRows, getStockDiagnostic, syncStocksFromKardex } = require('../services/stock-availability.service');
+const { attachAvailabilityToKardexRows, getStockDiagnostic } = require('../services/stock-availability.service');
+const { detectCases } = require('../services/stock-reconciliation.service');
 const { sendPermissionDenied } = require('../helpers/permission-denied');
+const { KARDEX_HISTORY_ATTRIBUTES, attachKardexEventMetadata } = require('../services/kardex-event.service');
+const { enrichKardexHistory } = require('../services/kardex-history-enrichment.service');
+const { getDailyKardexHistory } = require('../services/daily-kardex-history.service');
+
+const canAccessSucursal = (user, idSucursal) => user?.role === 'ADMINISTRADOR' || (
+    Boolean(idSucursal) && (user?.assign_sucursales || []).some(({ id_sucursal, status }) => status !== false && Number(id_sucursal) === Number(idSucursal))
+);
+
+const normalizeKardexHistoryOrder = (fieldSort, order) => {
+    const requestedField = String(fieldSort || 'date');
+    const requestedDirection = String(order || 'DESC').toUpperCase();
+    const allowedFields = new Set([
+        'id', 'date', 'registry_number', 'detail', 'quantity_input', 'quantity_output', 'saldo',
+        'product.cod', 'product.name', 'product.unit.siglas',
+    ]);
+    if (!allowedFields.has(requestedField) || !['ASC', 'DESC'].includes(requestedDirection)) {
+        return ['date', 'DESC'];
+    }
+    return [...requestedField.split('.'), requestedDirection];
+};
 
 const getKardexPaginate = async (req = request, res = response) => {
     try {
-        const { query, page, limit, type, id_sucursal, id_storage, id_product, filterBy, date1, date2, type_kardex, orderNew } = req.query;
+        const { query, page, limit, type, id_sucursal, id_storage, id_product, filterBy, date1, date2, type_kardex, field_sort, order } = req.query;
         const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
-        const tieBreakerOrder = orderNew?.at(-1) === 'ASC' ? 'ASC' : 'DESC';
+        const historyOrder = normalizeKardexHistoryOrder(field_sort, order);
+        const tieBreakerOrder = historyOrder.at(-1).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
         const optionsDb = {
-            order: [orderNew, ['id', tieBreakerOrder]],
-            attributes: ['type', 'date', 'id_movement', 'type_movement', 'registry_number', 'detail', 'sub_detail', 'quantity', 'quantity_input', 'quantity_output', 'cost_unitario', 'cost_input', 'cost_output', 'saldo', 'cost_saldo'],
+            order: [historyOrder, ['id', tieBreakerOrder]],
+            attributes: [...KARDEX_HISTORY_ATTRIBUTES],
             where: {
                 [Op.and]: [
                     id_sucursal ? { id_sucursal } : {},
@@ -33,6 +55,8 @@ const getKardexPaginate = async (req = request, res = response) => {
             ]
         };
         let kardexes = await paginate(ViewKardex, page, limit, type, query, optionsDb);
+        kardexes.data.forEach(attachKardexEventMetadata);
+        await enrichKardexHistory(kardexes.data);
         const transferMovements = kardexes.data.filter((item) => item.type_movement === 'KMOVEMENT');
         const movementIds = transferMovements.map((item) => Number(item.id_movement)).filter(Number.isInteger);
         if (movementIds.length > 0) {
@@ -56,6 +80,30 @@ const getKardexPaginate = async (req = request, res = response) => {
             ok: false,
             errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
+    }
+};
+
+const getDailyKardexPaginate = async (req = request, res = response) => {
+    try {
+        const { page, limit, date1, id_sucursal, id_storage, id_product, type, query, type_kardex, field_sort, order } = req.query;
+        const result = await getDailyKardexHistory({
+            date: date1,
+            idSucursal: id_sucursal,
+            idStorage: id_storage,
+            idProduct: id_product || null,
+            type: type || type_kardex || '',
+            query: query || '',
+            fieldSort: field_sort || 'date',
+            order: order || 'DESC',
+            page,
+            limit,
+        });
+        result.data.forEach(attachKardexEventMetadata);
+        await enrichKardexHistory(result.data);
+        return res.status(200).json({ ok: true, kardexes: { data: result.data, total: result.total, currentPage: Number(page) || 1, per_page: Number(limit) || 50 } });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ ok: false, errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }] });
     }
 };
 
@@ -596,11 +644,8 @@ const getTotalStockRecumet = async (req = request, res = response) => {
 
 const getStockDiagnosticHandler = async (req = request, res = response) => {
     try {
-        if (req.userAuth?.role !== 'ADMINISTRADOR') {
-            return sendPermissionDenied(res, 'consultar el diagnóstico de existencias');
-        }
-
         const { id_sucursal, id_storage, limit } = req.query;
+        if (!canAccessSucursal(req.userAuth, id_sucursal)) return sendPermissionDenied(res, 'consultar el diagnóstico fuera de una sucursal autorizada');
         const diagnostic = await getStockDiagnostic({
             idSucursal: id_sucursal,
             idStorage: id_storage,
@@ -622,45 +667,33 @@ const getStockDiagnosticHandler = async (req = request, res = response) => {
 
 const syncStocksHandler = async (req = request, res = response) => {
     try {
-        if (req.userAuth?.role !== 'ADMINISTRADOR') {
-            return sendPermissionDenied(res, 'ejecutar la sincronización de existencias');
-        }
-
         const { id_sucursal, id_storage } = req.body;
-        const corrected = await syncStocksFromKardex({
+        if (!canAccessSucursal(req.userAuth, id_sucursal)) return sendPermissionDenied(res, 'detectar diferencias fuera de una sucursal autorizada');
+        const result = await detectCases({
             idSucursal: id_sucursal,
-            idStorage: id_storage
+            idStorage: id_storage,
+            actorUserId: req.userAuth.id,
         });
-
-        if (corrected.length > 0) {
-            await History.create({
-                id_user: req.userAuth.id,
-                id_sucursal: id_sucursal || req.userAuth.id_sucursal || null,
-                description: `SINCRONIZACIÓN STOCK-KARDEX: ${corrected.length} productos corregidos usando el saldo de la vista Kardex Detalle.`,
-                type: 'UPDATE',
-                module: 'KARDEX',
-                query: JSON.stringify(corrected),
-                action: 'SYNC_STOCKS',
-                status: true
-            });
-        }
-
         return res.status(200).json({
             ok: true,
-            synced: corrected.length,
-            corrected
+            synced: 0,
+            inventory_modified: false,
+            message: 'La sincronización masiva fue retirada. Las diferencias se registraron como casos para revisión individual.',
+            ...result,
         });
     } catch (error) {
         console.log(error);
         return res.status(500).json({
             ok: false,
-            errors: [{ msg: `Error en sincronización: ${error.message || 'Ocurrió un imprevisto interno'}` }]
+            errors: [{ msg: `Error al detectar diferencias: ${error.message || 'Ocurrió un imprevisto interno'}` }]
         });
     }
 };
 
 module.exports = {
     getKardexPaginate,
+    getDailyKardexPaginate,
+    normalizeKardexHistoryOrder,
     getKardexFisicoPaginate,
     getTotalStockRecumet,
     getStockDiagnosticHandler,

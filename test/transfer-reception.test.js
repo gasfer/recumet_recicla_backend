@@ -74,13 +74,16 @@ test('resume la boleta recibida con excedente, faltante y pesos totales', () => 
     ], 'RECEIVED');
 
     assert.deepEqual(summary.rows, [
-        { sent: 10, received: 12, excess: 2, shortage: 0, differencePercentage: '20.00%', observation: 'Excedente' },
-        { sent: 8, received: 6.5, excess: 0, shortage: 1.5, differencePercentage: '-18.75%', observation: 'Faltante' },
-        { sent: 4, received: 4, excess: 0, shortage: 0, differencePercentage: '0.00%', observation: '-' },
+        { sent: 10, received: 12, normal: 10, blocked: 2, status: 'EN REVISIÓN', excess: 2, shortage: 0, differencePercentage: '20.00%', observation: 'Excedente' },
+        { sent: 8, received: 6.5, normal: 6.5, blocked: 1.5, status: 'EN REVISIÓN', excess: 0, shortage: 1.5, differencePercentage: '-18.75%', observation: 'Faltante' },
+        { sent: 4, received: 4, normal: 4, blocked: 0, status: 'ACEPTADO', excess: 0, shortage: 0, differencePercentage: '0.00%', observation: '-' },
     ]);
     assert.deepEqual(summary.totals, {
         sent: 22,
         received: 22.5,
+        normal: 20.5,
+        blocked: 3.5,
+        accountedTotal: 20.5,
         excess: 2,
         shortage: 1.5,
         differencePercentage: '2.27%',
@@ -93,17 +96,47 @@ const loadReceivedTransfer = (models, notifications = []) => {
     const notificationPath = require.resolve('../app/services/notification.service');
     const reviewNoteServicePath = require.resolve('../app/services/transfer-review-note.service');
     const automatedResolutionPath = require.resolve('../app/services/automated-transfer-review-resolution.service');
+    const inventoryServicePath = require.resolve('../app/services/transfer-reception-inventory.service');
+    const inventoryPostingPath = require.resolve('../app/services/inventory-posting.service');
+    const integrityServicePath = require.resolve('../app/services/stock-kardex-integrity.service');
     const controllerPath = require.resolve('../app/controllers/transfers.controller');
     const cachedConfig = require.cache[configPath];
     const cachedNotification = require.cache[notificationPath];
     const cachedReviewNoteService = require.cache[reviewNoteServicePath];
     const cachedAutomatedResolution = require.cache[automatedResolutionPath];
+    const cachedInventoryService = require.cache[inventoryServicePath];
+    const cachedInventoryPosting = require.cache[inventoryPostingPath];
+    const cachedIntegrityService = require.cache[integrityServicePath];
     const cachedController = require.cache[controllerPath];
 
+    const suppliedStock = models.Stock || {};
+    const suppliedMovement = models.kardexMovements || {};
+    const createdStockRows = [];
     const modelsWithWorkflowDefaults = {
         TransferReviewEvent: { create: async (data) => data },
         TransferReviewInventoryHold: { bulkCreate: async (data) => data },
         ...models,
+        Stock: {
+            ...suppliedStock,
+            findOne: async (options = {}) => {
+                const supplied = suppliedStock.findOne ? await suppliedStock.findOne(options) : null;
+                if (supplied) return supplied;
+                const where = options.where || {};
+                return createdStockRows.find((row) => Object.entries(where).every(([key, value]) => row[key] === value)) || null;
+            },
+            create: async (data) => {
+                const created = suppliedStock.create ? await suppliedStock.create(data) : null;
+                const row = created && typeof created === 'object'
+                    ? created
+                    : { ...data, async save() {} };
+                createdStockRows.push(row);
+                return row;
+            },
+        },
+        kardexMovements: {
+            ...suppliedMovement,
+            findOne: suppliedMovement.findOne || (async () => null),
+        },
     };
     require.cache[configPath] = { id: configPath, filename: configPath, loaded: true, exports: modelsWithWorkflowDefaults };
     require.cache[notificationPath] = {
@@ -123,6 +156,15 @@ const loadReceivedTransfer = (models, notifications = []) => {
     };
     delete require.cache[controllerPath];
     delete require.cache[reviewNoteServicePath];
+    delete require.cache[inventoryServicePath];
+    delete require.cache[inventoryPostingPath];
+    delete require.cache[integrityServicePath];
+    require.cache[integrityServicePath] = {
+        id: integrityServicePath,
+        filename: integrityServicePath,
+        loaded: true,
+        exports: { verifyLocationsIntegrity: async () => [] },
+    };
 
     const { receivedTransfer } = require('../app/controllers/transfers.controller');
     const restore = () => {
@@ -134,6 +176,12 @@ const loadReceivedTransfer = (models, notifications = []) => {
         else delete require.cache[reviewNoteServicePath];
         if (cachedAutomatedResolution) require.cache[automatedResolutionPath] = cachedAutomatedResolution;
         else delete require.cache[automatedResolutionPath];
+        if (cachedInventoryService) require.cache[inventoryServicePath] = cachedInventoryService;
+        else delete require.cache[inventoryServicePath];
+        if (cachedInventoryPosting) require.cache[inventoryPostingPath] = cachedInventoryPosting;
+        else delete require.cache[inventoryPostingPath];
+        if (cachedIntegrityService) require.cache[integrityServicePath] = cachedIntegrityService;
+        else delete require.cache[integrityServicePath];
         if (cachedController) require.cache[controllerPath] = cachedController;
         else delete require.cache[controllerPath];
     };
@@ -186,12 +234,12 @@ const createReviewDetails = (operations) => async (data) => {
 test('recepción con excedente actualiza stock, Kardex y una nota independiente', async (t) => {
     const transfer = pendingTransfer([pendingDetail(1, 10, 5)]);
     const operations = { stockCreates: [], kardex: [], notes: [], noteDetails: [], history: [], commits: 0, rollbacks: 0 };
-    const transaction = { commit: async () => { operations.commits += 1; }, rollback: async () => { operations.rollbacks += 1; } };
+    const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => { operations.commits += 1; }, rollback: async () => { operations.rollbacks += 1; } };
     const { receivedTransfer, restore } = loadReceivedTransfer({
         sequelize: { transaction: async () => transaction },
         Transfers: { findOne: async () => transfer },
         Product: { findOne: async () => null },
-        Stock: { findOne: async () => null, create: async (data) => operations.stockCreates.push(data) },
+        Stock: { findOne: async () => null, create: async (data) => { const stock = { ...data, async save() {} }; operations.stockCreates.push(stock); return stock; } },
         kardexMovements: { create: async (data) => { operations.kardex.push(data); return { id: operations.kardex.length }; } },
         TransferReviewNote: { create: async (data) => { const note = { ...data, id: operations.notes.length + 1, async save() {} }; operations.notes.push(note); return note; } },
         TransferReviewNoteDetail: { bulkCreate: createReviewDetails(operations) },
@@ -230,7 +278,7 @@ test('recepción con excedente actualiza stock, Kardex y una nota independiente'
 test('recepción sin diferencia no crea movimientos ni notas de revisión', async (t) => {
     const transfer = pendingTransfer([pendingDetail(1, 10, 5)]);
     const operations = { kardex: 0, commits: 0 };
-    const transaction = { commit: async () => { operations.commits += 1; }, rollback: async () => {} };
+    const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => { operations.commits += 1; }, rollback: async () => {} };
     const { receivedTransfer, restore } = loadReceivedTransfer({
         sequelize: { transaction: async () => transaction },
         Transfers: { findOne: async () => transfer },
@@ -257,12 +305,12 @@ test('recepción sin diferencia no crea movimientos ni notas de revisión', asyn
 test('recepción con faltante registra la diferencia consolidada en el producto MERMAS seleccionado', async (t) => {
     const transfer = pendingTransfer([pendingDetail(1, 10, 8)]);
     const operations = { stockCreates: [], kardex: [], notes: [], noteDetails: [], commits: 0, rollbacks: 0 };
-    const transaction = { commit: async () => { operations.commits += 1; }, rollback: async () => { operations.rollbacks += 1; } };
+    const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => { operations.commits += 1; }, rollback: async () => { operations.rollbacks += 1; } };
     const { receivedTransfer, restore } = loadReceivedTransfer({
         sequelize: { transaction: async () => transaction },
         Transfers: { findOne: async () => transfer },
         Product: { findOne: async () => ({ id: 321, status: true }) },
-        Stock: { findOne: async () => null, create: async (data) => operations.stockCreates.push(data) },
+        Stock: { findOne: async () => null, create: async (data) => { const stock = { ...data, async save() {} }; operations.stockCreates.push(stock); return stock; } },
         kardexMovements: { create: async (data) => { operations.kardex.push(data); return { id: operations.kardex.length }; } },
         TransferReviewNote: { create: async (data) => { const note = { ...data, id: operations.notes.length + 1, async save() {} }; operations.notes.push(note); return note; } },
         TransferReviewNoteDetail: { bulkCreate: createReviewDetails(operations) },
@@ -302,12 +350,12 @@ test('recepción con faltante registra la diferencia consolidada en el producto 
 test('recepción con varios faltantes crea un único movimiento y nota consolidada', async (t) => {
     const transfer = pendingTransfer([pendingDetail(1, 10, 8), pendingDetail(2, 11, 10)]);
     const operations = { stockCreates: [], kardex: [], notes: [], noteDetails: [] };
-    const transaction = { commit: async () => {}, rollback: async () => {} };
+    const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
     const { receivedTransfer, restore } = loadReceivedTransfer({
         sequelize: { transaction: async () => transaction },
         Transfers: { findOne: async () => transfer },
         Product: { findOne: async () => ({ id: 321, status: true }) },
-        Stock: { findOne: async () => null, create: async (data) => operations.stockCreates.push(data) },
+        Stock: { findOne: async () => null, create: async (data) => { const stock = { ...data, async save() {} }; operations.stockCreates.push(stock); return stock; } },
         kardexMovements: { create: async (data) => { operations.kardex.push(data); return { id: operations.kardex.length }; } },
         TransferReviewNote: { create: async (data) => { const note = { ...data, id: 1, async save() {} }; operations.notes.push(note); return note; } },
         TransferReviewNoteDetail: { bulkCreate: createReviewDetails(operations) },
@@ -338,7 +386,7 @@ test('recepción con varios faltantes crea un único movimiento y nota consolida
 test('recepción con varios excedentes crea un movimiento y nota por producto', async (t) => {
     const transfer = pendingTransfer([pendingDetail(1, 10, 5), pendingDetail(2, 11, 8)]);
     const operations = { kardex: [], notes: [], noteDetails: [] };
-    const transaction = { commit: async () => {}, rollback: async () => {} };
+    const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => {}, rollback: async () => {} };
     const { receivedTransfer, restore } = loadReceivedTransfer({
         sequelize: { transaction: async () => transaction },
         Transfers: { findOne: async () => transfer },
@@ -380,7 +428,7 @@ test('faltante sin producto MERMAS válido revierte la recepción sin movimiento
     const transfer = pendingTransfer([pendingDetail(1, 10, 8)]);
     const operations = { stockCreates: 0, kardex: 0, commits: 0, rollbacks: 0 };
     let mermaLookup;
-    const transaction = { commit: async () => { operations.commits += 1; }, rollback: async () => { operations.rollbacks += 1; } };
+    const transaction = { LOCK: { UPDATE: 'UPDATE' }, commit: async () => { operations.commits += 1; }, rollback: async () => { operations.rollbacks += 1; } };
     const { receivedTransfer, restore } = loadReceivedTransfer({
         sequelize: { transaction: async () => transaction },
         Transfers: { findOne: async () => transfer },

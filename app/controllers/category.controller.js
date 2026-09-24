@@ -1,5 +1,5 @@
 const { response, request } = require('express');
-const { Category, sequelize } = require('../database/config');
+const { Category, Product, ProductSucursals, sequelize } = require('../database/config');
 const { Op } = require('sequelize');
 const paginate = require('../helpers/paginate');
 const {
@@ -102,7 +102,7 @@ const activeInactiveCategory = async (req = request, res = response) => {
 
 const getCategoriesForSelect = async (req = request, res = response) => {
     try {
-        const { category_type } = req.query;
+        const { category_type, id_sucursal } = req.query;
         const operationalContext = req.productAccessContext;
         const where = { status: true };
 
@@ -116,6 +116,16 @@ const getCategoriesForSelect = async (req = request, res = response) => {
             };
         } else if (category_type) {
             where.type = category_type;
+        }
+
+        if (id_sucursal) {
+            const allowedBranch = req.userAuth?.role === 'ADMINISTRADOR'
+                || req.userAuth?.assign_sucursales?.some(item => Number(item.id_sucursal) === Number(id_sucursal));
+            if (!allowedBranch) return res.status(403).json({ ok: false, errors: [{ msg: 'No tiene acceso a la sucursal seleccionada.' }] });
+            const assignedProducts = await ProductSucursals.findAll({ where: { id_sucursal, status: true }, attributes: ['id_product'] });
+            const productIds = assignedProducts.map(item => item.id_product);
+            const products = productIds.length ? await Product.findAll({ where: { id: { [Op.in]: productIds }, status: true }, attributes: ['id_category'] }) : [];
+            where.id = { [Op.in]: [...new Set(products.map(product => product.id_category))] };
         }
 
         const categories = await Category.findAll({

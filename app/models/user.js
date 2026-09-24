@@ -19,6 +19,7 @@ module.exports = (sequelize, DataTypes) => {
       User.hasMany(models.Transfers,{as: 'transfers_received', foreignKey:'id_user_received'});
       User.hasMany(models.Notification,{as: 'notifications', foreignKey:'id_user'});
       User.hasMany(models.TransferReviewNote,{as: 'transferReviewNotes', foreignKey:'id_user'});
+      User.hasMany(models.TransferHistoricalDifferenceCompletion,{as: 'historicalTransferDifferenceCompletions', foreignKey:'id_user'});
     }
   }
   User.init({

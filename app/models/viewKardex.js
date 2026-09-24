@@ -35,7 +35,8 @@ module.exports = (sequelize, DataTypes) => {
   }, {
     sequelize,
     modelName: 'ViewKardex',
-    tableName: 'view_kardex_detalle'
+    tableName: 'view_kardex_detalle',
+    timestamps: false,
   });
   return ViewKardex;
 };

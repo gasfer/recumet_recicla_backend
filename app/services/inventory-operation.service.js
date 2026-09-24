@@ -1,7 +1,8 @@
 'use strict';
 
-const { Stock, kardexMovements } = require('../database/config');
+const { Stock } = require('../database/config');
 const { hasAvailableStock } = require('./stock-availability.service');
+const { applyExplicitEffect } = require('./inventory-posting.service');
 
 const operationError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
 
@@ -16,35 +17,27 @@ const lockStock = async ({ productId, sucursalId, storageId, transaction }) => {
   return stock;
 };
 
-const decreaseStock = async ({ productId, sucursalId, storageId, quantity, actorUserId, date, details, registryNumber, cost = 0, heldAllowance = 0, transaction }) => {
-  const stock = await lockStock({ productId, sucursalId, storageId, transaction });
-  const availability = await hasAvailableStock(stock, quantity, transaction);
-  if (Number(availability.available_stock) + Number(heldAllowance || 0) + 0.0001 < Number(quantity)) {
-    throw operationError(`Stock insuficiente para ${stock.product.cod} - ${stock.product.name}. Disponible: ${availability.available_stock}.`, 409);
+const applyOperationEffect = async ({ direction, productId, sucursalId, storageId, quantity, actorUserId, date, details, registryNumber, cost = 0, heldAllowance = 0, transaction }) => {
+  if (direction === 'OUTPUT') {
+    const stock = await lockStock({ productId, sucursalId, storageId, transaction });
+    const availability = await hasAvailableStock(stock, quantity, transaction);
+    if (Number(availability.available_stock) + Number(heldAllowance || 0) + 0.0001 < Number(quantity)) {
+      throw operationError(`Stock insuficiente para ${stock.product.cod} - ${stock.product.name}. Disponible: ${availability.available_stock}.`, 409);
+    }
   }
-  stock.stock = Number(stock.stock) - Number(quantity);
-  await stock.save({ transaction });
-  return kardexMovements.create({
-    type: 'OUTPUT', date, details, quantity, cost, price: 0, total: 0,
-    id_product: productId, id_user: actorUserId, id_sucursal: sucursalId,
-    id_storage: storageId, status: true, registry_number: registryNumber,
-  }, { transaction });
+  try {
+    const result = await applyExplicitEffect({
+      direction, productId, sucursalId, storageId, quantity, actorUserId, date, details,
+      registryNumber, cost, heldAllowance, transaction,
+    });
+    return result.movement;
+  } catch (error) {
+    if (error.code === 'INVENTORY_POSTING_REJECTED') throw operationError(error.message, error.statusCode);
+    throw error;
+  }
 };
 
-const increaseStock = async ({ productId, sucursalId, storageId, quantity, actorUserId, date, details, registryNumber, cost = 0, transaction }) => {
-  let stock = await Stock.findOne({
-    where: { id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true },
-    transaction,
-    lock: transaction.LOCK.UPDATE,
-  });
-  if (!stock) stock = await Stock.create({ stock_min: 1, stock: 0, id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true }, { transaction });
-  stock.stock = Number(stock.stock) + Number(quantity);
-  await stock.save({ transaction });
-  return kardexMovements.create({
-    type: 'INPUT', date, details, quantity, cost, price: 0, total: 0,
-    id_product: productId, id_user: actorUserId, id_sucursal: sucursalId,
-    id_storage: storageId, status: true, registry_number: registryNumber,
-  }, { transaction });
-};
+const decreaseStock = (options) => applyOperationEffect({ ...options, direction: 'OUTPUT' });
+const increaseStock = (options) => applyOperationEffect({ ...options, direction: 'INPUT' });
 
 module.exports = { operationError, lockStock, decreaseStock, increaseStock };

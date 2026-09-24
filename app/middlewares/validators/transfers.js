@@ -1,6 +1,6 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
-const { idExistStorage, idExistSucursal, idExistProduct, idExistTransfer, idExistTransferPending, registryNumberExistTransfer } = require('./database');
+const { idExistStorage, idExistSucursal, idExistProduct, idExistTransfer, idExistTransferPending, idExistTransferReceived, registryNumberExistTransfer } = require('./database');
 
 const validationSchema =  {
     transfer_data: {
@@ -124,11 +124,26 @@ const validateIdTransfer = [
     validatedResponse
 ]
 
+const validateReceptionCancellation = [
+    checkSchema({
+        id_transfer: { custom: { options: idExistTransferReceived } },
+        reason: {
+            trim: true,
+            isLength: {
+                options: { min: 10, max: 500 },
+                errorMessage: 'El motivo debe tener entre 10 y 500 caracteres',
+            },
+        },
+    }),
+    validatedResponse
+]
+
 
 module.exports = {
     getValidateCreate,
     validateIdTransferPending,
     getValidateReceived,
-    validateIdTransfer
+    validateIdTransfer,
+    validateReceptionCancellation
 }
 

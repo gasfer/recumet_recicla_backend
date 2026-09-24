@@ -15,7 +15,7 @@ const createTransferReviewNote = async ({ type, date, observations, transfer, ka
     date,
     observations,
     id_transfer: transfer.id,
-    id_kardex_movement: kardexMovement.id,
+    id_kardex_movement: kardexMovement?.id || null,
     id_product: productId,
     id_user: userId,
     id_sucursal: transfer.id_sucursal_received,
@@ -42,7 +42,7 @@ const createTransferReviewNote = async ({ type, date, observations, transfer, ka
     description: type === 'FALTANTE_PARA_REVISION'
       ? 'Recepción registrada con faltante pendiente de revisión.'
       : 'Recepción registrada con excedente pendiente de revisión.',
-    metadata: { type, transfer_id: transfer.id, kardex_movement_id: kardexMovement.id },
+    metadata: { type, transfer_id: transfer.id, kardex_movement_id: kardexMovement?.id || null },
     id_transfer_review_note: note.id,
     id_user: userId,
   }, { transaction });

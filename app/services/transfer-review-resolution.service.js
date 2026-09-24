@@ -8,13 +8,14 @@ const {
   TransferReviewActionMovement,
   TransferReviewEvidence,
   TransferReviewEvent,
-  Stock,
   Product,
-  kardexMovements,
+  History,
 } = require('../database/config');
 const { DETAIL_REVIEW_STATUSES, REVIEW_STATUSES } = require('../constants/transfer-review');
 const { createEvent, syncNoteStatus } = require('./transfer-review-workflow.service');
 const notificationService = require('./notification.service');
+const { applyExplicitEffect } = require('./inventory-posting.service');
+const integrityService = require('./stock-kardex-integrity.service');
 
 const EXCESS_STRATEGIES = new Set([
   'ORIGEN_ENVIO_MAYOR',
@@ -37,47 +38,26 @@ const { permissionDeniedError } = require('../helpers/permission-denied');
 
 const workflowError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
 
-const adjustStock = async ({ productId, sucursalId, storageId, delta, transaction }) => {
-  let stock = await Stock.findOne({
-    where: { id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true },
-    transaction,
-    lock: transaction.LOCK.UPDATE,
-  });
-  if (!stock && delta < 0) throw workflowError(`No existe stock físico para el producto ${productId}.`);
-  if (!stock) {
-    stock = await Stock.create({
-      stock_min: 1,
-      stock: 0,
-      id_product: productId,
-      id_sucursal: sucursalId,
-      id_storage: storageId,
-      status: true,
-    }, { transaction });
-  }
-  const nextStock = Number(stock.stock) + Number(delta);
-  if (nextStock < 0) throw workflowError(`La resolución dejaría stock negativo para el producto ${productId}.`);
-  stock.stock = nextStock;
-  await stock.save({ transaction });
-  return stock;
-};
-
-const createMovement = async ({ type, quantity, productId, sucursalId, storageId, userId, note, strategy, transaction }) => (
-  kardexMovements.create({
-    type,
+const applyResolutionEffect = async ({ type, quantity, productId, sucursalId, storageId, userId, note, strategy, actionId, transaction }) => {
+  const result = await applyExplicitEffect({
+    direction: type,
+    quantity,
+    productId,
+    sucursalId,
+    storageId,
+    actorUserId: userId,
     date: new Date(),
     details: `CONCILIACIÓN ${strategy} ${note.registry_number}`,
-    quantity,
-    cost: 0,
-    price: 0,
-    total: 0,
-    id_product: productId,
-    id_user: userId,
-    id_sucursal: sucursalId,
-    id_storage: storageId,
-    status: true,
-    registry_number: note.registry_number,
-  }, { transaction })
-);
+    registryNumber: note.registry_number,
+    sourceType: 'TRANSFER_REVIEW_LEGACY_RESOLUTION',
+    sourceId: actionId,
+    sourceDetailId: `${type}:${productId}`,
+    effectType: strategy,
+    idempotencyKey: `TRANSFER_REVIEW_LEGACY:${actionId}:${type}:${productId}`,
+    transaction,
+  });
+  return result.movement;
+};
 
 const linkMovements = async (actionId, movements, transaction) => {
   if (movements.length === 0) return;
@@ -98,28 +78,24 @@ const assertTargetProduct = async (targetProductId, transaction) => {
   return product;
 };
 
-const applyExcessStrategy = async ({ strategy, quantity, detail, note, targetProductId, userId, transaction }) => {
+const applyExcessStrategy = async ({ strategy, quantity, detail, note, targetProductId, userId, actionId, transaction }) => {
   const movements = [];
   if (strategy === 'ACCION_MANUAL_VERIFICADA') return movements;
   const destination = { sucursalId: note.id_sucursal, storageId: note.id_storage };
   if (strategy === 'ORIGEN_ENVIO_MAYOR') {
-    await adjustStock({ productId: note.id_product, sucursalId: note.transfer.id_sucursal_send, storageId: note.transfer.id_storage_send, delta: -quantity, transaction });
-    movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: note.id_product, sucursalId: note.transfer.id_sucursal_send, storageId: note.transfer.id_storage_send, userId, note, strategy, transaction }));
+    movements.push(await applyResolutionEffect({ type: 'OUTPUT', quantity, productId: note.id_product, sucursalId: note.transfer.id_sucursal_send, storageId: note.transfer.id_storage_send, userId, note, strategy, actionId, transaction }));
   } else if (strategy === 'ERROR_RECEPCION') {
-    await adjustStock({ productId: note.id_product, ...destination, delta: -quantity, transaction });
-    movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: note.id_product, ...destination, userId, note, strategy, transaction }));
+    movements.push(await applyResolutionEffect({ type: 'OUTPUT', quantity, productId: note.id_product, ...destination, userId, note, strategy, actionId, transaction }));
   } else if (strategy === 'PRODUCTO_INCORRECTO') {
     await assertTargetProduct(targetProductId, transaction);
     if (Number(targetProductId) === Number(note.id_product)) throw workflowError('El producto correcto debe ser diferente del producto observado.');
-    await adjustStock({ productId: note.id_product, ...destination, delta: -quantity, transaction });
-    await adjustStock({ productId: targetProductId, ...destination, delta: quantity, transaction });
-    movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: note.id_product, ...destination, userId, note, strategy, transaction }));
-    movements.push(await createMovement({ type: 'INPUT', quantity, productId: targetProductId, ...destination, userId, note, strategy, transaction }));
+    movements.push(await applyResolutionEffect({ type: 'OUTPUT', quantity, productId: note.id_product, ...destination, userId, note, strategy, actionId, transaction }));
+    movements.push(await applyResolutionEffect({ type: 'INPUT', quantity, productId: targetProductId, ...destination, userId, note, strategy, actionId, transaction }));
   }
   return movements;
 };
 
-const applyShortageStrategy = async ({ strategy, quantity, detail, note, targetProductId, userId, transaction }) => {
+const applyShortageStrategy = async ({ strategy, quantity, detail, note, targetProductId, userId, actionId, transaction }) => {
   const movements = [];
   if (strategy === 'ACCION_MANUAL_VERIFICADA') return movements;
   const destination = { sucursalId: note.id_sucursal, storageId: note.id_storage };
@@ -127,14 +103,34 @@ const applyShortageStrategy = async ({ strategy, quantity, detail, note, targetP
   const incomingProductId = strategy === 'RECLASIFICACION' ? Number(targetProductId) : detail.id_product;
   if (strategy === 'RECLASIFICACION') await assertTargetProduct(incomingProductId, transaction);
 
-  await adjustStock({ productId: differenceProductId, ...destination, delta: -quantity, transaction });
-  movements.push(await createMovement({ type: 'OUTPUT', quantity, productId: differenceProductId, ...destination, userId, note, strategy, transaction }));
+  movements.push(await applyResolutionEffect({ type: 'OUTPUT', quantity, productId: differenceProductId, ...destination, userId, note, strategy, actionId, transaction }));
 
   if (strategy !== 'PERDIDA_CONFIRMADA') {
-    await adjustStock({ productId: incomingProductId, ...destination, delta: quantity, transaction });
-    movements.push(await createMovement({ type: 'INPUT', quantity, productId: incomingProductId, ...destination, userId, note, strategy, transaction }));
+    movements.push(await applyResolutionEffect({ type: 'INPUT', quantity, productId: incomingProductId, ...destination, userId, note, strategy, actionId, transaction }));
   }
   return movements;
+};
+
+const affectedLocations = ({ note, detail, strategy, targetProductId }) => {
+  const destination = { sucursalId: note.id_sucursal, storageId: note.id_storage };
+  if (strategy === 'ACCION_MANUAL_VERIFICADA') return [];
+  if (note.type === 'EXCEDENTE_PARA_REVISION') {
+    if (strategy === 'ORIGEN_ENVIO_MAYOR') return [{
+      productId: note.id_product,
+      sucursalId: note.transfer.id_sucursal_send,
+      storageId: note.transfer.id_storage_send,
+    }];
+    if (strategy === 'PRODUCTO_INCORRECTO') return [
+      { productId: note.id_product, ...destination },
+      { productId: targetProductId, ...destination },
+    ];
+    return [{ productId: note.id_product, ...destination }];
+  }
+  const locations = [{ productId: note.id_product, ...destination }];
+  if (strategy !== 'PERDIDA_CONFIRMADA') {
+    locations.push({ productId: strategy === 'RECLASIFICACION' ? targetProductId : detail.id_product, ...destination });
+  }
+  return locations;
 };
 
 const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause, observations, targetProductId, idempotencyKey, actorUserId, actorCanApprove }) => {
@@ -193,11 +189,20 @@ const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause
       id_approved_user: APPROVAL_REQUIRED.has(strategy) ? actorUserId : null,
     }, { transaction });
 
-    const common = { strategy, quantity: requestedQuantity, detail, note, targetProductId, userId: actorUserId, transaction };
+    if (strategy === 'PRODUCTO_INCORRECTO' || strategy === 'RECLASIFICACION') {
+      await assertTargetProduct(targetProductId, transaction);
+    }
+    const locations = affectedLocations({ note, detail, strategy, targetProductId });
+    const beforeDiagnostics = [];
+    for (const location of integrityService.uniqueSortedLocations(locations)) {
+      beforeDiagnostics.push(await integrityService.getStockKardexIntegrity({ ...location, transaction }));
+    }
+    const common = { strategy, quantity: requestedQuantity, detail, note, targetProductId, userId: actorUserId, actionId: action.id, transaction };
     const movements = note.type === 'EXCEDENTE_PARA_REVISION'
       ? await applyExcessStrategy(common)
       : await applyShortageStrategy(common);
     await linkMovements(action.id, movements, transaction);
+    await integrityService.verifyLocationsIntegrityPreserved({ locations, beforeDiagnostics, transaction });
 
     detail.quantity_resolved = Number(detail.quantity_resolved || 0) + requestedQuantity;
     detail.cause = cause || strategy;
@@ -216,6 +221,16 @@ const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause
       movement_ids: movements.map(({ id }) => id),
       target_product_id: targetProductId || null,
     }, transaction);
+    await History.create({
+      id_user: actorUserId,
+      description: `RESOLVIÓ NOTA DE RECEPCIÓN ${note.registry_number} · ${strategy} · ${requestedQuantity} kg.`,
+      type: 'RESOLUCIÓN NOTA RECEPCIÓN',
+      module: 'TRANSFER_REVIEW',
+      action: 'UPDATE',
+      id_sucursal: note.id_sucursal,
+      id_reference: note.id,
+      status: true,
+    }, { transaction });
     await notificationService.notifyTransferReviewStakeholders({
       note: syncedNote,
       title: `Conciliación ${note.registry_number}`,
@@ -235,5 +250,6 @@ module.exports = {
   SHORTAGE_STRATEGIES,
   APPROVAL_REQUIRED,
   EVIDENCE_REQUIRED,
+  affectedLocations,
   resolveReviewDetail,
 };

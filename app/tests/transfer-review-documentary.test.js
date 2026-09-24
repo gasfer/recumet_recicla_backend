@@ -8,6 +8,7 @@ process.env.NODE_ENV = 'test';
 const db = require('../database/config');
 const notificationService = require('../services/notification.service');
 const operationalVerificationService = require('../services/transfer-review-operational-verification.service');
+const stockKardexIntegrity = require('../services/stock-kardex-integrity.service');
 const { documentaryCloseDetail } = require('../services/transfer-review-documentary.service');
 
 const createFixture = (t, {
@@ -142,7 +143,11 @@ const createFixture = (t, {
     documentId: 501,
     documentNumber: 'CL-000501',
     documentQuantity: quantity,
+    affectedLocations: [{ productId: 3, sucursalId: 2, storageId: 4 }],
   }));
+  t.mock.method(stockKardexIntegrity, 'verifyLocationsIntegrity', async () => [{
+    productId: 3, sucursalId: 2, storageId: 4, consistent: true, difference: 0,
+  }]);
   t.mock.method(db.Stock, 'update', async () => { modelWrites.stock += 1; });
   t.mock.method(db.kardexMovements, 'create', async () => { modelWrites.kardex += 1; });
 
@@ -442,4 +447,25 @@ test('un fallo tardio revierte asignacion, conciliacion, retenciones y eventos',
   assert.equal(fixture.events.length, 0);
   assert.equal(fixture.evidences.length, 0);
   assert.deepEqual(fixture.modelWrites, { stock: 0, kardex: 0 });
+});
+
+test('no libera la retención ni cierra cuando la operación existente deja Stock y Kardex descuadrados', async (t) => {
+  const fixture = createFixture(t);
+  t.mock.method(stockKardexIntegrity, 'verifyLocationsIntegrity', async () => {
+    throw Object.assign(new Error('Stock y Kardex no coinciden.'), { code: 'STOCK_KARDEX_PARITY_VIOLATION', statusCode: 409 });
+  });
+
+  await assert.rejects(() => documentaryCloseDetail({
+    noteId: fixture.note.id,
+    detailId: fixture.detail.id,
+    reasonCode: 'MAYOR_CANTIDAD_RECIBIDA',
+    noteOrReference: 'Operación existente con saldo desigual',
+    idempotencyKey: 'unbalanced-documentary-close',
+    actorUserId: 9,
+  }), (error) => error.code === 'STOCK_KARDEX_PARITY_VIOLATION');
+
+  assert.equal(activeHoldTotal(fixture.holds), 10);
+  assert.equal(fixture.actions.length, 0);
+  assert.equal(fixture.events.length, 0);
+  assert.equal(fixture.detail.reconciliation_status, 'EN_REVISION');
 });

@@ -8,6 +8,7 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       kardexMovements.hasOne(models.TransferReviewNote, { as: 'transferReviewNote', foreignKey: 'id_kardex_movement' });
       kardexMovements.hasMany(models.TransferReviewActionMovement, { as: 'reviewActionLinks', foreignKey: 'id_kardex_movement' });
+      kardexMovements.hasOne(models.TransferHistoricalDifferenceCompletion, { as: 'historicalDifferenceCompletion', foreignKey: 'id_kardex_movement' });
     }
   }
   kardexMovements.init({
@@ -43,7 +44,12 @@ module.exports = (sequelize, DataTypes) => {
     id_sucursal: DataTypes.INTEGER,
     id_storage: DataTypes.INTEGER,
     status: DataTypes.BOOLEAN,
-    registry_number: DataTypes.STRING
+    registry_number: DataTypes.STRING,
+    source_type: DataTypes.STRING,
+    source_id: DataTypes.STRING,
+    source_detail_id: DataTypes.STRING,
+    effect_type: DataTypes.STRING,
+    idempotency_key: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'kardexMovements',

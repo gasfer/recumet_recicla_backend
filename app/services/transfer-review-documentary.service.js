@@ -19,6 +19,7 @@ const {
 } = require('../constants/transfer-review');
 const { createEvent, syncNoteStatus } = require('./transfer-review-workflow.service');
 const operationalVerificationService = require('./transfer-review-operational-verification.service');
+const stockKardexIntegrity = require('./stock-kardex-integrity.service');
 const notificationService = require('./notification.service');
 
 const EPSILON = 0.0001;
@@ -195,6 +196,14 @@ const documentaryCloseDetail = async ({
       quantity: requestedQuantity,
       transaction,
     });
+    const integrity = await stockKardexIntegrity.verifyLocationsIntegrity({
+      locations: operationalResolution.affectedLocations || [{
+        productId: detail.id_product,
+        sucursalId: note.id_sucursal,
+        storageId: note.id_storage,
+      }],
+      transaction,
+    });
 
     const holds = await TransferReviewInventoryHold.findAll({
       where: {
@@ -322,6 +331,7 @@ const documentaryCloseDetail = async ({
       operational_document_id: operationalResolution.documentId,
       operational_document_number: operationalResolution.documentNumber,
       operational_document_quantity: operationalResolution.documentQuantity,
+      integrity,
       previous_status: previousDetailStatus,
       current_status: detail.reconciliation_status,
       pending_before: pendingBefore,
@@ -360,6 +370,7 @@ const documentaryCloseDetail = async ({
       pending_quantity: pendingAfter,
       closed_automatically: closedAutomatically,
       inventory_effect: 'VERIFIED_EXISTING_OPERATION',
+      integrity,
       idempotent: false,
     };
   });

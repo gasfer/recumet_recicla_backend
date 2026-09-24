@@ -3,11 +3,9 @@ const {
   Product,
   Price,
   sequelize,
-  Stock,
   ProductSucursals,
   ProductCosts,
   Category,
-  kardexMovements,
 } = require("../database/config");
 const paginate = require("../helpers/paginate");
 const get_num_request = require("../helpers/generate-cod");
@@ -18,6 +16,8 @@ const {
   intersectAllowedCategoryTypes,
 } = require('../services/product-category-access.service');
 const { attachAvailabilityToStocks } = require('../services/stock-availability.service');
+const { applyExplicitEffect } = require('../services/inventory-posting.service');
+const { verifyLocationsIntegrity } = require('../services/stock-kardex-integrity.service');
 
 const ExcelJS = require("exceljs");
 
@@ -372,36 +372,18 @@ const newProduct = async (req = request, res = response) => {
       { transaction: t },
     );
     if (Number(stock) > 0) {
-      //kardex movements
-      await kardexMovements.create(
-        {
-          type: "INPUT",
-          date: new Date(),
-          details: `INVENTARIO INICIAL`,
-          quantity: stock,
-          cost: product.costo,
-          price: Number(body.precio_venta),
-          total: Number(body.precio_venta) * Number(stock),
-          id_product: product.id,
-          id_user: req.userAuth.id,
-          id_sucursal,
-          id_storage,
-          status: true,
-        },
-        { transaction: t },
-      );
-      //stock
-      await Stock.create(
-        {
-          stock_min: 1,
-          stock: stock,
-          id_product: product.id,
-          id_sucursal,
-          id_storage,
-          status: true,
-        },
-        { transaction: t },
-      );
+      await applyExplicitEffect({
+        direction: 'INPUT', productId: product.id, sucursalId: id_sucursal, storageId: id_storage,
+        quantity: stock, actorUserId: req.userAuth.id, date: new Date(), cost: product.costo,
+        details: 'INVENTARIO INICIAL', sourceType: 'PRODUCT_INITIAL_STOCK', sourceId: product.id,
+        sourceDetailId: `${id_sucursal}:${id_storage}`, effectType: 'INITIAL_STOCK',
+        idempotencyKey: `PRODUCT_INITIAL_STOCK:${product.id}:${id_sucursal}:${id_storage}`,
+        transaction: t,
+      });
+      await verifyLocationsIntegrity({
+        locations: [{ productId: product.id, sucursalId: id_sucursal, storageId: id_storage }],
+        transaction: t,
+      });
     }
 
     await t.commit();
@@ -536,9 +518,16 @@ const uploadFileProduct = async (req, res) => {
 
 const getProductsForSelect = async (req = request, res = response) => {
   try {
-    const { query, limit = 10, category_type, category_ids, mermas } = req.query;
+    const { query, limit = 10, category_type, category_ids, mermas, id_sucursal } = req.query;
     const operationalContext = req.productAccessContext;
     const where = { status: true };
+    if (id_sucursal) {
+      const allowedBranches = req.userAuth?.role === 'ADMINISTRADOR'
+        || req.userAuth?.assign_sucursales?.some(item => Number(item.id_sucursal) === Number(id_sucursal));
+      if (!allowedBranches) return res.status(403).json({ ok: false, errors: [{ msg: 'No tiene acceso a la sucursal seleccionada.' }] });
+      const assignments = await ProductSucursals.findAll({ where: { id_sucursal, status: true }, attributes: ['id_product'] });
+      where.id = { [Op.in]: assignments.map(item => item.id_product) };
+    }
 
     if (query) {
       where[Op.or] = [

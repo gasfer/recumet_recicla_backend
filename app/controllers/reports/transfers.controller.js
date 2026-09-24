@@ -303,7 +303,7 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
                 ] },
             ],
         });
-        const voucherSummary = buildTransferVoucherSummary(transfer.detailsTransfers, transfer.status);
+        const voucherSummary = buildTransferVoucherSummary(transfer.detailsTransfers, transfer.status, reviewNotes);
         const dataPdf = dataPdfReturnReceptionVoucher(transfer);
 
         voucherSummary.rows.forEach((row, index) => {
@@ -313,9 +313,10 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
                 { text: detail?.product?.unit?.siglas, fontSize: 7, alignment: 'center' },
                 { text: row.sent, fontSize: 7, alignment: 'center' },
                 { text: row.received, fontSize: 7, alignment: 'center' },
-                { text: row.excess, fontSize: 7, alignment: 'center' },
-                { text: row.shortage, fontSize: 7, alignment: 'center' },
+                { text: row.normal, fontSize: 7, alignment: 'center' },
+                { text: row.blocked, fontSize: 7, alignment: 'center' },
                 { text: row.differencePercentage, fontSize: 7, alignment: 'center' },
+                { text: row.status, fontSize: 7, alignment: 'center' },
                 { text: row.observation, fontSize: 7, alignment: 'center' },
             ]);
         });
@@ -324,9 +325,10 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
             { text: voucherSummary.units.join(','), fontSize: 8, bold: true, alignment: 'center' },
             { text: voucherSummary.totals.sent, fontSize: 8, bold: true, alignment: 'center' },
             { text: voucherSummary.totals.received, fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.excess, fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.shortage, fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.normal, fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.blocked, fontSize: 8, bold: true, alignment: 'center' },
             { text: voucherSummary.totals.differencePercentage, fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.accountedTotal, fontSize: 8, bold: true, alignment: 'center' },
             { text: '', fontSize: 8, bold: true },
         ]);
 
@@ -356,7 +358,7 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
 
 const createReconciliationTable = (rows, totalExcess, totalShortage) => ({
     pageBreak: rows.length > 12 ? 'before' : undefined,
-    margin: [0, 8, 0, 0],
+    margin: [0, 4, 0, 0],
     table: { headerRows: 2, dontBreakRows: true, widths: ['*', 38, 32, 32, 42, 54, '*', 34], body: [
         [{ text: 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS', colSpan: 8, bold: true, fontSize: 6, fillColor: '#eeeeee' }, '', '', '', '', '', '', ''],
         [{ text: 'PRODUCTO ORIGEN', bold: true, fontSize: 6 }, { text: 'TIPO', bold: true, fontSize: 6 }, { text: 'KG REG.', bold: true, fontSize: 6 }, { text: 'KG CONC.', bold: true, fontSize: 6 }, { text: 'ESTADO', bold: true, fontSize: 6 }, { text: 'RESPONSABLE', bold: true, fontSize: 6 }, { text: 'PRODUCTO DESTINO', bold: true, fontSize: 6 }, { text: 'KARDEX', bold: true, fontSize: 6 }],
@@ -490,7 +492,7 @@ const dataPdfReturnReceptionVoucher = (transfer) => {
         style: 'title2',
         bold: true,
         fontSize: 11,
-        margin: [0, 38, 0, 12],
+        margin: [0, 32, 0, 8],
     };
     dataPdf[5] = {
         columnGap: 8,
@@ -534,7 +536,7 @@ const dataPdfReturnReceptionVoucher = (transfer) => {
             },
         ],
     };
-    dataPdf[9].table.widths = ['*', 22, 40, 44, 34, 34, 34, 44];
+    dataPdf[9].table.widths = ['*', 18, 36, 36, 38, 42, 34, 44, 36];
     dataPdf[9].table.headerRows = 1;
     dataPdf[9].table.dontBreakRows = true;
     dataPdf[9].table.body[0] = [
@@ -542,9 +544,10 @@ const dataPdfReturnReceptionVoucher = (transfer) => {
         { text: 'UND', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
         { text: 'ENVIADO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
         { text: 'RECIBIDO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'EXCEDENTE', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'FALTANTE', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'NORMAL', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'BLOQUEADO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
         { text: 'DIF. %', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
+        { text: 'ESTADO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
         { text: 'OBS.', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
     ];
     dataPdf[10] = createVoucherClosingSection(transfer, true);

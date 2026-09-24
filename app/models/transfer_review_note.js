@@ -19,6 +19,7 @@ module.exports = (sequelize, DataTypes) => {
       TransferReviewNote.hasMany(models.TransferReviewEvent, { as: 'events', foreignKey: 'id_transfer_review_note' });
       TransferReviewNote.hasMany(models.TransferReviewEvidence, { as: 'evidences', foreignKey: 'id_transfer_review_note' });
       TransferReviewNote.hasMany(models.TransferReviewResolutionAction, { as: 'resolutionActions', foreignKey: 'id_transfer_review_note' });
+      TransferReviewNote.hasMany(models.TransferHistoricalDifferenceCompletion, { as: 'historicalDifferenceCompletions', foreignKey: 'id_transfer_review_note' });
     }
   }
 

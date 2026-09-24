@@ -1,13 +1,16 @@
 const RECEIVED_QUANTITY_DECIMAL_PLACES = 2;
+const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
 
 const isValidReceivedQuantity = (value) => {
-    const quantity = Number(value);
-
-    const scale = 10 ** RECEIVED_QUANTITY_DECIMAL_PLACES;
-
-    return Number.isFinite(quantity)
-        && quantity >= 0
-        && Math.abs((quantity * scale) - Math.round(quantity * scale)) < Number.EPSILON * scale;
+    if (value === null || value === undefined || value === '') return false;
+    const str = String(value).trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(str)) {
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) return false;
+        const rounded = Number(num.toFixed(RECEIVED_QUANTITY_DECIMAL_PLACES));
+        return Math.abs(num - rounded) < 1e-6;
+    }
+    return true;
 };
 
 const buildReceivedDetails = (incomingDetails, transferDetails) => {
@@ -40,9 +43,16 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
         }
     }
 
+    if (detailsById.size !== transferDetails.length) {
+        const missingIds = transferDetails
+            .map((detail) => Number(detail.id))
+            .filter((detailId) => !detailsById.has(detailId));
+        return { errors: [`Debe registrar el peso recibido de todos los detalles. Faltan: ${missingIds.join(', ')}.`] };
+    }
+
     const receivedDetails = transferDetails.map((detail) => {
         const receivedDetail = detailsById.get(Number(detail.id));
-        const quantityReceived = receivedDetail ? receivedDetail.quantityReceived : Number(detail.quantity);
+        const quantityReceived = receivedDetail.quantityReceived;
 
         return {
             detail,
@@ -68,11 +78,11 @@ const reconcileTransferReceipt = (sentQuantity, receivedQuantity) => {
     };
 };
 
-const buildTransferVoucherSummary = (details, transferStatus) => {
+const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) => {
     const round = (value) => Math.round((value + Number.EPSILON) * 10000) / 10000;
     const received = transferStatus === 'RECEIVED';
     const units = new Set();
-    const totals = { sent: 0, received: 0, excess: 0, shortage: 0 };
+    const totals = { sent: 0, received: 0, normal: 0, blocked: 0, accountedTotal: 0, excess: 0, shortage: 0 };
 
     const rows = details.map((detail) => {
         const sentQuantity = Number(detail?.quantity || 0);
@@ -85,8 +95,44 @@ const buildTransferVoucherSummary = (details, transferStatus) => {
         const excess = received ? reconciliation.excess : 0;
         const shortage = received ? reconciliation.shortage : 0;
 
+        const diffPct = sentQuantity > 0 ? ((receivedQuantity - sentQuantity) / sentQuantity) * 100 : 0;
+        const isAccepted = isAcceptedToleranceDecision(detail?.tolerance_decision)
+            || (detail?.tolerance_decision === undefined && sentQuantity > 0 && diffPct >= -1 && diffPct <= 1);
+
+        const normal = received ? (isAccepted ? receivedQuantity : Math.min(sentQuantity, receivedQuantity)) : 0;
+        const blocked = received ? (isAccepted ? 0 : Math.abs(receivedQuantity - sentQuantity)) : 0;
+
+        let isReleased = false;
+        if (detail?.accounting_status === 'CONTABILIZADO' && !isAccepted) {
+            isReleased = true;
+        } else if (Array.isArray(reviewNotes) && reviewNotes.length > 0) {
+            for (const note of reviewNotes) {
+                const matchingDetail = (note.details || []).find((d) => Number(d.id_detail_transfer) === Number(detail.id));
+                if (matchingDetail && (matchingDetail.reconciliation_status === 'COMPLETADO' || note.reconciliation_status === 'COMPLETADO')) {
+                    isReleased = true;
+                    break;
+                }
+            }
+        }
+
+        let status = 'PENDIENTE';
+        if (received) {
+            if (isAccepted) {
+                status = 'ACEPTADO';
+            } else if (isReleased) {
+                status = 'LIBERADO';
+            } else {
+                status = 'EN REVISIÓN';
+            }
+        }
+
+        const accountedQuantity = normal + (isReleased ? blocked : 0);
+
         totals.sent = round(totals.sent + reconciliation.sent);
         totals.received = round(totals.received + reconciliation.received);
+        totals.normal = round(totals.normal + normal);
+        totals.blocked = round(totals.blocked + (isReleased ? 0 : blocked));
+        totals.accountedTotal = round(totals.accountedTotal + accountedQuantity);
         totals.excess = round(totals.excess + excess);
         totals.shortage = round(totals.shortage + shortage);
 
@@ -95,6 +141,9 @@ const buildTransferVoucherSummary = (details, transferStatus) => {
         return {
             sent: reconciliation.sent,
             received: received ? reconciliation.received : '-',
+            normal: received ? round(normal) : '-',
+            blocked: received ? round(blocked) : 0,
+            status: received ? status : 'PENDIENTE',
             excess,
             shortage,
             differencePercentage: received && sentQuantity > 0
@@ -110,6 +159,9 @@ const buildTransferVoucherSummary = (details, transferStatus) => {
         totals: {
             ...totals,
             received: received ? totals.received : '-',
+            normal: received ? totals.normal : '-',
+            blocked: received ? totals.blocked : '-',
+            accountedTotal: received ? totals.accountedTotal : '-',
             differencePercentage: received && totals.sent > 0
                 ? `${(((totals.received - totals.sent) / totals.sent) * 100).toFixed(2)}%`
                 : '-',

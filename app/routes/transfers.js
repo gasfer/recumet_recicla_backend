@@ -1,11 +1,12 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getTransfersPaginate, newTransfer, deleteTransfer, receivedTransfer, getTransferFindOne } = require('../controllers/transfers.controller');
-const { getValidateCreate, validateIdTransferPending, getValidateReceived, validateIdTransfer } = require('../middlewares/validators/transfers');
+const { getTransfersPaginate, newTransfer, deleteTransfer, receivedTransfer, getTransferFindOne, cancelReception } = require('../controllers/transfers.controller');
+const { getValidateCreate, validateIdTransferPending, getValidateReceived, validateIdTransfer, validateReceptionCancellation } = require('../middlewares/validators/transfers');
 const { printTransferVoucher, printTransferReceptionVoucher, generatePdfReports, generateExcelReports } = require('../controllers/reports/transfers.controller');
 const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
 const { authorizeProductCategoryAccess, detailProductIds } = require('../middlewares/authorize-product-category-access');
+const { authorizeTransferCancellation } = require('../middlewares/authorize-transfer-cancellation');
 
 const router = Router();
 
@@ -102,8 +103,31 @@ router.put('/received', [
  */
 router.delete('/destroy/:id_transfer', [
     validarJWT,
+    authorizeTransferCancellation,
     validateIdTransferPending
 ], deleteTransfer)
+
+/**
+ * @swagger
+ * /transfers/reception/{id_transfer}/cancel:
+ *   post:
+ *     summary: Anular administrativamente una recepción
+ *     tags: [Transfers]
+ *     parameters:
+ *       - in: path
+ *         name: id_transfer
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Recepción anulada
+ */
+router.post('/reception/:id_transfer/cancel', [
+    validarJWT,
+    authorizeTransferCancellation,
+    validateReceptionCancellation
+], cancelReception)
 
 //** REPORTS */
 /**

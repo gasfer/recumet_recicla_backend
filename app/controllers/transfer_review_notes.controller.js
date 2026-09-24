@@ -3,7 +3,7 @@ const { randomUUID } = require('crypto');
 const PdfPrinter = require('pdfmake');
 const fonts = require('../helpers/generator-pdf/fonts');
 const styles = require('../helpers/generator-pdf/styles');
-const { TransferReviewNote } = require('../database/config');
+const { TransferReviewNote, Transfers } = require('../database/config');
 const workflowService = require('../services/transfer-review-workflow.service');
 const resolutionService = require('../services/transfer-review-resolution.service');
 const documentaryService = require('../services/transfer-review-documentary.service');
@@ -15,6 +15,9 @@ const {
 } = require('../services/stock-availability.service');
 const reconciliationManagementService = require('../services/transfer-reconciliation-management.service');
 const automatedResolutionService = require('../services/automated-transfer-review-resolution.service');
+const bulkReconciliationService = require('../services/bulk-transfer-review-reconciliation.service');
+const historicalDifferenceService = require('../services/historical-transfer-difference.service');
+const receptionDifferenceListService = require('../services/reception-difference-reconciliation-list.service');
 const { permissionDeniedError, sendPermissionDenied } = require('../helpers/permission-denied');
 
 const noteInclude = [
@@ -27,6 +30,7 @@ const noteInclude = [
   { association: 'storage', attributes: ['name'] },
   { association: 'details', include: [
     { association: 'product', attributes: ['cod', 'name'] },
+    { association: 'transferDetail' },
     { association: 'inventoryHolds' },
     { association: 'resolutionActions', include: [
       { association: 'user', attributes: ['id', 'full_names'] },
@@ -61,6 +65,8 @@ const sendWorkflowError = (res, error) => {
   return res.status(error.statusCode || 500).json({
     ok: false,
     tracking_id: trackingId,
+    code: error.statusCode ? (error.code || 'TRANSFER_REVIEW_ERROR') : 'INTERNAL_ERROR',
+    details: error.statusCode && Array.isArray(error.details) ? error.details : undefined,
     errors: [{ msg: error.statusCode ? error.message : `Ocurrió un imprevisto interno. Informe a soporte el código ${trackingId}.` }],
   });
 };
@@ -72,6 +78,17 @@ const findAuthorizedNote = async (req) => {
     throw permissionDeniedError('consultar revisiones de esta sucursal');
   }
   return note;
+};
+
+const findAuthorizedTransfer = async (req) => {
+  const transfer = await Transfers.findByPk(req.params.id_transfer, {
+    attributes: ['id', 'id_sucursal_received'],
+  });
+  if (!transfer) throw Object.assign(new Error('Traslado no encontrado.'), { statusCode: 404 });
+  if (!canAccessSucursal(req.userAuth, transfer.id_sucursal_received)) {
+    throw permissionDeniedError('consultar esta recepción');
+  }
+  return transfer;
 };
 
 const getReviewNote = async (req = request, res = response) => {
@@ -97,6 +114,29 @@ const getManagedReconciliations = async (req = request, res = response) => {
       idSucursal, dateFrom: req.query.date_from, dateTo: req.query.date_to,
     });
     return res.status(200).json({ ok: true, reconciliations });
+  } catch (error) { return sendWorkflowError(res, error); }
+};
+
+const getReceptionDifferences = async (req = request, res = response) => {
+  try {
+    const idSucursal = Number(req.query.id_sucursal);
+    const idStorage = Number(req.query.id_storage);
+    if (!idSucursal || !idStorage) {
+      return res.status(422).json({ ok: false, errors: [{ msg: 'Debe seleccionar sucursal y almacén.' }] });
+    }
+    if (!canAccessSucursal(req.userAuth, idSucursal)) return sendPermissionDenied(res, 'consultar esta sucursal');
+    const differences = await receptionDifferenceListService.list({
+      idSucursal,
+      idStorage,
+      page: req.query.page,
+      limit: req.query.limit,
+      status: req.query.status,
+      type: req.query.type,
+      query: req.query.query,
+      dateFrom: req.query.date_from,
+      dateTo: req.query.date_to,
+    });
+    return res.status(200).json({ ok: true, differences });
   } catch (error) { return sendWorkflowError(res, error); }
 };
 
@@ -157,6 +197,42 @@ const getTraceability = async (req = request, res = response) => {
       return sendPermissionDenied(res, 'consultar esta recepción');
     }
     return res.status(200).json({ ok: true, traceability });
+  } catch (error) {
+    return sendWorkflowError(res, error);
+  }
+};
+
+const previewHistoricalDifferenceCompletion = async (req = request, res = response) => {
+  try {
+    await findAuthorizedTransfer(req);
+    const preview = await historicalDifferenceService.previewCompletion({
+      transferId: Number(req.params.id_transfer),
+      detailId: Number(req.params.detail_id),
+      mermaProductId: req.query.id_merma_product ? Number(req.query.id_merma_product) : null,
+    });
+    return res.status(200).json({ ok: true, preview });
+  } catch (error) {
+    return sendWorkflowError(res, error);
+  }
+};
+
+const completeHistoricalDifference = async (req = request, res = response) => {
+  try {
+    await findAuthorizedTransfer(req);
+    const result = await historicalDifferenceService.completeDifference({
+      transferId: Number(req.params.id_transfer),
+      detailId: Number(req.params.detail_id),
+      mermaProductId: req.body.id_merma_product ? Number(req.body.id_merma_product) : null,
+      previewFingerprint: String(req.body.preview_fingerprint || ''),
+      reason: String(req.body.reason || '').trim(),
+      idempotencyKey: req.header('Idempotency-Key') || req.body.idempotency_key || randomUUID(),
+      actorUserId: req.userAuth.id,
+    });
+    return res.status(result.idempotent ? 200 : 201).json({
+      ok: true,
+      msg: result.idempotent ? 'El registro histórico ya había sido completado.' : 'Registro histórico completado correctamente.',
+      ...result,
+    });
   } catch (error) {
     return sendWorkflowError(res, error);
   }
@@ -386,6 +462,25 @@ const confirmAutomaticResolution = async (req = request, res = response) => {
   } catch (error) { return sendWorkflowError(res, error); }
 };
 
+const previewBulkReconciliation = async (req = request, res = response) => {
+  try {
+    await findAuthorizedNote(req);
+    const preview = await bulkReconciliationService.preview({ noteId: Number(req.params.id), items: req.body.items });
+    return res.status(200).json({ ok: true, preview });
+  } catch (error) { return sendWorkflowError(res, error); }
+};
+
+const confirmBulkReconciliation = async (req = request, res = response) => {
+  try {
+    await findAuthorizedNote(req);
+    const result = await bulkReconciliationService.confirm({
+      noteId: Number(req.params.id), items: req.body.items,
+      idempotencyKey: req.header('Idempotency-Key') || req.body.idempotency_key || randomUUID(), actorUserId: req.userAuth.id,
+    });
+    return res.status(result.idempotent ? 200 : 201).json({ ok: true, msg: 'Conciliación agrupada aplicada.', ...result });
+  } catch (error) { return sendWorkflowError(res, error); }
+};
+
 const printReviewNote = async (req = request, res = response) => {
   try {
     const note = await findAuthorizedNote(req);
@@ -457,12 +552,15 @@ const printReviewNote = async (req = request, res = response) => {
 
 module.exports = {
   getManagedReconciliations,
+  getReceptionDifferences,
   reverseReconciliation,
   deleteReconciliation,
   getReviewNote,
   getOpenReviews,
   getAssignableUsers,
   getTraceability,
+  previewHistoricalDifferenceCompletion,
+  completeHistoricalDifference,
   getReviewReport,
   getReviewStockDiagnostic,
   getRetainedWithoutAdjustment,
@@ -476,5 +574,7 @@ module.exports = {
   documentaryCloseReviewDetail,
   previewAutomaticResolution,
   confirmAutomaticResolution,
+  previewBulkReconciliation,
+  confirmBulkReconciliation,
   printReviewNote,
 };

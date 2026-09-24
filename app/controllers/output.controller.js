@@ -6,6 +6,11 @@ const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
 const { validaOpenCajaSmall } = require("../middlewares/validators/caja_small");
 const { hasAvailableStock } = require('../services/stock-availability.service');
+const { ValuedKardexService } = require('../services/valued-kardex.service');
+const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
+const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
+
+const valuedKardex = new ValuedKardexService();
 
 
 const getOutputFindOne = async (req = request, res = response) => {
@@ -145,6 +150,8 @@ const newOutput = async (req = request, res = response) => {
             id_storage,
             number_registry
         } = output_data;
+        const integrityLocations = output_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage }));
+        const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
 
         // GENERAR NUMERO AUTOMATICO SI ES "SIN FICHA"
             if (
@@ -228,7 +235,7 @@ const newOutput = async (req = request, res = response) => {
 
             detail.id_output = id_output;
 
-            await DetailsOutput.create(
+            const createdDetail = await DetailsOutput.create(
                 detail,
                 { transaction: t }
             );
@@ -256,14 +263,17 @@ const newOutput = async (req = request, res = response) => {
                 listProductNotStock.push({
                     msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`
                 });
+                continue;
             }
 
-            stock.stock =
-                Number(stock.stock) -
-                Number(detail.quantity);
-
-            await stock.save({
-                transaction: t
+            await applyDerivedStockEffect({
+                productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
+                quantity: detail.quantity, direction: 'OUTPUT', transaction: t,
+            });
+            await valuedKardex.recordMovement({
+                sourceType: 'OUTPUT', sourceId: id_output, sourceDetailId: createdDetail.id, effectType: 'ORIGINAL',
+                id_product: detail.id_product, id_sucursal, id_storage, id_user: req.userAuth.id,
+                direction: 'OUTPUT', quantity: detail.quantity, movementDate: output.date_voucher || new Date(), transaction: t,
             });
         }
 
@@ -411,6 +421,7 @@ const newOutput = async (req = request, res = response) => {
             status: true
         }, { transaction: t });
 
+        await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
 
         return res.status(201).json({
@@ -480,6 +491,11 @@ const updateOutput = async (req = request, res = response) => {
                 transaction:t
             }
         );
+        const integrityLocations = [
+            ...output_old.detailsOutput.map(({ id_product }) => ({ productId: id_product, sucursalId: output_old.id_sucursal, storageId: output_old.id_storage })),
+            ...output_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage })),
+        ];
+        const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
 
         // UPDATE OUTPUT
         await Output.update(
@@ -552,12 +568,9 @@ const updateOutput = async (req = request, res = response) => {
 
             if(stock){
 
-                stock.stock =
-                    Number(stock.stock)+
-                    Number(detail_old.quantity);
-
-                await stock.save({
-                    transaction:t
+                await applyDerivedStockEffect({
+                    productId: detail_old.id_product, sucursalId: output_old.id_sucursal,
+                    storageId: output_old.id_storage, quantity: detail_old.quantity, transaction: t,
                 });
             }
         }
@@ -619,12 +632,9 @@ const updateOutput = async (req = request, res = response) => {
                 continue;
             }
 
-            stock.stock =
-                Number(stock.stock) -
-                Number(detail.quantity);
-
-            await stock.save({
-                transaction:t
+            await applyDerivedStockEffect({
+                productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
+                quantity: detail.quantity, direction: 'OUTPUT', transaction: t,
             });
 
             detail.id_output =
@@ -839,6 +849,7 @@ const updateOutput = async (req = request, res = response) => {
 
         },{ transaction:t });
 
+        await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
 
         return res.status(201).json({
@@ -885,14 +896,24 @@ const anularOutput = async (req = request, res = response) => {
         output_anular.status = 'INACTIVE';   
         await output_anular.save({transaction: t});
         const { id_sucursal, id_storage, } = output_anular;
+        const integrityLocations = output_anular.detailsOutput.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage }));
+        const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         for (const detail of output_anular.detailsOutput) {
             const stock = await Stock.findOne({
                 where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
                 lock: true,
                 transaction: t
             });
-            stock.stock = Number(stock.stock) + Number(detail.quantity);
-            await stock.save({ transaction: t });
+            await applyDerivedStockEffect({
+                productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
+                quantity: detail.quantity, transaction: t,
+            });
+            await valuedKardex.reverseOriginal({
+                originalSourceType: 'OUTPUT', originalSourceId: output_anular.id, originalSourceDetailId: detail.id,
+                sourceType: 'REVERSAL', sourceId: `OUTPUT_CANCELLATION:${output_anular.id}`, sourceDetailId: detail.id,
+                effectType: 'REVERSE_OUTPUT', id_user: req.userAuth.id, movementDate: new Date(),
+                id_product: detail.id_product, id_sucursal, id_storage, transaction: t,
+            });
         }
         //**Cuenta por pagar */
         const accountReceivable = await AccountsReceivable.findOne({
@@ -922,6 +943,7 @@ const anularOutput = async (req = request, res = response) => {
             id_reference: output_anular.id,
             status: true
         }, { transaction: t }); 
+        await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,

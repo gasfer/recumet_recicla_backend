@@ -1,8 +1,11 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
-const { getKardexPaginate, getKardexFisicoPaginate, getTotalStockRecumet, getStockDiagnosticHandler, syncStocksHandler } = require("../controllers/kardex.controller");
+const { getKardexPaginate, getDailyKardexPaginate, getKardexFisicoPaginate, getTotalStockRecumet, getStockDiagnosticHandler, syncStocksHandler } = require("../controllers/kardex.controller");
 const { generatePdfReports, generateExcelReports, generatePdfReportsKardexFisico, generateExcelReportsKardexFisico, generatePdfReportsExistencia, generateExcelReportsExistencia } = require('../controllers/reports/kardex.controller');
-const { generatePdfReportsTotalStock, generateExcelReportsTotalStock } = require('../controllers/reports/total-stock-recumet.controller');
+const { generatePdfReportsTotalStock, generateExcelReportsTotalStock, generateExcelConsolidatedReportsTotalStock } = require('../controllers/reports/total-stock-recumet.controller');
+const stockReconciliation = require('../controllers/stock_reconciliation.controller');
+const { authorizeStockReconciliation } = require('../middlewares/authorize-stock-reconciliation');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
 
@@ -16,11 +19,23 @@ const router = Router();
 
 router.get('/diagnostic', [
     validarJWT,
+    authorizeStockReconciliation('read'),
 ], getStockDiagnosticHandler);
 
 router.put('/sync-stocks', [
     validarJWT,
+    authorizeStockReconciliation('investigate'),
 ], syncStocksHandler);
+
+router.post('/reconciliation-cases/detect', [validarJWT, authorizeStockReconciliation('investigate')], stockReconciliation.detect);
+router.get('/reconciliation-cases', [validarJWT, authorizeStockReconciliation('read')], stockReconciliation.list);
+router.get('/reconciliation-authorizers', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.authorizers);
+router.get('/reconciliation-count-responsibles', [validarJWT, authorizeStockReconciliation('investigate')], stockReconciliation.countResponsibles);
+router.get('/reconciliation-cases/:id', [validarJWT, authorizeStockReconciliation('read')], stockReconciliation.getOne);
+router.put('/reconciliation-cases/:id/investigation', [validarJWT, authorizeStockReconciliation('investigate')], stockReconciliation.investigate);
+router.post('/reconciliation-cases/:id/preview', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.preview);
+router.post('/reconciliation-cases/:id/resolve', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.resolve);
+router.post('/reconciliation-cases-batch/resolve', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.batchResolve);
 
 /**
  * @swagger
@@ -44,6 +59,11 @@ router.get('/total-stock-recumet/excel', [
     validarJWT,
 ], generateExcelReportsTotalStock);
 
+router.get('/total-stock-recumet/excel-consolidated', [
+    validarJWT,
+    authorizeModulePermission('KARDEX', 'reports'),
+], generateExcelConsolidatedReportsTotalStock);
+
 /**
  * @swagger
  * /kardex:
@@ -57,6 +77,7 @@ router.get('/total-stock-recumet/excel', [
 router.get('/', [
     validarJWT,
 ], getKardexPaginate);
+router.get('/daily', [validarJWT], getDailyKardexPaginate);
 
 /**
  * @swagger

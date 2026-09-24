@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
       Transfers.belongsTo(models.User,    {as: 'user_received',     foreignKey:'id_user_received'});
       Transfers.hasMany(models.DetailsTransfers,{as: 'detailsTransfers', foreignKey:'id_transfer'});
       Transfers.hasMany(models.TransferReviewNote,{as: 'reviewNotes', foreignKey:'id_transfer'});
+      Transfers.hasMany(models.TransferHistoricalDifferenceCompletion,{as: 'historicalDifferenceCompletions', foreignKey:'id_transfer'});
       Transfers.belongsTo(models.Scale,{as: 'scale', foreignKey:'id_scales'});
     }
   }

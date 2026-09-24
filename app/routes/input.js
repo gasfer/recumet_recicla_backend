@@ -1,9 +1,10 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getInputsPaginate, newInput, anularInput, previewAnularInput, updateInput, getInputFindOne, uploadFileVoucher } = require('../controllers/input.controller');
+const { getInputsPaginate, newInput, anularInput, previewAnularInput, updateInput, getInputFindOne, getOperationalDate, uploadFileVoucher } = require('../controllers/input.controller');
 const { getValidateCreate, validateIdInput, getValidateUpdate } = require('../middlewares/validators/input');
 const { generatePdfReports, generateExcelReports, generatePdfDetailsReports, generateExcelDetailsReports, printInputVoucher, generatePdfDetailsCPPReports } = require('../controllers/reports/input.controller');
+const { getPurchaseReport, generatePurchaseReportExcel, generatePurchaseReportPdf, generatePurchaseReportDetailsPdf, generatePurchaseReportDetailsPdfCpp, generatePurchaseReportExcelDetails } = require('../controllers/purchase-report.controller');
 const expressfileUpload = require('express-fileupload');
 const { filesExist, filesValidateSize } = require('../middlewares/validators/validar-files');
 const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
@@ -11,6 +12,8 @@ const { authorizeProductCategoryAccess, detailProductIds } = require('../middlew
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
+
+router.get('/operational-date', [validarJWT], getOperationalDate);
 
 
 /**
@@ -33,6 +36,11 @@ const router = Router();
 router.get('/', [
     validarJWT,
 ], getInputsPaginate);
+
+router.get('/purchase-report', [
+    validarJWT,
+    authorizeModulePermission('REPORTE COMPRAS', 'reports'),
+], getPurchaseReport);
 
 /**
  * @swagger
@@ -208,6 +216,36 @@ router.get('/pdf/details/cpp', [
 router.get('/excel', [
     validarJWT,
 ], generateExcelReports);
+
+router.get('/purchase-report/excel', [
+    validarJWT,
+    authorizeModulePermission('REPORTE COMPRAS', 'reports'),
+], generatePurchaseReportExcel);
+
+router.get('/purchase-report/pdf', [
+    validarJWT,
+    authorizeModulePermission('REPORTE COMPRAS', 'reports'),
+], generatePurchaseReportPdf);
+
+router.get('/purchase-report/pdf/details', [
+    validarJWT,
+    authorizeModulePermission('REPORTE COMPRAS', 'reports'),
+], generatePurchaseReportDetailsPdf);
+
+router.get('/purchase-report/pdf/details/cpp', [
+    validarJWT,
+    authorizeModulePermission('REPORTE COMPRAS', 'reports'),
+], generatePurchaseReportDetailsPdfCpp);
+
+router.get('/purchase-report/excel/details', [
+    validarJWT,
+    authorizeModulePermission('REPORTE COMPRAS', 'reports'),
+], generatePurchaseReportExcelDetails);
+
+router.get('/purchase-report/excel/summary-by-product', [
+    validarJWT,
+    authorizeModulePermission('REPORTE COMPRAS', 'reports'),
+], generatePurchaseReportExcelDetails);
 
 /**
  * @swagger

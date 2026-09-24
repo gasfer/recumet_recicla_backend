@@ -112,6 +112,11 @@ const verifyClassification = async ({ note, detail, reference, quantity, transac
     documentId: classified.id,
     documentNumber: classified.cod,
     documentQuantity,
+    affectedLocations: [{
+      productId: detail.id_product,
+      sucursalId: note.id_sucursal,
+      storageId: note.id_storage,
+    }],
   };
 };
 
@@ -171,6 +176,15 @@ const verifyTransfer = async ({ note, detail, reference, quantity, transaction }
     documentId: correctiveTransfer.id,
     documentNumber: correctiveTransfer.cod,
     documentQuantity,
+    affectedLocations: [{
+      productId: detail.id_product,
+      sucursalId: correctiveTransfer.id_sucursal_send,
+      storageId: correctiveTransfer.id_storage_send,
+    }, {
+      productId: detail.id_product,
+      sucursalId: correctiveTransfer.id_sucursal_received,
+      storageId: correctiveTransfer.id_storage_received,
+    }],
   };
 };
 

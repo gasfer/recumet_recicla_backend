@@ -9,9 +9,24 @@ const path = require('path');
 const fs = require('fs');
 const { hasAvailableStock } = require('../services/stock-availability.service');
 const purchaseAudit = require('../services/purchase-audit.service');
+const { ValuedKardexService } = require('../services/valued-kardex.service');
+const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
+const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
 
 const { resolveAuthorizer } = require('../services/purchase-authorization.service');
 const { classifyInitialPricing } = require('../services/purchase-pricing-authorization-policy.service');
+
+const valuedKardex = new ValuedKardexService();
+const parseIds = (value) => String(value || '').split(',').map(Number).filter(Number.isFinite);
+const OPERATIONAL_INPUT_SORT_FIELDS = new Set(['id', 'cod', 'date_voucher', 'type_registry', 'registry_number', 'total', 'type', 'status']);
+
+const getOperationalOrder = ({ field_sort, order, orderNew }) => {
+    const legacyField = Array.isArray(orderNew) ? orderNew[0] : undefined;
+    const field = OPERATIONAL_INPUT_SORT_FIELDS.has(field_sort) ? field_sort
+        : OPERATIONAL_INPUT_SORT_FIELDS.has(legacyField) ? legacyField : 'date_voucher';
+    const direction = String(order || (Array.isArray(orderNew) ? orderNew[1] : '')).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    return [field, direction];
+};
 
 const auditRequestKey = (req, suffix) => {
     const supplied = req.get('Idempotency-Key');
@@ -54,18 +69,20 @@ const getInputsPaginate = async (req = request, res = response) => {
     try {
         const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
                 id_provider, status, filterBy, date1, date2, orderNew, referral_sources, id_type_provider,
-                old_customer, with_pickup
+                old_customer, with_pickup, field_sort, order
             } = req.query;
+        const sucursalIds = parseIds(id_sucursal);
+        const storageIds = parseIds(id_storage);
         const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
         const whereDateSum = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
         const where = {
             [Op.and]: [
-                id_sucursal   ? { id_sucursal   } : {},
-                id_storage    ? { id_storage    } : {},
+                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
+                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
                 type_pay      ? { type:type_pay } : {},
                 type_registry ? { type_registry } : {},
                 id_provider   ? { id_provider   } : {},
-                { status },
+                { status: status || 'ACTIVE' },
                 { date_voucher: whereDate },
                 referral_sources ? { referral_sources } : {},
                 old_customer ? { old_customer: old_customer == 'SI' } : {},
@@ -74,12 +91,12 @@ const getInputsPaginate = async (req = request, res = response) => {
         };
         const whereSum = {
             [Op.and]: [
-                id_sucursal   ? { id_sucursal   } : {},
-                id_storage    ? { id_storage    } : {},
+                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
+                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
                 type_pay      ? { type:type_pay } : {},
                 type_registry ? { type_registry } : {},
                 id_provider   ? { id_provider   } : {},
-                { status },
+                { status: status || 'ACTIVE' },
                 { date_voucher: whereDateSum },
                 referral_sources ? { referral_sources } : {},
                 old_customer ? { old_customer: old_customer == 'SI' } : {},
@@ -87,7 +104,7 @@ const getInputsPaginate = async (req = request, res = response) => {
             ]
         };
         const optionsDb = {
-            order: [orderNew],
+            order: [getOperationalOrder({ field_sort, order, orderNew })],
             where,
             include: [ 
                 {
@@ -152,6 +169,8 @@ const newInput = async (req = request, res = response) => {
         }
         const correlationId = purchaseAudit.createCorrelationId();
         const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
+        const integrityLocations = input_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage }));
+        const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         //number default, not ficha
         if(type_registry === 'SIN FICHA') {
             const lastInput = await Input.findOne({
@@ -199,22 +218,16 @@ const newInput = async (req = request, res = response) => {
             //**ACTUALIZAR COSTO PRODUCTO */
             //await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});
             //**ACTUALIZAR STOCK */
-            const stock = await Stock.findOne({
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
+            await applyDerivedStockEffect({
+                productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
+                quantity: detail.quantity, transaction: t,
             });
-            if(!stock) {
-                await Stock.create({
-                    stock_min: 1, stock: detail.quantity,
-                    id_product: detail.id_product, id_sucursal, id_storage,
-                    status: true,
-                },{ transaction: t })
-            } else {
-                stock.stock = Number(stock.stock) + Number(detail.quantity);
-                await stock.save({ transaction: t });
-            }
+            await valuedKardex.recordMovement({
+                sourceType: 'INPUT', sourceId: input.id, sourceDetailId: createdDetail.id, effectType: 'ORIGINAL',
+                id_product: detail.id_product, id_sucursal, id_storage, id_user: req.userAuth.id,
+                direction: 'INPUT', quantity: detail.quantity, unitCost: detail.cost,
+                movementDate: input.date_voucher, transaction: t,
+            });
         }
          /* Ingreso si es compra a credito */
         let inputCredit = null;
@@ -285,6 +298,7 @@ const newInput = async (req = request, res = response) => {
             id_reference: input.id,
             status: true
         }, { transaction: t }); 
+        await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,
@@ -338,6 +352,11 @@ const updateInput = async (req = request, res = response) => {
             await t.rollback();
             return res.status(404).json({ ok: false, errors: [{ msg: 'La compra no existe.' }] });
         }
+        const integrityLocations = [
+            ...input_old.detailsInput.map(({ id_product }) => ({ productId: id_product, sucursalId: input_old.id_sucursal, storageId: input_old.id_storage })),
+            ...input_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage })),
+        ];
+        const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         const correlationId = purchaseAudit.createCorrelationId();
         const beforeInput = purchaseAudit.pick(input_old, purchaseAudit.AUDITABLE_INPUT_FIELDS);
         const beforeDetails = input_old.detailsInput.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
@@ -416,8 +435,11 @@ const updateInput = async (req = request, res = response) => {
                         errors: [{ msg: `No se puede modificar la compra: el producto ${detail_old.id_product} tiene sólo ${availability.available_stock} de stock disponible.` }],
                     });
                 }
-                stock.stock = Number(stock.stock) - Number(detail_old.quantity);
-                await stock.save({ transaction: t });
+                await applyDerivedStockEffect({
+                    productId: detail_old.id_product, sucursalId: input_old.id_sucursal,
+                    storageId: input_old.id_storage, quantity: detail_old.quantity,
+                    direction: 'OUTPUT', transaction: t,
+                });
             }
         }
         //*** Actualizar detalles conservando su identidad y reponer stock */
@@ -437,22 +459,10 @@ const updateInput = async (req = request, res = response) => {
             persistedDetails.push(persistedDetail);
              //**ACTUALIZAR COSTO PRODUCTO */
             // await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});     
-            const stock = await Stock.findOne({
-                order: [['id', 'DESC']],
-                where: { id_product:detail.id_product, id_sucursal, id_storage, status: true },
-                lock: true,
-                transaction: t
+            await applyDerivedStockEffect({
+                productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
+                quantity: detail.quantity, transaction: t,
             });
-            if(!stock) {
-                await Stock.create({
-                    stock_min: 1, stock: detail.quantity,
-                    id_product: detail.id_product, id_sucursal, id_storage,
-                    status: true,
-                },{ transaction: t })
-            } else {
-                stock.stock = Number(stock.stock) + Number(detail.quantity);
-                await stock.save({ transaction: t });
-            }
         }
         for (const removedDetail of remainingOldDetails.values()) {
             await removedDetail.update({ status: 'INACTIVE', removed_by: req.userAuth.id, removed_at: new Date(), removal_reason: reason || 'RETIRADO DURANTE LA EDICIÓN DE LA COMPRA' }, { transaction: t });
@@ -567,6 +577,7 @@ const updateInput = async (req = request, res = response) => {
             id_reference: id_input,
             status: true
         }, { transaction: t }); 
+        await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,
@@ -583,6 +594,9 @@ const updateInput = async (req = request, res = response) => {
         });
     }
 }
+
+const getOperationalDate = (req = request, res = response) =>
+    res.status(200).json({ ok: true, date: new Date().toISOString() });
 
 const previewAnularInput = async (req = request, res = response) => {
     try {
@@ -632,6 +646,8 @@ const anularInput = async (req = request, res = response) => {
             await t.rollback();
             return res.status(404).json({ ok: false, errors: [{ msg: 'La compra activa no existe.' }] });
         }
+        const integrityLocations = input_anular.detailsInput.map(({ id_product }) => ({ productId: id_product, sucursalId: input_anular.id_sucursal, storageId: input_anular.id_storage }));
+        const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         const correlationId = purchaseAudit.createCorrelationId();
         const beforeInput = purchaseAudit.pick(input_anular, purchaseAudit.AUDITABLE_INPUT_FIELDS);
         input_anular.status = 'INACTIVE';
@@ -654,8 +670,16 @@ const anularInput = async (req = request, res = response) => {
                     errors: [{ msg: `No se puede anular la compra: el producto ${detail.id_product} tiene sólo ${availability.available_stock} de stock disponible.` }],
                 });
             }
-            stock.stock = Number(stock.stock) - Number(detail.quantity);
-            await stock.save({ transaction: t });
+            await applyDerivedStockEffect({
+                productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
+                quantity: detail.quantity, direction: 'OUTPUT', transaction: t,
+            });
+            await valuedKardex.reverseOriginal({
+                originalSourceType: 'INPUT', originalSourceId: input_anular.id, originalSourceDetailId: detail.id,
+                sourceType: 'REVERSAL', sourceId: `INPUT_CANCELLATION:${input_anular.id}`, sourceDetailId: detail.id,
+                effectType: 'REVERSE_INPUT', id_user: req.userAuth.id, movementDate: new Date(),
+                id_product: detail.id_product, id_sucursal, id_storage, transaction: t,
+            });
         }
         const account = input_anular.accounts_payable;
         if (account?.status) {
@@ -682,6 +706,7 @@ const anularInput = async (req = request, res = response) => {
             id_reference: input_anular.id,
             status: true
         }, { transaction: t }); 
+        await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,
@@ -740,6 +765,7 @@ const uploadFileVoucher = async (req, res) => {
 module.exports = {
     getInputsPaginate,
     getInputFindOne,
+    getOperationalDate,
     newInput,
     updateInput,
     anularInput,

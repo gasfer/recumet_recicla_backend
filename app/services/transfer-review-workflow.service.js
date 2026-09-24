@@ -10,9 +10,17 @@ const {
   Transfers,
   User,
 } = require('../database/config');
-const { REVIEW_STATUSES, DETAIL_REVIEW_STATUSES } = require('../constants/transfer-review');
+const {
+  REVIEW_STATUSES,
+  DETAIL_REVIEW_STATUSES,
+  RECONCILIATION_SPECIFIC_EFFECTS,
+  REVIEW_HOLD_DISPOSITIONS,
+} = require('../constants/transfer-review');
 const notificationService = require('./notification.service');
-const { getReviewStockKardexDifferences, getStockKardexIrregularities } = require('./stock-availability.service');
+const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
+const stockAvailabilityService = require('./stock-availability.service');
+const { buildOpenReviewWhere } = require('./open-reception-review-query.service');
+const historicalDifferenceService = require('./historical-transfer-difference.service');
 
 const commonNoteInclude = [
   { association: 'assignedUser', attributes: ['id', 'full_names'] },
@@ -20,6 +28,7 @@ const commonNoteInclude = [
   { association: 'details', include: [
     { association: 'product', attributes: ['id', 'cod', 'name'] },
     { association: 'inventoryHolds' },
+    { association: 'transferDetail' },
   ] },
 ];
 
@@ -122,16 +131,11 @@ const createEvent = (noteId, userId, eventType, description, metadata = {}, tran
 );
 
 const listOpenReviews = async ({ idSucursal, idStorage, assignedUserId, limit = 100 }) => {
-  const where = {
-    [Op.or]: [
-      { reconciliation_status: { [Op.ne]: REVIEW_STATUSES.COMPLETED } },
-      { resolved_at: null },
-    ],
+  const where = buildOpenReviewWhere({
     ...(idSucursal ? { id_sucursal: idSucursal } : {}),
     ...(idStorage ? { id_storage: idStorage } : {}),
     ...(assignedUserId ? { id_assigned_user: assignedUserId } : {}),
-    management_status: { [Op.ne]: 'ELIMINADA' },
-  };
+  });
   const notes = await TransferReviewNote.findAll({
     where,
     include: [
@@ -158,12 +162,16 @@ const listOpenReviews = async ({ idSucursal, idStorage, assignedUserId, limit = 
   )));
   return notes.map((note) => {
     const plain = note.toJSON();
+    const activeDetails = (plain.details || []).filter((detail) =>
+      !isAcceptedToleranceDecision(detail.transferDetail?.tolerance_decision)
+    );
     return {
       ...plain,
-      pending_items: plain.details.filter((detail) => detail.reconciliation_status !== DETAIL_REVIEW_STATUSES.COMPLETED).length,
+      details: activeDetails,
+      pending_items: activeDetails.filter((detail) => detail.reconciliation_status !== DETAIL_REVIEW_STATUSES.COMPLETED).length,
       age_days: Math.max(0, Math.floor((Date.now() - new Date(plain.date).getTime()) / 86400000)),
     };
-  });
+  }).filter((note) => note.details.length > 0 && (note.pending_items > 0 || !note.resolved_at));
 };
 
 const listAssignableUsers = async (idSucursal) => {
@@ -201,6 +209,7 @@ const getTransferTraceability = async (transferId) => {
       { association: 'reviewNotes', include: [
         ...commonNoteInclude,
         { association: 'registeredProduct', attributes: ['id', 'cod', 'name'] },
+        { association: 'kardexMovement' },
         { association: 'events', include: [{ association: 'user', attributes: ['id', 'full_names'] }] },
         { association: 'evidences', include: [{ association: 'user', attributes: ['id', 'full_names'] }] },
         { association: 'resolutionActions', include: [
@@ -216,7 +225,7 @@ const getTransferTraceability = async (transferId) => {
     ],
   });
   if (!transfer) throw Object.assign(new Error('Traslado no encontrado.'), { statusCode: 404 });
-  const irregularities = await getStockKardexIrregularities({
+  const irregularities = await stockAvailabilityService.getStockKardexIrregularities({
     idSucursal: transfer.id_sucursal_received,
     idStorage: transfer.id_storage_received,
     limit: 2000,
@@ -224,9 +233,91 @@ const getTransferTraceability = async (transferId) => {
   const relatedIrregularities = irregularities.filter(({ traceable_transfers: traceableTransfers = [] }) => (
     traceableTransfers.some(({ transfer_id: relatedTransferId }) => Number(relatedTransferId) === Number(transfer.id))
   ));
+  const historicalDifferenceReconciliation = await historicalDifferenceService.getProjection(transfer.id);
+  const transferJson = transfer.toJSON ? transfer.toJSON() : transfer;
+  const detailsTransfers = (transferJson.detailsTransfers || []).map((detail) => {
+    const sent = Number(detail.quantity || 0);
+    const received = Number(detail.quantity_received || 0);
+    const isAccepted = isAcceptedToleranceDecision(detail.tolerance_decision);
+    const normalQuantity = isAccepted ? received : Math.min(sent, received);
+    const diffPct = detail.receipt_difference_percentage !== null && detail.receipt_difference_percentage !== undefined
+      ? Number(detail.receipt_difference_percentage)
+      : null;
+    const blockedQuantity = isAccepted ? 0 : Math.abs(received - sent);
+    const isShortage = !isAccepted && received < sent;
+
+    const matchingNote = (transferJson.reviewNotes || []).find((note) =>
+      (note.details || []).some((nd) => Number(nd.id_detail_transfer) === Number(detail.id))
+    );
+    const matchingNoteDetail = matchingNote
+      ? (matchingNote.details || []).find((nd) => Number(nd.id_detail_transfer) === Number(detail.id))
+      : null;
+    const heldQuantity = Number((matchingNoteDetail?.inventoryHolds || [])
+      .filter(({ disposition, id_product: holdProductId }) => (
+        !isShortage
+        && Number(holdProductId) === Number(detail.id_product)
+        && (disposition === REVIEW_HOLD_DISPOSITIONS.IN_REVIEW
+          || disposition === REVIEW_HOLD_DISPOSITIONS.RETAINED_WITHOUT_ADJUSTMENT)
+      ))
+      .reduce((total, hold) => total + Number(hold.quantity || 0), 0));
+    const availableQuantity = Math.max(0, received - heldQuantity);
+
+    let releaseStatus = 'NO_APLICA';
+    let blockedDocument = null;
+
+    if (transfer.status === 'PENDING') {
+      releaseStatus = 'PENDIENTE';
+    } else if (isAccepted) {
+      releaseStatus = 'ACEPTADO';
+    } else if (blockedQuantity > 0) {
+      if (matchingNote) {
+        blockedDocument = {
+          id: matchingNote.id,
+          registry_number: matchingNote.registry_number,
+          type: matchingNote.type,
+        };
+      }
+      if (matchingNoteDetail?.reconciliation_status === DETAIL_REVIEW_STATUSES.COMPLETED || detail.accounting_status === 'CONTABILIZADO') {
+        releaseStatus = 'LIBERADO';
+      } else {
+        releaseStatus = 'BLOQUEADO';
+      }
+    }
+
+    return {
+      ...detail,
+      quantity_sent: sent,
+      quantity_physical_received: received,
+      quantity_normal_received: normalQuantity,
+      quantity_blocked_difference: blockedQuantity,
+      quantity_shortage_pending: isShortage ? blockedQuantity : 0,
+      is_shortage: isShortage,
+      quantity_held: heldQuantity,
+      quantity_available: availableQuantity,
+      inventory_integrity: relatedIrregularities.some(({ id_product }) => Number(id_product) === Number(detail.id_product))
+        ? 'PENDIENTE_REGULARIZACION'
+        : 'INTEGRA',
+      receipt_difference_percentage: diffPct,
+      blocked_document: blockedDocument,
+      release_status: releaseStatus,
+    };
+  });
+
+  const reviewNotes = (transferJson.reviewNotes || []).map((note) => ({
+    ...note,
+    resolutionActions: (note.resolutionActions || []).map((action) => ({
+      ...action,
+      specific_effect: RECONCILIATION_SPECIFIC_EFFECTS[action.strategy] || null,
+      applied_effect: RECONCILIATION_SPECIFIC_EFFECTS[action.strategy] || null,
+    })),
+  }));
+
   return {
-    ...transfer.toJSON(),
+    ...transferJson,
+    detailsTransfers,
+    reviewNotes,
     stock_kardex_irregularities: relatedIrregularities,
+    historical_difference_reconciliation: historicalDifferenceReconciliation,
   };
 };
 
@@ -384,7 +475,7 @@ const closeReview = async ({ noteId, actorUserId }) => sequelize.transaction(asy
   if (note.reconciliation_status !== REVIEW_STATUSES.COMPLETED) {
     throw Object.assign(new Error('No se puede cerrar: existen productos pendientes de conciliación.'), { statusCode: 422 });
   }
-  const differences = await getReviewStockKardexDifferences({ noteId, transaction });
+  const differences = await stockAvailabilityService.getReviewStockKardexDifferences({ noteId, transaction });
   if (differences.length > 0) {
     const products = differences.map(({ cod, difference }) => `${cod} (diferencia ${Number(difference).toFixed(4)})`).join(', ');
     throw Object.assign(new Error(`No se puede cerrar: stock físico y Kardex aún no cuadran para ${products}.`), { statusCode: 409 });
