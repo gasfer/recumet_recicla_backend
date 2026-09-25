@@ -1,9 +1,6 @@
-const { Company } = require('../database/config');
-const { getDecimalPlaces } = require('./decimals-value');
+const { loadDecimals } = require('./decimals-value');
 
-const getNumberDecimal = async () => {
-    return getDecimalPlaces();
-}
+const getNumberDecimal = async () => loadDecimals();
 
 module.exports = {
     getNumberDecimal,

@@ -21,10 +21,11 @@ const {
   STOCK_RECONCILIATION_STATUSES: STATUSES,
   STOCK_RECONCILIATION_STRATEGIES: STRATEGIES,
 } = require('../constants/stock-reconciliation');
-const { EPSILON, investigationErrors, buildPreview, assertStatusTransition } = require('./stock-reconciliation-policy.service');
+const { getEpsilon, investigationErrors, buildPreview, assertStatusTransition } = require('./stock-reconciliation-policy.service');
+const { decimalSubtract, decimalToNumber } = require('../helpers/number-formatter');
 
 const serviceError = (message, statusCode = 422, details) => Object.assign(new Error(message), { statusCode, details });
-const normalizeNumber = (value) => Number(Number(value || 0).toFixed(4));
+const normalizeNumber = (value) => decimalToNumber(value || 0);
 const directionFor = (difference) => Number(difference) > 0 ? 'STOCK_MAYOR_QUE_KARDEX' : 'KARDEX_MAYOR_QUE_STOCK';
 const normalizeFingerprintTimestamp = (value) => {
   if (!value) return '';
@@ -77,7 +78,7 @@ const getCurrentSnapshot = async ({ productId, sucursalId, storageId, transactio
     physical_stock: normalizeNumber(stock.stock), kardex_balance: normalizeNumber(currentKardex?.saldo),
     stock_updated_at: stock.updatedAt?.toISOString?.() || String(stock.updatedAt || ''), kardex_last_id: currentKardex?.id || null,
   };
-  snapshot.physical_kardex_difference = normalizeNumber(snapshot.physical_stock - snapshot.kardex_balance);
+  snapshot.physical_kardex_difference = decimalSubtract(snapshot.physical_stock, snapshot.kardex_balance);
   snapshot.fingerprint = fingerprintFor(snapshot);
   return { stock, snapshot };
 };
@@ -343,10 +344,10 @@ const resolveCase = async ({ caseId, actorUserId, authorizedUserId, idempotencyK
       }
       await applyStockDelta({
         productId: record.id_product, sucursalId: record.id_sucursal, storageId: record.id_storage,
-        delta: Number(preview.stock_after) - Number(stock.stock), transaction,
+        delta: decimalSubtract(preview.stock_after, stock.stock), transaction,
       });
     } else if (record.selected_strategy === STRATEGIES.REGISTER_MISSING_KARDEX) {
-      if (preview.movement.quantity <= EPSILON) throw serviceError('No existe una diferencia que requiera movimiento Kardex.', 409);
+      if (preview.movement.quantity <= getEpsilon()) throw serviceError('No existe una diferencia que requiera movimiento Kardex.', 409);
       movement = await kardexMovements.create({
         type: preview.movement.type, date: new Date(),
         details: `REGULARIZACIÓN STOCK-KARDEX CASO #${record.id}: ${record.cause}`,
@@ -357,11 +358,11 @@ const resolveCase = async ({ caseId, actorUserId, authorizedUserId, idempotencyK
     } else if (record.selected_strategy === STRATEGIES.ADJUST_STOCK_BY_COUNT) {
       await applyStockDelta({
         productId: record.id_product, sucursalId: record.id_sucursal, storageId: record.id_storage,
-        delta: Number(preview.stock_after) - Number(stock.stock), transaction,
+        delta: decimalSubtract(preview.stock_after, stock.stock), transaction,
       });
     }
     const { snapshot: after } = await getCurrentSnapshot({ productId: record.id_product, sucursalId: record.id_sucursal, storageId: record.id_storage, transaction });
-    const resolved = Math.abs(after.physical_kardex_difference) <= EPSILON;
+    const resolved = Math.abs(after.physical_kardex_difference) <= getEpsilon();
     const nextStatus = resolved ? STATUSES.RESOLVED : STATUSES.INVESTIGATING;
     assertStatusTransition(record.status, nextStatus);
     const action = await StockReconciliationAction.create({

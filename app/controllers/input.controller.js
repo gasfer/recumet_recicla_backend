@@ -17,7 +17,11 @@ const { resolveAuthorizer } = require('../services/purchase-authorization.servic
 const { classifyInitialPricing } = require('../services/purchase-pricing-authorization-policy.service');
 
 const valuedKardex = new ValuedKardexService();
-const parseIds = (value) => String(value || '').split(',').map(Number).filter(Number.isFinite);
+const parseIds = (value) => String(value ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => /^\d+$/.test(item))
+    .map(Number);
 const OPERATIONAL_INPUT_SORT_FIELDS = new Set(['id', 'cod', 'date_voucher', 'type_registry', 'registry_number', 'total', 'type', 'status']);
 
 const getOperationalOrder = ({ field_sort, order, orderNew }) => {

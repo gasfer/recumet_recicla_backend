@@ -15,7 +15,8 @@ const { generateConsolidatedInventoryExcel } = require("../../services/inventory
 const { REPORT_COLORS, solidFill, reportThinBorder } = require('../../constants/report-style.constants');
 moment.locale("es");
 
-const imagePath = path.join(__dirname, "../../../uploads/logo.png");
+const { getReportLogoPath } = require('../../helpers/report-logo');
+const imagePath = getReportLogoPath();
 
 const formatEuro = (value, decimal = 2) => {
     if (value === null || value === undefined) return "0";

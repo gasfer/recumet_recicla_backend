@@ -8,8 +8,9 @@ const {
   Transfers,
   DetailsTransfers,
 } = require('../database/config');
+const { decimalAdd, decimalCompare, decimalSubtract, decimalTolerance, formatDecimalEsBo } = require('../helpers/number-formatter');
 
-const EPSILON = 0.0001;
+const getEpsilon = () => decimalTolerance();
 const CLASSIFICATION_TYPE = 'NOTA_CLASIFICACION_MERMA';
 const EXCESS_TRANSFER_TYPE = 'NOTA_TRASLADO_ORIGEN';
 const SHORTAGE_TRANSFER_TYPE = 'NOTA_TRASLADO_COMPLEMENTARIO';
@@ -104,8 +105,8 @@ const verifyClassification = async ({ note, detail, reference, quantity, transac
   );
   await lockOperationalDocument(CLASSIFICATION_TYPE, classified.id, transaction);
   const usedQuantity = await getUsedQuantity(CLASSIFICATION_TYPE, classified.id, transaction);
-  if (usedQuantity + quantity - documentQuantity > EPSILON) {
-    throw verificationError(`La clasificación ${classified.cod} no cubre la diferencia. Disponible para conciliar: ${Math.max(0, documentQuantity - usedQuantity).toFixed(4)}.`);
+  if (decimalSubtract(decimalAdd(usedQuantity, quantity), documentQuantity) > getEpsilon()) {
+    throw verificationError(`La clasificación ${classified.cod} no cubre la diferencia. Disponible para conciliar: ${formatDecimalEsBo(decimalCompare(documentQuantity, usedQuantity) > 0 ? decimalSubtract(documentQuantity, usedQuantity) : 0)}.`);
   }
   return {
     documentType: CLASSIFICATION_TYPE,
@@ -168,8 +169,8 @@ const verifyTransfer = async ({ note, detail, reference, quantity, transaction }
   const documentType = isExcess ? EXCESS_TRANSFER_TYPE : SHORTAGE_TRANSFER_TYPE;
   await lockOperationalDocument(documentType, correctiveTransfer.id, transaction);
   const usedQuantity = await getUsedQuantity(documentType, correctiveTransfer.id, transaction);
-  if (usedQuantity + quantity - documentQuantity > EPSILON) {
-    throw verificationError(`El traslado ${correctiveTransfer.cod} no cubre la diferencia. Disponible para conciliar: ${Math.max(0, documentQuantity - usedQuantity).toFixed(4)}.`);
+  if (decimalSubtract(decimalAdd(usedQuantity, quantity), documentQuantity) > getEpsilon()) {
+    throw verificationError(`El traslado ${correctiveTransfer.cod} no cubre la diferencia. Disponible para conciliar: ${formatDecimalEsBo(decimalCompare(documentQuantity, usedQuantity) > 0 ? decimalSubtract(documentQuantity, usedQuantity) : 0)}.`);
   }
   return {
     documentType,

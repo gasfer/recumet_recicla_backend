@@ -21,6 +21,7 @@ const { isAcceptedToleranceDecision } = require('../constants/transfer-reception
 const stockAvailabilityService = require('./stock-availability.service');
 const { buildOpenReviewWhere } = require('./open-reception-review-query.service');
 const historicalDifferenceService = require('./historical-transfer-difference.service');
+const { formatDecimalEsBo } = require('../helpers/number-formatter');
 
 const commonNoteInclude = [
   { association: 'assignedUser', attributes: ['id', 'full_names'] },
@@ -477,7 +478,7 @@ const closeReview = async ({ noteId, actorUserId }) => sequelize.transaction(asy
   }
   const differences = await stockAvailabilityService.getReviewStockKardexDifferences({ noteId, transaction });
   if (differences.length > 0) {
-    const products = differences.map(({ cod, difference }) => `${cod} (diferencia ${Number(difference).toFixed(4)})`).join(', ');
+    const products = differences.map(({ cod, difference }) => `${cod} (diferencia ${formatDecimalEsBo(difference)})`).join(', ');
     throw Object.assign(new Error(`No se puede cerrar: stock físico y Kardex aún no cuadran para ${products}.`), { statusCode: 409 });
   }
   note.resolved_at = new Date();

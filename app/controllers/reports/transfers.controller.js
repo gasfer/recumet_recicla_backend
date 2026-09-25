@@ -7,15 +7,17 @@ const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
 const { whereDateForType } = require("../../helpers/where_range");
-const imagePath = path.join(__dirname, '../../../uploads/logo.png');
+const { getReportLogoPath } = require('../../helpers/report-logo');
+const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { buildTransferVoucherSummary } = require('../../helpers/transfer-reception');
+const { decimalAdd, formatDecimalEsBo } = require('../../helpers/number-formatter');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
 
-const roundQuantity = (value) => Math.round((Number(value) + Number.EPSILON) * 10000) / 10000;
+const roundQuantity = (value) => formatDecimalEsBo(value || 0);
 
 moment.locale('es'); 
 
@@ -275,7 +277,7 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 { text: 'PESOS TOTALES', colSpan: 2, fontSize: 8, bold: true, alignment: 'right' },
                 '',
                 { text: [...new Set(transfer.detailsTransfers.map((detail) => detail?.product?.unit?.siglas).filter(Boolean))].join(','), fontSize: 8, bold: true, alignment: 'center' },
-                { text: roundQuantity(transfer.detailsTransfers.reduce((total, detail) => total + Number(detail.quantity || 0), 0)), fontSize: 8, bold: true, alignment: 'center' },
+                { text: roundQuantity(transfer.detailsTransfers.reduce((total, detail) => decimalAdd(total, detail.quantity || 0), 0)), fontSize: 8, bold: true, alignment: 'center' },
             ],
         );
         sendVoucherPdf(res, dataPdf, `guia-traslado-${transfer.cod}`, HALF_LETTER_PORTRAIT);
@@ -311,10 +313,10 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
             dataPdf[9].table.body.push([
                 { text: `${detail?.product?.cod || ''} - ${detail?.product?.name || ''}`, fontSize: 7 },
                 { text: detail?.product?.unit?.siglas, fontSize: 7, alignment: 'center' },
-                { text: row.sent, fontSize: 7, alignment: 'center' },
-                { text: row.received, fontSize: 7, alignment: 'center' },
-                { text: row.normal, fontSize: 7, alignment: 'center' },
-                { text: row.blocked, fontSize: 7, alignment: 'center' },
+                { text: roundQuantity(row.sent), fontSize: 7, alignment: 'center' },
+                { text: row.received === '-' ? '-' : roundQuantity(row.received), fontSize: 7, alignment: 'center' },
+                { text: row.normal === '-' ? '-' : roundQuantity(row.normal), fontSize: 7, alignment: 'center' },
+                { text: row.blocked === '-' ? '-' : roundQuantity(row.blocked), fontSize: 7, alignment: 'center' },
                 { text: row.differencePercentage, fontSize: 7, alignment: 'center' },
                 { text: row.status, fontSize: 7, alignment: 'center' },
                 { text: row.observation, fontSize: 7, alignment: 'center' },
@@ -323,10 +325,10 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
         dataPdf[9].table.body.push([
             { text: 'PESOS TOTALES', fontSize: 8, bold: true, alignment: 'right' },
             { text: voucherSummary.units.join(','), fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.sent, fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.received, fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.normal, fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.blocked, fontSize: 8, bold: true, alignment: 'center' },
+            { text: roundQuantity(voucherSummary.totals.sent), fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.received === '-' ? '-' : roundQuantity(voucherSummary.totals.received), fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.normal === '-' ? '-' : roundQuantity(voucherSummary.totals.normal), fontSize: 8, bold: true, alignment: 'center' },
+            { text: voucherSummary.totals.blocked === '-' ? '-' : roundQuantity(voucherSummary.totals.blocked), fontSize: 8, bold: true, alignment: 'center' },
             { text: voucherSummary.totals.differencePercentage, fontSize: 8, bold: true, alignment: 'center' },
             { text: voucherSummary.totals.accountedTotal, fontSize: 8, bold: true, alignment: 'center' },
             { text: '', fontSize: 8, bold: true },

@@ -2,6 +2,7 @@ const { response } = require('express');
 const jwt = require('jsonwebtoken');
 const { User } = require('../../database/config');
 const { verifyAssignShift } = require('../../helpers/verify-assign-user');
+const { loadDecimals } = require('../../helpers/decimals-value');
 
 const validarJWT = async (req, res = response, next) => {
     try {
@@ -51,6 +52,7 @@ const validarJWT = async (req, res = response, next) => {
             : [field_sort, order];
         req.query.orderNew = orderNew;
         req.userAuth = user;
+        await loadDecimals();
         next();
     } catch (error) {
         console.log(error);

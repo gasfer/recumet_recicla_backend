@@ -7,9 +7,11 @@ const path = require('path');
 const fonts = require('../helpers/generator-pdf/fonts');
 const styles = require('../helpers/generator-pdf/styles');
 const { getNumberDecimal } = require('../helpers/company');
+const { excelNumberMask } = require('../helpers/number-formatter');
 const { queryPurchaseReportPage, queryPurchaseReportExport, summarizeByProduct } = require('../services/purchase-report-query.service');
 
-const imagePath = path.join(__dirname, '../../uploads/logo.png');
+const { getReportLogoPath } = require('../helpers/report-logo');
+const imagePath = getReportLogoPath();
 
 const restrictToAuthorizedBranches = (params, user) => {
     if (user?.role === 'ADMINISTRADOR') return { ...params };
@@ -146,7 +148,7 @@ const generatePurchaseReportExcel = async (req = request, res = response) => {
             groups.set(provider, [...(groups.get(provider) || []), input]);
         });
         let totalKg = 0; let totalAmount = 0;
-        const numberFormat = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        const numberFormat = excelNumberMask(decimal);
         for (const [provider, purchases] of groups) {
             const groupRow = worksheet.addRow([`PROVEEDOR: ${provider}`]);
             worksheet.mergeCells(groupRow.number, 1, groupRow.number, headers.length);
@@ -393,7 +395,7 @@ const generatePurchaseReportExcelDetails = async (req = request, res = response)
             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1D5DB' } };
             cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
         });
-        const numberFormat = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        const numberFormat = excelNumberMask(decimal);
         summary.forEach((row) => {
             worksheet.addRow([row.cod, row.name, Number(row.quantity || 0)]);
         });

@@ -8,10 +8,12 @@ const fs = require('fs');
 const moment = require('moment');
 const NumeroALetras = require("../../helpers/numeros-aletras");
 const { whereDateForType } = require("../../helpers/where_range");
-const imagePath = path.join(__dirname, '../../../uploads/logo.png');
+const { getReportLogoPath } = require('../../helpers/report-logo');
+const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
+const { excelNumberMask } = require("../../helpers/number-formatter");
 const {
     buildHeader,
     buildHr,
@@ -254,18 +256,18 @@ const generatePurchaseReportExcel = async (req = request, res = response) => {
                     cell.font = { name: 'Arial', size: 9 };
                     cell.alignment = { vertical: 'middle', wrapText: column === 6 };
                 });
-                row.getCell(9).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
-                row.getCell(10).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+                row.getCell(9).numFmt = excelNumberMask(decimal);
+                row.getCell(10).numFmt = excelNumberMask(decimal);
             });
             const subtotal = worksheet.addRow(['SUBTOTAL PROVEEDOR', '', '', '', '', '', '', '', providerKg, providerAmount]);
             subtotal.eachCell(cell => { cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF334155' } }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F7FA' } }; });
-            subtotal.getCell(9).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
-            subtotal.getCell(10).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+            subtotal.getCell(9).numFmt = excelNumberMask(decimal);
+            subtotal.getCell(10).numFmt = excelNumberMask(decimal);
         }
         const totalRow = worksheet.addRow(['TOTAL GENERAL', '', '', '', '', '', '', '', totalKg, totalAmount]);
         totalRow.eachCell(cell => { cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4C956C' } }; });
-        totalRow.getCell(9).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
-        totalRow.getCell(10).numFmt = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        totalRow.getCell(9).numFmt = excelNumberMask(decimal);
+        totalRow.getCell(10).numFmt = excelNumberMask(decimal);
         [14, 20, 18, 18, 30, 55, 14, 22, 14, 16].forEach((width, index) => { worksheet.getColumn(index + 1).width = width; });
         worksheet.autoFilter = { from: { row: 6, column: 1 }, to: { row: 6, column: totalColumns } };
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -368,7 +370,7 @@ const generateExcelReports = async (req = request, res = response) => {
     worksheet.getColumn('K').width = 15; 
 
     // Formato decimal para números
-    const decimalFormat = decimal === 3 ? '#,##0.000' : '#,##0.00';
+    const decimalFormat = excelNumberMask(decimal);
     worksheet.getColumn('J').numFmt = decimalFormat; // CANT_KG
     worksheet.getColumn('K').numFmt = decimalFormat; // TOTAL
     worksheet.getColumn('J').alignment = { horizontal: 'right' };
@@ -682,7 +684,7 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
         worksheet.getColumn('C').width = 20; 
 
         // Formato decimal para CANTIDAD
-        const decimalFormat = decimal === 3 ? '#,##0.000' : '#,##0.00';
+        const decimalFormat = excelNumberMask(decimal);
         worksheet.getColumn('C').numFmt = decimalFormat;
         worksheet.getColumn('C').alignment = { horizontal: 'right' };
 
@@ -900,6 +902,8 @@ const printInputVoucher = async (req = request, res = response) =>{
             }
 
             docDefinition = {
+                pageSize: 'LETTER',
+                pageMargins: [18, 18, 18, 18],
                 content: dataPdf,
                 styles: styles,
             };

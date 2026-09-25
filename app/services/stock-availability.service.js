@@ -2,6 +2,7 @@
 
 const { QueryTypes } = require('sequelize');
 const { sequelize, Stock } = require('../database/config');
+const { decimalSubtract, decimalTolerance } = require('../helpers/number-formatter');
 
 const availabilityKey = (productId, sucursalId, storageId) => `${productId}:${sucursalId}:${storageId}`;
 
@@ -357,7 +358,7 @@ const getReviewStockKardexDifferences = async ({ noteId, transaction }) => seque
   transaction,
 });
 
-const assertStockKardexIntegrity = async ({ productId, sucursalId, storageId, transaction, tolerance = 0.0001 } = {}) => {
+const assertStockKardexIntegrity = async ({ productId, sucursalId, storageId, transaction, tolerance = decimalTolerance() } = {}) => {
   const stock = await Stock.findOne({
     where: { id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true },
     transaction,
@@ -378,7 +379,7 @@ const assertStockKardexIntegrity = async ({ productId, sucursalId, storageId, tr
   });
 
   const kardexBalance = Number(currentKardex?.saldo || 0);
-  const difference = Number((physicalStock - kardexBalance).toFixed(4));
+  const difference = decimalSubtract(physicalStock, kardexBalance);
   const consistent = Math.abs(difference) <= tolerance;
 
   return {

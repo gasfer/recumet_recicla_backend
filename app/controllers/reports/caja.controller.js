@@ -5,7 +5,8 @@ const styles = require('../../helpers/generator-pdf/styles');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
-const imagePath = path.join(__dirname, '../../../uploads/logo.png');
+const { getReportLogoPath } = require('../../helpers/report-logo');
+const imagePath = getReportLogoPath();
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
 const { getTotalesAndMovements } = require('../caja_small.controller');
@@ -166,4 +167,4 @@ const dataPdfReturnCajaVoucher = (caja_small, total_movements, decimal) => [
 module.exports = {
     printCaja,
     dataPdfReturnCajaVoucher,
-}
+}

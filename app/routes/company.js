@@ -1,7 +1,9 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { updateCompany, getCompanyPaginate } = require('../controllers/company.controller');
+const { updateCompany, getCompanyPaginate, uploadCompanyLogo } = require('../controllers/company.controller');
+const { filesExist, filesValidateSize } = require('../middlewares/validators/validar-files');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
 
@@ -44,8 +46,10 @@ router.get('/', [
  */
 router.put('/:id', [
     validarJWT,
+    authorizeModulePermission('EMPRESA', 'update'),
     toUpperCaseConvert,
 ], updateCompany);
+router.put('/:id/logo', [validarJWT, authorizeModulePermission('EMPRESA', 'update'), filesExist, filesValidateSize], uploadCompanyLogo);
 
 
 module.exports = router;

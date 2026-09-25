@@ -1,4 +1,6 @@
-const roundQuantity = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 10000) / 10000;
+const { decimalAdd, decimalToNumber } = require('./number-formatter');
+
+const roundQuantity = (value) => decimalToNumber(value || 0);
 
 const productLabel = (product) => product
   ? `${product.cod || ''} - ${product.name || ''}`.trim()
@@ -32,9 +34,7 @@ const buildTransferVoucherReconciliation = (reviewNotes = []) => {
         movementReferences,
       });
 
-      totals[isExcess ? 'excess' : 'shortage'] = roundQuantity(
-        totals[isExcess ? 'excess' : 'shortage'] + difference,
-      );
+      totals[isExcess ? 'excess' : 'shortage'] = decimalAdd(totals[isExcess ? 'excess' : 'shortage'], difference);
     }
   }
 

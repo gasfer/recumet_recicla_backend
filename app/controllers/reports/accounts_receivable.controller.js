@@ -7,7 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
 const { whereDateForType } = require("../../helpers/where_range");
-const imagePath = path.join(__dirname, '../../../uploads/logo.png');
+const { getReportLogoPath } = require('../../helpers/report-logo');
+const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { getNumberDecimal } = require("../../helpers/company");
 const {
@@ -794,4 +795,4 @@ module.exports = {
     generateExcelReportsAbonosAll,
     dataPdfReturnAbonoAccountReceivableVoucher,
     dataPdfReturnAccountPayableVoucher,
-}
+}

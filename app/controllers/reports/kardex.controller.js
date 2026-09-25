@@ -12,7 +12,8 @@ const { getNumberDecimal } = require("../../helpers/company");
 const { enrichKardexHistory } = require("../../services/kardex-history-enrichment.service");
 moment.locale("es");
 
-const imagePath = path.join(__dirname, "../../../uploads/logo.png");
+const { getReportLogoPath } = require('../../helpers/report-logo');
+const imagePath = getReportLogoPath();
 
 // -------------------- PDF REPORTS --------------------
 

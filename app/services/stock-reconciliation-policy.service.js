@@ -3,8 +3,9 @@
 const {
   STOCK_RECONCILIATION_STRATEGIES: STRATEGIES,
 } = require('../constants/stock-reconciliation');
+const { decimalSubtract, decimalTolerance } = require('../helpers/number-formatter');
 
-const EPSILON = 0.0001;
+const getEpsilon = () => decimalTolerance();
 const executableStrategies = new Set([
   STRATEGIES.ADJUST_BOTH_TO_PHYSICAL_COUNT,
   STRATEGIES.REGISTER_MISSING_KARDEX,
@@ -12,7 +13,7 @@ const executableStrategies = new Set([
   STRATEGIES.LINK_EXISTING,
 ]);
 
-const closeEnough = (first, second) => Math.abs(Number(first) - Number(second)) <= EPSILON;
+const closeEnough = (first, second) => Math.abs(decimalSubtract(first, second)) <= getEpsilon();
 
 const ALLOWED_STATUS_TRANSITIONS = Object.freeze({
   DETECTADA: Object.freeze(['EN_INVESTIGACION', 'LISTA_PARA_REGULARIZAR']),
@@ -51,7 +52,7 @@ const investigationErrors = ({ physicalCount, cause, notes, strategy, assignedUs
 const buildPreview = ({ strategy, stock, kardex, physicalCount, sourceReferenceCode }) => {
   const physicalStock = Number(stock);
   const kardexBalance = Number(kardex);
-  const difference = physicalStock - kardexBalance;
+  const difference = decimalSubtract(physicalStock, kardexBalance);
   if (!executableStrategies.has(strategy)) {
     const error = new Error('La acción seleccionada sólo registra seguimiento y no puede regularizar saldos.');
     error.statusCode = 422;
@@ -86,13 +87,13 @@ const buildPreview = ({ strategy, stock, kardex, physicalCount, sourceReferenceC
     preview.stock_after = target;
     preview.kardex_after = target;
     preview.difference_after = 0;
-    const stockDelta = Number((target - physicalStock).toFixed(4));
-    const delta = Number((target - kardexBalance).toFixed(4));
-    preview.stock_adjustment = Math.abs(stockDelta) <= EPSILON ? null : {
+    const stockDelta = decimalSubtract(target, physicalStock);
+    const delta = decimalSubtract(target, kardexBalance);
+    preview.stock_adjustment = Math.abs(stockDelta) <= getEpsilon() ? null : {
       type: stockDelta > 0 ? 'INCREASE' : 'DECREASE', quantity: Math.abs(stockDelta),
     };
-    preview.effect_label = delta > EPSILON ? 'Ingreso Kardex por ajuste físico' : delta < -EPSILON ? 'Egreso Kardex por ajuste físico' : 'Ajuste físico sin movimiento Kardex';
-    preview.movement = Math.abs(delta) <= EPSILON ? null : { type: delta > 0 ? 'INPUT' : 'OUTPUT', quantity: Math.abs(delta) };
+    preview.effect_label = delta > getEpsilon() ? 'Ingreso Kardex por ajuste físico' : delta < -getEpsilon() ? 'Egreso Kardex por ajuste físico' : 'Ajuste físico sin movimiento Kardex';
+    preview.movement = Math.abs(delta) <= getEpsilon() ? null : { type: delta > 0 ? 'INPUT' : 'OUTPUT', quantity: Math.abs(delta) };
   } else if (strategy === STRATEGIES.REGISTER_MISSING_KARDEX) {
     preview.kardex_after = physicalStock;
     preview.difference_after = 0;
@@ -101,8 +102,8 @@ const buildPreview = ({ strategy, stock, kardex, physicalCount, sourceReferenceC
   } else if (strategy === STRATEGIES.ADJUST_STOCK_BY_COUNT) {
     preview.stock_after = kardexBalance;
     preview.difference_after = 0;
-    const stockDelta = Number((kardexBalance - physicalStock).toFixed(4));
-    preview.stock_adjustment = Math.abs(stockDelta) <= EPSILON ? null : {
+    const stockDelta = decimalSubtract(kardexBalance, physicalStock);
+    preview.stock_adjustment = Math.abs(stockDelta) <= getEpsilon() ? null : {
       type: stockDelta > 0 ? 'INCREASE' : 'DECREASE', quantity: Math.abs(stockDelta),
     };
     preview.effect_label = 'Ajustar Stock según conteo físico';
@@ -111,7 +112,7 @@ const buildPreview = ({ strategy, stock, kardex, physicalCount, sourceReferenceC
 };
 
 module.exports = {
-  EPSILON,
+  getEpsilon,
   ALLOWED_STATUS_TRANSITIONS,
   executableStrategies,
   investigationErrors,

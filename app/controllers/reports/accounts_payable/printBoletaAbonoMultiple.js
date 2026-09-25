@@ -3,7 +3,8 @@ const { Op } = require("sequelize");
 const { getNumberDecimal } = require("../../../helpers/company");
 const path = require('path');
 const fs = require('fs');
-const imagePath = path.join(__dirname, '../../../../uploads/logo.png');
+const { getReportLogoPath } = require('../../../helpers/report-logo');
+const imagePath = getReportLogoPath();
 const moment = require('moment');
 moment.locale('es'); 
 const NumeroALetras = require("../../../helpers/numeros-aletras");
@@ -392,4 +393,4 @@ const addFooterAbonosMultiple = (abono_account_payable,saldoTotal,decimal) => {
 module.exports = {
     printAbonoMultipleAccountPayableVoucher,
     dataPdfReturnAbonoAccountPayableMultipleVoucher,
-}
+}

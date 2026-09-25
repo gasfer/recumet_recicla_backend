@@ -29,13 +29,16 @@ const {
   HISTORICAL_COMPLETION_ACTIONS: ACTIONS,
 } = require('../constants/historical-transfer-difference');
 
-const SCALE = 10000;
 const EPSILON_UNITS = 1;
+const { toScaledInteger, decimalToNumber, decimalToString } = require('../helpers/number-formatter');
 
 const operationError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
-const toUnits = (value) => Math.round(Number(value || 0) * SCALE);
-const fromUnits = (value) => Number((Number(value || 0) / SCALE).toFixed(4));
-const approximatelyEqual = (left, right) => Math.abs(toUnits(left) - toUnits(right)) <= EPSILON_UNITS;
+const toUnits = (value) => toScaledInteger(value || 0);
+const fromUnits = (value) => decimalToNumber(value || 0);
+const approximatelyEqual = (left, right) => {
+  const difference = toUnits(left) - toUnits(right);
+  return (difference < 0n ? -difference : difference) <= BigInt(EPSILON_UNITS);
+};
 
 const expectedDifference = (detail) => {
   const sent = toUnits(detail.quantity);
@@ -59,10 +62,11 @@ const expectedDifference = (detail) => {
 };
 
 const allocateCoveredQuantity = (items, coveredQuantity) => {
-  let remainingUnits = Math.max(0, toUnits(coveredQuantity));
+  let remainingUnits = toUnits(coveredQuantity);
+  if (remainingUnits < 0n) remainingUnits = 0n;
   return [...items].sort((left, right) => Number(left.id) - Number(right.id)).map((item) => {
     const expectedUnits = toUnits(item.difference_expected);
-    const coveredUnits = Math.min(expectedUnits, remainingUnits);
+    const coveredUnits = expectedUnits < remainingUnits ? expectedUnits : remainingUnits;
     remainingUnits -= coveredUnits;
     return { id: item.id, covered: fromUnits(coveredUnits), pending: fromUnits(expectedUnits - coveredUnits) };
   });
@@ -360,7 +364,7 @@ const buildProjection = async (transfer, { transaction } = {}) => {
       item.message = ambiguous ? 'Existen movimientos candidatos ambiguos.' : 'La diferencia actual no puede atribuirse únicamente a esta boleta.';
     } else if (pending > 0) {
       item.reconciliation_status = covered > 0 ? STATUSES.PARTIAL : STATUSES.SURPLUS_PENDING_KARDEX;
-      item.allowed_action = { code: ACTIONS.REGISTER_SURPLUS, label: `Registrar excedente de ${pending.toFixed(4)} kg`, quantity: pending, scope: 'ITEM', requires_merma_product: false };
+      item.allowed_action = { code: ACTIONS.REGISTER_SURPLUS, label: `Registrar excedente de ${decimalToString(pending)} kg`, quantity: pending, scope: 'ITEM', requires_merma_product: false };
       item.message = 'Stock contiene el peso recibido y falta completar el ingreso adicional en Kardex.';
     } else {
       item.reconciliation_status = STATUSES.COMPLETE;
@@ -414,7 +418,7 @@ const buildProjection = async (transfer, { transaction } = {}) => {
         item.reconciliation_status = Number(allocation.covered) > 0 ? STATUSES.PARTIAL : STATUSES.SHORTAGE_PENDING_WASTE;
         item.allowed_action = item.id === actionDetailId ? {
           code: ACTIONS.REGISTER_SHORTAGE,
-          label: `Registrar faltante de ${totalPending.toFixed(4)} kg en Merma traslado`,
+          label: `Registrar faltante de ${decimalToString(totalPending)} kg en Merma traslado`,
           quantity: totalPending,
           scope: 'TRANSFER',
           requires_merma_product: !registeredProduct,
@@ -671,8 +675,8 @@ const completeDifference = async ({ transferId, detailId, mermaProductId, previe
     await TransferReviewEvent.create({
       event_type: 'REGISTRO_HISTORICO_COMPLETADO',
       description: action.code === ACTIONS.REGISTER_SURPLUS
-        ? `Se completó el excedente histórico omitido de ${Number(action.quantity).toFixed(4)} kg en Kardex.`
-        : `Se completó el faltante histórico omitido de ${Number(action.quantity).toFixed(4)} kg en el producto MERMAS.`,
+        ? `Se completó el excedente histórico omitido de ${decimalToString(action.quantity)} kg en Kardex.`
+        : `Se completó el faltante histórico omitido de ${decimalToString(action.quantity)} kg en el producto MERMAS.`,
       metadata: {
         completion_id: completion.id,
         completion_type: action.code,
@@ -688,7 +692,7 @@ const completeDifference = async ({ transferId, detailId, mermaProductId, previe
     await History.create({
       id_user: actorUserId,
       id_sucursal: transfer.id_sucursal_received,
-      description: `${action.code} EN TRASLADO #${transfer.cod}: ${Number(action.quantity).toFixed(4)} KG`,
+      description: `${action.code} EN TRASLADO #${transfer.cod}: ${decimalToString(action.quantity)} KG`,
       type: 'REGULARIZACION HISTORICA DE TRASLADO',
       module: 'TRANSFER_REVIEW',
       action: 'CREATE',

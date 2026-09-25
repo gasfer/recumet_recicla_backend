@@ -3,20 +3,22 @@
  * Funciones constructoras puras para bloques PDF de comprobantes RECUMET.
  */
 
-const fs = require('fs');
-const path = require('path');
 const { VOUCHER_THEME } = require('./voucher-theme');
-
-const defaultLogoPath = path.join(__dirname, '../../../../uploads/logo.png');
+const { getReportLogoBase64 } = require('../report-logo');
 
 /**
  * Obtiene el base64 del logo de la empresa de forma segura.
  */
-const getLogoBase64 = (customPath = defaultLogoPath) => {
+const getLogoBase64 = (customPath) => {
     try {
-        if (fs.existsSync(customPath)) {
-            return 'data:image/png;base64,' + fs.readFileSync(customPath, 'base64');
+        if (customPath) {
+            const fs = require('fs');
+            if (fs.existsSync(customPath)) {
+                return 'data:image/png;base64,' + fs.readFileSync(customPath, 'base64');
+            }
         }
+        const logoBase64 = getReportLogoBase64();
+        return logoBase64 ? 'data:image/png;base64,' + logoBase64 : null;
     } catch (e) {
         console.error('Error leyendo logo para PDF:', e.message);
     }
@@ -35,34 +37,31 @@ const buildHeader = ({
     dateValue,
     company = {},
     statusBadge = null,
-    logoWidth = 55,
+    logoWidth = 92,
     customLogoPath,
 }) => {
     const logoImg = getLogoBase64(customLogoPath);
+    const effectiveLogoWidth = Math.max(logoWidth, 92);
     
-    // Columna izquierda: Logo + datos de sucursal/empresa opcionales
-    const leftColumnStack = [];
-    if (logoImg) {
-        leftColumnStack.push({
-            image: logoImg,
-            width: logoWidth,
-            margin: [0, 1, 0, 1],
-        });
-    }
+    const companyStack = {
+        fontSize: VOUCHER_THEME.fonts.tiny,
+        color: VOUCHER_THEME.colors.muted,
+        stack: [
+            company.branchName ? { text: company.branchName, bold: true, color: VOUCHER_THEME.colors.labelColor } : null,
+            company.nit ? { text: `NIT: ${company.nit}` } : null,
+            company.phone ? { text: `Tel: ${company.phone}` } : null,
+            company.email ? { text: company.email } : null,
+        ].filter(Boolean),
+    };
 
-    if (company.branchName || company.nit || company.phone) {
-        leftColumnStack.push({
-            margin: [0, 2, 0, 0],
-            fontSize: VOUCHER_THEME.fonts.tiny,
-            color: VOUCHER_THEME.colors.muted,
-            stack: [
-                company.branchName ? { text: company.branchName, bold: true, color: VOUCHER_THEME.colors.labelColor } : null,
-                company.nit ? { text: `NIT: ${company.nit}` } : null,
-                company.phone ? { text: `Tel: ${company.phone}` } : null,
-                company.email ? { text: company.email } : null,
-            ].filter(Boolean),
-        });
-    }
+    const leftHeader = logoImg
+        ? {
+            columns: [
+                { image: logoImg, width: effectiveLogoWidth, margin: [0, 1, 0, 1] },
+                { ...companyStack, width: '*', margin: [6, 2, 0, 0] },
+            ],
+        }
+        : companyStack;
 
     // Columna central: Título del documento
     const centerColumn = {
@@ -122,9 +121,9 @@ const buildHeader = ({
         margin: [0, 0, 0, 2],
         layout: 'noBorders',
         table: {
-            widths: [logoWidth + 15, '*', 130],
+            widths: [logoImg ? effectiveLogoWidth + 125 : 125, '*', 130],
             body: [[
-                { stack: leftColumnStack },
+                leftHeader,
                 centerColumn,
                 { stack: rightStack, margin: [0, 4, 0, 0] },
             ]],

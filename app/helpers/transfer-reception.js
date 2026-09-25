@@ -1,16 +1,15 @@
-const RECEIVED_QUANTITY_DECIMAL_PLACES = 2;
 const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
+const { getDecimalPlaces } = require('./decimals-value');
+const { decimalAdd, decimalCompare, decimalSubtract, decimalToNumber } = require('./number-formatter');
 
 const isValidReceivedQuantity = (value) => {
     if (value === null || value === undefined || value === '') return false;
     const str = String(value).trim();
-    if (!/^\d+(\.\d{1,2})?$/.test(str)) {
-        const num = Number(value);
-        if (!Number.isFinite(num) || num < 0) return false;
-        const rounded = Number(num.toFixed(RECEIVED_QUANTITY_DECIMAL_PLACES));
-        return Math.abs(num - rounded) < 1e-6;
+    try {
+        return decimalCompare(decimalToNumber(str), 0) >= 0;
+    } catch (_) {
+        return false;
     }
-    return true;
 };
 
 const buildReceivedDetails = (incomingDetails, transferDetails) => {
@@ -27,11 +26,11 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
         }
 
         if (!isValidReceivedQuantity(incomingDetail.quantity_received)) {
-            return { errors: [`La cantidad recibida del detalle ${detailId} debe ser un número no negativo de hasta ${RECEIVED_QUANTITY_DECIMAL_PLACES} decimales.`] };
+            return { errors: [`La cantidad recibida del detalle ${detailId} debe ser un número no negativo de hasta ${getDecimalPlaces()} decimales.`] };
         }
 
         detailsById.set(detailId, {
-            quantityReceived: Number(incomingDetail.quantity_received),
+            quantityReceived: decimalToNumber(incomingDetail.quantity_received),
             observation: incomingDetail.observation ?? null,
         });
     }
@@ -65,21 +64,19 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
 };
 
 const reconcileTransferReceipt = (sentQuantity, receivedQuantity) => {
-    const sent = Number(sentQuantity) || 0;
-    const received = Number(receivedQuantity) || 0;
-    const round = (value) => Math.round((value + Number.EPSILON) * 10000) / 10000;
+    const sent = decimalToNumber(sentQuantity || 0);
+    const received = decimalToNumber(receivedQuantity || 0);
 
     return {
-        sent: round(sent),
-        base: round(Math.min(sent, received)),
-        excess: round(Math.max(0, received - sent)),
-        shortage: round(Math.max(0, sent - received)),
-        received: round(received),
+        sent,
+        base: decimalCompare(sent, received) <= 0 ? sent : received,
+        excess: decimalCompare(received, sent) > 0 ? decimalSubtract(received, sent) : 0,
+        shortage: decimalCompare(sent, received) > 0 ? decimalSubtract(sent, received) : 0,
+        received,
     };
 };
 
 const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) => {
-    const round = (value) => Math.round((value + Number.EPSILON) * 10000) / 10000;
     const received = transferStatus === 'RECEIVED';
     const units = new Set();
     const totals = { sent: 0, received: 0, normal: 0, blocked: 0, accountedTotal: 0, excess: 0, shortage: 0 };
@@ -128,21 +125,21 @@ const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) 
 
         const accountedQuantity = normal + (isReleased ? blocked : 0);
 
-        totals.sent = round(totals.sent + reconciliation.sent);
-        totals.received = round(totals.received + reconciliation.received);
-        totals.normal = round(totals.normal + normal);
-        totals.blocked = round(totals.blocked + (isReleased ? 0 : blocked));
-        totals.accountedTotal = round(totals.accountedTotal + accountedQuantity);
-        totals.excess = round(totals.excess + excess);
-        totals.shortage = round(totals.shortage + shortage);
+        totals.sent = decimalAdd(totals.sent, reconciliation.sent);
+        totals.received = decimalAdd(totals.received, reconciliation.received);
+        totals.normal = decimalAdd(totals.normal, normal);
+        totals.blocked = decimalAdd(totals.blocked, isReleased ? 0 : blocked);
+        totals.accountedTotal = decimalAdd(totals.accountedTotal, accountedQuantity);
+        totals.excess = decimalAdd(totals.excess, excess);
+        totals.shortage = decimalAdd(totals.shortage, shortage);
 
         if (detail?.product?.unit?.siglas) units.add(detail.product.unit.siglas);
 
         return {
             sent: reconciliation.sent,
             received: received ? reconciliation.received : '-',
-            normal: received ? round(normal) : '-',
-            blocked: received ? round(blocked) : 0,
+            normal: received ? decimalToNumber(normal) : '-',
+            blocked: received ? decimalToNumber(blocked) : 0,
             status: received ? status : 'PENDIENTE',
             excess,
             shortage,

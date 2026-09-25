@@ -2,6 +2,7 @@
 
 const { Stock, kardexMovements } = require('../database/config');
 const { uniqueSortedLocations } = require('./stock-kardex-integrity.service');
+const { decimalAdd, decimalCompare, decimalTolerance } = require('../helpers/number-formatter');
 
 const postingError = (message, statusCode = 422, details) => Object.assign(new Error(message), {
   statusCode,
@@ -45,8 +46,8 @@ const lockLocations = async ({ locations, transaction, createIfMissing = true })
 const applyStockDelta = async ({ productId, sucursalId, storageId, delta, transaction, createIfMissing = true }) => {
   const stock = await findOrCreateLockedStock({ productId, sucursalId, storageId, transaction, createIfMissing });
   const before = Number(stock.stock);
-  const after = Number((before + Number(delta)).toFixed(4));
-  if (after < -0.0001) throw postingError('El efecto dejaría Stock negativo.', 409, { productId, sucursalId, storageId, before, delta });
+  const after = decimalAdd(before, delta);
+  if (decimalCompare(after, -decimalTolerance()) < 0) throw postingError('El efecto dejaría Stock negativo.', 409, { productId, sucursalId, storageId, before, delta });
   stock.stock = after;
   await stock.save({ transaction });
   return { stock, before, after };
@@ -71,10 +72,10 @@ const applyExplicitEffect = async ({
   }
   const stock = await findOrCreateLockedStock({ productId, sucursalId, storageId, transaction, createIfMissing: direction === 'INPUT' });
   const before = Number(stock.stock);
-  if (direction === 'OUTPUT' && before + Number(heldAllowance || 0) + 0.0001 < amount) {
+  if (direction === 'OUTPUT' && decimalCompare(decimalAdd(before, heldAllowance || 0), amount) < 0) {
     throw postingError('Stock insuficiente para aplicar el movimiento.', 409, { productId, sucursalId, storageId, available: before, quantity: amount });
   }
-  const after = Number((before + (direction === 'OUTPUT' ? -amount : amount)).toFixed(4));
+  const after = decimalAdd(before, direction === 'OUTPUT' ? -amount : amount);
   stock.stock = after;
   await stock.save({ transaction });
   const movement = await kardexMovements.create({

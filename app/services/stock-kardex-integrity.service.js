@@ -2,8 +2,9 @@
 
 const { QueryTypes } = require('sequelize');
 const { sequelize, Stock } = require('../database/config');
+const { decimalSubtract, decimalTolerance } = require('../helpers/number-formatter');
 
-const DEFAULT_TOLERANCE = 0.0001;
+const getDefaultTolerance = () => decimalTolerance();
 
 const normalizeLocation = ({ productId, sucursalId, storageId }) => ({
   productId: Number(productId),
@@ -20,7 +21,7 @@ const uniqueSortedLocations = (locations = []) => Array.from(
   new Map(locations.map((location) => [locationKey(location), normalizeLocation(location)])).values(),
 ).sort((first, second) => locationKey(first).localeCompare(locationKey(second)));
 
-const getStockKardexIntegrity = async ({ productId, sucursalId, storageId, transaction, tolerance = DEFAULT_TOLERANCE } = {}) => {
+const getStockKardexIntegrity = async ({ productId, sucursalId, storageId, transaction, tolerance = getDefaultTolerance() } = {}) => {
   const location = normalizeLocation({ productId, sucursalId, storageId });
   const stock = await Stock.findOne({
     where: {
@@ -44,7 +45,7 @@ const getStockKardexIntegrity = async ({ productId, sucursalId, storageId, trans
     transaction,
   });
   const kardexBalance = Number(projection.kardex_balance || 0);
-  const difference = Number((physicalStock - kardexBalance).toFixed(4));
+  const difference = decimalSubtract(physicalStock, kardexBalance);
   return {
     consistent: Math.abs(difference) <= Number(tolerance),
     ...location,
@@ -77,7 +78,7 @@ const verifyStockKardexIntegrity = async (options = {}) => {
   return diagnostic;
 };
 
-const verifyLocationsIntegrity = async ({ locations, transaction, tolerance = DEFAULT_TOLERANCE }) => {
+const verifyLocationsIntegrity = async ({ locations, transaction, tolerance = getDefaultTolerance() }) => {
   const diagnostics = [];
   for (const location of uniqueSortedLocations(locations)) {
     diagnostics.push(await getStockKardexIntegrity({ ...location, transaction, tolerance }));
@@ -87,7 +88,7 @@ const verifyLocationsIntegrity = async ({ locations, transaction, tolerance = DE
   return diagnostics;
 };
 
-const verifyLocationsIntegrityPreserved = async ({ locations, beforeDiagnostics, transaction, tolerance = DEFAULT_TOLERANCE }) => {
+const verifyLocationsIntegrityPreserved = async ({ locations, beforeDiagnostics, transaction, tolerance = getDefaultTolerance() }) => {
   const beforeByLocation = new Map((beforeDiagnostics || []).map((diagnostic) => [locationKey(diagnostic), diagnostic]));
   const afterDiagnostics = [];
   const changed = [];
@@ -117,7 +118,7 @@ const verifyLocationsIntegrityPreserved = async ({ locations, beforeDiagnostics,
 };
 
 module.exports = {
-  DEFAULT_TOLERANCE,
+  getDefaultTolerance,
   normalizeLocation,
   locationKey,
   uniqueSortedLocations,
