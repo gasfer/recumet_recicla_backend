@@ -13,6 +13,14 @@ const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { buildTransferVoucherSummary } = require('../../helpers/transfer-reception');
 const { decimalAdd, formatDecimalEsBo } = require('../../helpers/number-formatter');
+const {
+    buildHeader,
+    buildHr,
+    buildSectionTitle,
+    buildInfoPanel,
+    buildDetailTable,
+    buildClosingSection,
+} = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -270,9 +278,9 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 { text: detail?.product?.unit?.siglas, fontSize: 8, alignment: 'center' },
                 { text: roundQuantity(detail?.quantity), fontSize: 8, alignment: 'center' },
             ];
-            dataPdf[9].table.body.push(tableData);
+            dataPdf[4].table.body.push(tableData);
         });
-        dataPdf[9].table.body.push(
+        dataPdf[4].table.body.push(
             [
                 { text: 'PESOS TOTALES', colSpan: 2, fontSize: 8, bold: true, alignment: 'right' },
                 '',
@@ -310,7 +318,7 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
 
         voucherSummary.rows.forEach((row, index) => {
             const detail = transfer.detailsTransfers[index];
-            dataPdf[9].table.body.push([
+            dataPdf[4].table.body.push([
                 { text: `${detail?.product?.cod || ''} - ${detail?.product?.name || ''}`, fontSize: 7 },
                 { text: detail?.product?.unit?.siglas, fontSize: 7, alignment: 'center' },
                 { text: roundQuantity(row.sent), fontSize: 7, alignment: 'center' },
@@ -322,7 +330,7 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
                 { text: row.observation, fontSize: 7, alignment: 'center' },
             ]);
         });
-        dataPdf[9].table.body.push([
+        dataPdf[4].table.body.push([
             { text: 'PESOS TOTALES', fontSize: 8, bold: true, alignment: 'right' },
             { text: voucherSummary.units.join(','), fontSize: 8, bold: true, alignment: 'center' },
             { text: roundQuantity(voucherSummary.totals.sent), fontSize: 8, bold: true, alignment: 'center' },
@@ -349,7 +357,7 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
         if (reconciliationRows.length > 0) {
             const totalExcess = reviewNotes.filter((note) => note.type === 'EXCEDENTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
             const totalShortage = reviewNotes.filter((note) => note.type === 'FALTANTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
-            dataPdf.splice(10, 0, createReconciliationTable(reconciliationRows, totalExcess, totalShortage));
+            dataPdf.splice(5, 0, createReconciliationTable(reconciliationRows, totalExcess, totalShortage));
         }
         sendVoucherPdf(res, dataPdf, `guia-recepcion-${transfer.cod}`, HALF_LETTER_LANDSCAPE);
     } catch (error) {
@@ -369,192 +377,100 @@ const createReconciliationTable = (rows, totalExcess, totalShortage) => ({
     ] },
 });
 
-const dataPdfReturnTransferVoucher = (transfer) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 60,
-        absolutePosition: { x:30, y: 15 }
-    },
-    { text: 'TRASLADO: ' + transfer.cod, style: 'fechaDoc',
-      absolutePosition: {  y: 30 }
-    },
-    { text: new Date(transfer.date_send).toLocaleDateString('es-ES', options),  style: 'fechaDoc', absolutePosition: {  y: 40 }},
-    { text: 'GUÍA DE TRASLADO', style: 'title2',bold:true , fontSize:13},
-    { text: 'ORIGEN:', style: 'datos_person', bold:true ,fontSize:10, margin:[0,0,8,0] },
-    {
-        columns: [
-            { text: `Sucursal:`, bold:true ,style: 'text',width: 45, },
-            { text: `${transfer.sucursal_send.name}`, style: 'text',  },
-            { text: `Fecha envió:`, bold:true ,style: 'text',width: 80, },
-            { text:  moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'), style: 'text',  },
-        ]
-    },
-    { text: 'DESTINO:', style: 'datos_person', bold:true ,fontSize:10, margin:[0,5,0,0] },
-    {
-        columns: [
-            { text: `Sucursal:`, bold:true ,style: 'text',width: 45, },
-            { text: `${transfer.sucursal_received.name}`, style: 'text',  },
-        ]
-    },
-    { text: 'DETALLE DE LOS PRODUCTOS:', style: 'datos_person',bold:true ,fontSize:10, margin:[0,5,0,0] },
-    {
-        style: 'tableExample',
-        table: {
-            widths: [45, '*', 40, 85],
-            body: [
-                [
-                    {text:'CÓDIGO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'UND',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    {text:'CANT. ENVIADO',alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                ]
-            ]
-        }
-    },
-    createVoucherClosingSection(transfer),
-];
+const voucherCompany = (transfer) => ({ branchName: transfer.sucursal_send?.name });
 
-const createVoucherClosingSection = (transfer, includeReceptionObservations = false) => ({
-    unbreakable: true,
-    stack: [
-        {
-            margin: [0, 10, 0, 0],
-            style: 'tableExample',
-            table: {
-                widths: includeReceptionObservations ? ['*', '*'] : ['*'],
-                body: includeReceptionObservations
-                    ? [
-                        [
-                            { text: 'OBSERVACIONES ENVÍO', fontSize: 9, fillColor: '#eeeeee', bold: true },
-                            { text: 'OBSERVACIONES RECEPCIÓN', fontSize: 9, fillColor: '#eeeeee', bold: true },
-                        ],
-                        [
-                            { text: `${transfer?.observations_send ?? ''}`, style: 'text', fontSize: 8 },
-                            { text: `${transfer?.observations_received ?? ''}`, style: 'text', fontSize: 8 },
-                        ],
-                    ]
-                    : [
-                        [{ text: 'OBSERVACIONES ENVÍO', fontSize: 9, fillColor: '#eeeeee', bold: true }],
-                        [{ text: `${transfer?.observations_send ?? ''}`, style: 'text', fontSize: 8 }],
-                    ],
-            },
-        },
-        {
-            margin: [0, 3, 0, 0],
-            columns: [
-                { text: `P/${transfer.type_registry} NRO:`, bold: true, style: 'text', width: includeReceptionObservations ? 95 : 65 },
-                { text: `${transfer.registry_number}`, style: 'text' },
-                { text: 'BALANZA:', bold: true, style: 'text', width: 58 },
-                { text: `${transfer?.scale?.name}`, style: 'text' },
-            ],
-        },
-        {
-            margin: [0, includeReceptionObservations ? 10 : 40, 0, 0],
-            columns: [
-                { text: '-----------------------------------------', bold: true, style: 'text', alignment: 'center' },
-                { text: '-----------------------------------------', bold: true, style: 'text', alignment: 'center' },
-            ],
-        },
-        {
-            margin: [0, -5, 0, 0],
-            columns: [
-                { text: 'Entregue conforme', bold: true, style: 'text', alignment: 'center' },
-                { text: 'Recibí conforme', bold: true, style: 'text', alignment: 'center' },
-            ],
-        },
-        {
-            margin: [0, -2, 0, 0],
-            columns: [
-                { text: 'Responsable de almacén', style: 'text', alignment: 'center' },
-                { text: 'Chofer', style: 'text', alignment: 'center' },
-            ],
-        },
+const voucherClosingSection = (transfer, includeReceptionObservations = false) => buildClosingSection({
+    observations: includeReceptionObservations
+        ? [
+            { title: 'OBSERVACIONES ENVÍO', text: transfer.observations_send || '' },
+            { title: 'OBSERVACIONES RECEPCIÓN', text: transfer.observations_received || '' },
+        ]
+        : [{ title: 'OBSERVACIONES ENVÍO', text: transfer.observations_send || '' }],
+    meta: [
+        { label: `P/${transfer.type_registry} NRO:`, value: transfer.registry_number || '', width: 72 },
+        { label: 'BALANZA:', value: transfer.scale?.name || '', width: 52 },
     ],
+    signatures: [
+        { role: 'Entregue conforme', name: transfer.user_send?.full_names || 'Responsable de almacén' },
+        { role: 'Recibí conforme', name: transfer.user_received?.full_names || 'Chofer' },
+    ],
+    margin: [0, 4, 0, 0],
+    signatureSpace: includeReceptionObservations ? 16 : 28,
 });
 
-const dataPdfReturnReceptionVoucher = (transfer) => {
-    const dataPdf = dataPdfReturnTransferVoucher(transfer);
-    dataPdf[0] = {
-        ...dataPdf[0],
-        width: 50,
-        absolutePosition: { x: 18, y: 12 },
-    };
-    dataPdf[1] = {
-        text: `RECEPCIÓN: ${transfer.cod}`,
-        style: 'fechaDocDetails',
-        absolutePosition: { y: 16 },
-    };
-    dataPdf[2] = {
-        text: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'),
-        style: 'fechaDocDetails',
-        absolutePosition: { y: 25 },
-    };
-    dataPdf[3] = {
-        text: 'GUÍA DE RECEPCIÓN',
-        style: 'title2',
-        bold: true,
-        fontSize: 11,
-        margin: [0, 32, 0, 8],
-    };
-    dataPdf[5] = {
-        columnGap: 8,
-        columns: [
-            {
-                width: '55%',
-                fontSize: 7,
-                text: [
-                    { text: 'Sucursal: ', bold: true },
-                    { text: transfer.sucursal_send.name },
-                ],
-            },
-            {
-                width: '45%',
-                fontSize: 7,
-                text: [
-                    { text: 'Fecha envío: ', bold: true },
-                    { text: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss') },
-                ],
-            },
+const dataPdfReturnTransferVoucher = (transfer) => [
+    buildHeader({
+        title: 'GUÍA DE TRASLADO',
+        codePrefix: 'TRASLADO',
+        codeValue: transfer.cod,
+        dateValue: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'),
+        company: voucherCompany(transfer),
+        logoWidth: 50,
+        compact: true,
+    }),
+    buildHr(),
+    buildInfoPanel([
+        { title: 'ORIGEN', rows: [
+            { label: 'Sucursal:', value: transfer.sucursal_send?.name || '' },
+            { label: 'Almacén:', value: transfer.storage_send?.name || '' },
+            { label: 'Fecha envío:', value: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'), labelWidth: 70 },
+        ] },
+        { title: 'DESTINO', rows: [
+            { label: 'Sucursal:', value: transfer.sucursal_received?.name || '' },
+            { label: 'Almacén:', value: transfer.storage_received?.name || '' },
+        ] },
+    ]),
+    buildSectionTitle('DETALLE DE PRODUCTOS'),
+    buildDetailTable({
+        widths: [45, '*', 35, 70],
+        headers: [
+            { text: 'CÓDIGO', alignment: 'center', fontSize: 7 },
+            { text: 'DETALLE', fontSize: 7 },
+            { text: 'UND', alignment: 'center', fontSize: 7 },
+            { text: 'CANT. ENVIADO', alignment: 'center', fontSize: 7 },
         ],
-    };
-    dataPdf[7] = {
-        columnGap: 8,
-        columns: [
-            {
-                width: '55%',
-                fontSize: 7,
-                text: [
-                    { text: 'Sucursal: ', bold: true },
-                    { text: transfer.sucursal_received.name },
-                ],
-            },
-            {
-                width: '45%',
-                fontSize: 7,
-                text: [
-                    { text: 'Fecha recepción: ', bold: true },
-                    { text: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss') },
-                ],
-            },
+        rows: [],
+        fontSize: 7,
+    }),
+    voucherClosingSection(transfer),
+];
+
+const dataPdfReturnReceptionVoucher = (transfer) => [
+    buildHeader({
+        title: 'GUÍA DE RECEPCIÓN',
+        codePrefix: 'RECEPCIÓN',
+        codeValue: transfer.cod,
+        dateValue: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'),
+        company: voucherCompany(transfer),
+        logoWidth: 45,
+        compact: true,
+    }),
+    buildHr(),
+    buildInfoPanel([
+        { title: 'ORIGEN', rows: [
+            { label: 'Sucursal:', value: transfer.sucursal_send?.name || '' },
+            { label: 'Fecha envío:', value: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'), labelWidth: 65 },
+        ] },
+        { title: 'DESTINO', rows: [
+            { label: 'Sucursal:', value: transfer.sucursal_received?.name || '' },
+            { label: 'Fecha recepción:', value: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'), labelWidth: 75 },
+        ] },
+    ]),
+    buildSectionTitle('DETALLE DE RECEPCIÓN'),
+    buildDetailTable({
+        widths: ['*', 18, 36, 36, 38, 42, 34, 44, 36],
+        headers: [
+            { text: 'DETALLE', fontSize: 6 }, { text: 'UND', alignment: 'center', fontSize: 6 },
+            { text: 'ENVIADO', alignment: 'center', fontSize: 6 }, { text: 'RECIBIDO', alignment: 'center', fontSize: 6 },
+            { text: 'NORMAL', alignment: 'center', fontSize: 6 }, { text: 'BLOQUEADO', alignment: 'center', fontSize: 6 },
+            { text: 'DIF. %', alignment: 'center', fontSize: 6 }, { text: 'ESTADO', alignment: 'center', fontSize: 6 },
+            { text: 'OBS.', alignment: 'center', fontSize: 6 },
         ],
-    };
-    dataPdf[9].table.widths = ['*', 18, 36, 36, 38, 42, 34, 44, 36];
-    dataPdf[9].table.headerRows = 1;
-    dataPdf[9].table.dontBreakRows = true;
-    dataPdf[9].table.body[0] = [
-        { text: 'DETALLE', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'UND', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'ENVIADO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'RECIBIDO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'NORMAL', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'BLOQUEADO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'DIF. %', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'ESTADO', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-        { text: 'OBS.', alignment: 'center', fontSize: 6, fillColor: '#eeeeee', bold: true },
-    ];
-    dataPdf[10] = createVoucherClosingSection(transfer, true);
-    return dataPdf;
-};
+        rows: [],
+        fontSize: 6,
+    }),
+    voucherClosingSection(transfer, true),
+];
 
 module.exports = {
     generatePdfReports,

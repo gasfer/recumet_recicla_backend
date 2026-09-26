@@ -27,6 +27,23 @@ test('voucher-template.helper construye encabezado válido para pdfmake', () => 
     assert.strictEqual(header.table.body[0][1].text, 'COMPROBANTE DE PRUEBA');
 });
 
+test('buildHeader compacto distribuye el ancho y no duplica el nombre de sucursal junto al logo', () => {
+    const header = buildHeader({
+        title: 'GUÍA DE TRASLADO',
+        codePrefix: 'TRASLADO',
+        codeValue: 'T00001',
+        dateValue: '22/09/2026 11:05:56',
+        company: { branchName: 'CASA MATRIZ' },
+        compact: true,
+        logoWidth: 50,
+    });
+
+    assert.deepStrictEqual(header.table.widths, ['30%', '40%', '30%']);
+    assert.strictEqual(header.table.body[0][1].noWrap, true);
+    assert.strictEqual(header.table.body[0][1].text, 'GUÍA DE TRASLADO');
+    assert.strictEqual(header.table.body[0][0].stack, undefined);
+});
+
 test('buildInfoPanel genera layout con 1 o 2 grupos', () => {
     const single = buildInfoPanel([
         { title: 'DATOS', rows: [{ label: 'Cliente:', value: 'Juan' }] }
@@ -63,4 +80,8 @@ test('buildClosingSection genera bloques de firmas y metadatos sin fallar con ca
 
     assert.strictEqual(closing.unbreakable, true);
     assert.ok(closing.stack.length >= 3);
+    const signatureLine = closing.stack.find(block => block.table && block.table.body?.[0]?.[0]?.border);
+    assert.ok(signatureLine, 'la línea de firma debe dibujarse como borde PDF');
+    assert.strictEqual(signatureLine.table.body[0][0].text, '');
+    assert.deepStrictEqual(signatureLine.table.body[0][0].border, [false, true, false, false]);
 });

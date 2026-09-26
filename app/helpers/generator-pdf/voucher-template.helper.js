@@ -39,38 +39,41 @@ const buildHeader = ({
     statusBadge = null,
     logoWidth = 92,
     customLogoPath,
+    compact = false,
 }) => {
     const logoImg = getLogoBase64(customLogoPath);
-    const effectiveLogoWidth = Math.max(logoWidth, 92);
+    const effectiveLogoWidth = compact ? Math.min(logoWidth, 72) : Math.max(logoWidth, 92);
+    const companyLines = [
+        !compact && company.branchName ? { text: company.branchName, bold: true, color: VOUCHER_THEME.colors.labelColor } : null,
+        company.nit ? { text: `NIT: ${company.nit}` } : null,
+        company.phone ? { text: `Tel: ${company.phone}` } : null,
+        company.email ? { text: company.email } : null,
+    ].filter(Boolean);
     
     const companyStack = {
         fontSize: VOUCHER_THEME.fonts.tiny,
         color: VOUCHER_THEME.colors.muted,
-        stack: [
-            company.branchName ? { text: company.branchName, bold: true, color: VOUCHER_THEME.colors.labelColor } : null,
-            company.nit ? { text: `NIT: ${company.nit}` } : null,
-            company.phone ? { text: `Tel: ${company.phone}` } : null,
-            company.email ? { text: company.email } : null,
-        ].filter(Boolean),
+        stack: companyLines,
     };
 
     const leftHeader = logoImg
-        ? {
+        ? companyLines.length > 0 ? {
             columns: [
                 { image: logoImg, width: effectiveLogoWidth, margin: [0, 1, 0, 1] },
                 { ...companyStack, width: '*', margin: [6, 2, 0, 0] },
             ],
-        }
+        } : { image: logoImg, width: effectiveLogoWidth, margin: [0, 1, 0, 1] }
         : companyStack;
 
     // Columna central: Título del documento
     const centerColumn = {
         text: title,
         bold: true,
-        fontSize: VOUCHER_THEME.fonts.headerTitle,
+        fontSize: compact ? Math.min(VOUCHER_THEME.fonts.headerTitle, 10) : VOUCHER_THEME.fonts.headerTitle,
         alignment: 'center',
-        margin: [0, 5, 0, 0],
+        margin: [0, compact ? 7 : 5, 0, 0],
         color: VOUCHER_THEME.colors.sectionText,
+        noWrap: compact,
     };
 
     // Columna derecha: Código correlativo, fecha y badge opcional
@@ -79,7 +82,7 @@ const buildHeader = ({
         rightStack.push({
             text: `${codePrefix}: ${codeValue}`,
             bold: true,
-            fontSize: VOUCHER_THEME.fonts.body,
+            fontSize: compact ? VOUCHER_THEME.fonts.tiny : VOUCHER_THEME.fonts.body,
             alignment: 'right',
             color: VOUCHER_THEME.colors.sectionText,
         });
@@ -88,7 +91,7 @@ const buildHeader = ({
     if (dateValue) {
         rightStack.push({
             text: `${dateLabel}: ${dateValue}`,
-            fontSize: VOUCHER_THEME.fonts.small,
+            fontSize: compact ? VOUCHER_THEME.fonts.tiny : VOUCHER_THEME.fonts.small,
             alignment: 'right',
             color: VOUCHER_THEME.colors.muted,
             margin: [0, 2, 0, 0],
@@ -121,7 +124,7 @@ const buildHeader = ({
         margin: [0, 0, 0, 2],
         layout: 'noBorders',
         table: {
-            widths: [logoImg ? effectiveLogoWidth + 125 : 125, '*', 130],
+            widths: compact ? ['30%', '40%', '30%'] : [logoImg ? effectiveLogoWidth + 125 : 125, '*', 130],
             body: [[
                 leftHeader,
                 centerColumn,
@@ -353,10 +356,10 @@ const buildClosingSection = ({
 
         signatures.forEach(() => {
             lineCols.push({
-                text: '─────────────────────────',
-                fontSize: VOUCHER_THEME.fonts.body,
-                alignment: 'center',
-                color: VOUCHER_THEME.colors.muted,
+                text: '',
+                margin: [12, 0, 12, 0],
+                border: [false, true, false, false],
+                borderColor: [VOUCHER_THEME.colors.muted],
             });
         });
 
@@ -381,7 +384,14 @@ const buildClosingSection = ({
 
         stack.push({
             margin: [0, signatureSpace, 0, 0],
-            columns: lineCols,
+            table: {
+                widths: signatures.map(() => '*'),
+                body: [lineCols],
+            },
+            layout: {
+                hLineWidth: () => 0,
+                vLineWidth: () => 0,
+            },
         });
         stack.push({
             margin: [0, 2, 0, 0],
