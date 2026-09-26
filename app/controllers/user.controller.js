@@ -1,5 +1,5 @@
 
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const generarJWT = require('../helpers/jwt');
 const { response, request } = require('express');
 const { User , assignPermission, assignShift, assignSucursales, sequelize} = require('../database/config');
