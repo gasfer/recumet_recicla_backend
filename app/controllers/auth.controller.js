@@ -1,4 +1,4 @@
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcrypt');
 const generarJWT = require('../helpers/jwt');
 const { response } = require('express');
 const { User, History } = require('../database/config');
