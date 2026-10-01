@@ -359,28 +359,42 @@ const deleteAbonoMultipleAccountPayable = async (req = request, res = response) 
 
 const getAccountAllProvider = async (req = request, res = response) => {
     try {
-        const {id_provider} = req.query;
+        const {id_provider, id_sucursal, id_storage} = req.query;
+        const assignedBranches = req.userAuth?.role === 'ADMINISTRADOR'
+          ? null
+          : (req.userAuth?.assign_sucursales || []).map(item => Number(item.id_sucursal));
+        if (id_sucursal && assignedBranches && !assignedBranches.includes(Number(id_sucursal))) {
+            return res.status(403).json({ ok: false, errors: [{ msg: 'No tiene acceso a la sucursal solicitada.' }] });
+        }
         const where = {
             [Op.and]: [
                 id_provider ? { id_provider } : {},
-               { status: true },
-               {status_account:'PENDIENTE' }
+               { status: true }
             ]
         }
+        const inputWhere = {};
+        if (id_sucursal) inputWhere.id_sucursal = Number(id_sucursal);
+        if (id_storage) inputWhere.id_storage = Number(id_storage);
         let accountsPayable = await AccountsPayable.findAll({order: [['id', 'ASC']], where, include:[{
-            attributes:['cod','date_voucher','type_registry','registry_number'],
+            attributes:['cod','date_voucher','type_registry','registry_number','id_sucursal','id_storage'],
             association:'input',
+            where: inputWhere,
+            required: Boolean(id_sucursal || id_storage),
             include:[{
                 attributes:['id','quantity'],
                 association:'detailsInput'
-            }]
+            }, { association: 'storage', attributes: ['id', 'name'], required: false }]
+        }, { association: 'sucursal', attributes: ['id', 'name'], required: false }, {
+            association: 'abonosAccountsPayable',
+            required: false,
+            include: [{ association: 'user', attributes: ['id', 'full_names'], required: false }]
         }]});
-        const total_abonados = await AccountsPayable.sum('AccountsPayable.monto_abonado', {where});
-        const total_restante = await AccountsPayable.sum('AccountsPayable.monto_restante', {where});
-        const total_account = await AccountsPayable.sum('AccountsPayable.total',{where} );
+        const total_abonados = accountsPayable.reduce((sum, account) => sum + Number(account.monto_abonado || 0), 0);
+        const total_restante = accountsPayable.reduce((sum, account) => sum + Number(account.monto_restante || 0), 0);
+        const total_account = accountsPayable.reduce((sum, account) => sum + Number(account.total || 0), 0);
         let total_quantity = 0;
         for (const accountPayable of accountsPayable) {
-            total_quantity += accountPayable.input.detailsInput.reduce((sum, detail) => sum + Number(detail.quantity), 0);
+            total_quantity += (accountPayable.input?.detailsInput || []).reduce((sum, detail) => sum + Number(detail.quantity), 0);
         }
         const totals = {
             total_abonados,

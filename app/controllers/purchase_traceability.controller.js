@@ -63,6 +63,13 @@ const getProviderTraceability = async (req = request, res = response) => {
     if (!provider) return res.status(404).json({ ok: false, errors: [{ msg: 'El proveedor no existe.' }] });
 
     const baseWhere = { id_provider: idProvider };
+    if (req.query.id_sucursal) {
+      if (!canAccessBranch(req.userAuth, req.query.id_sucursal)) {
+        return res.status(403).json({ ok: false, errors: [{ msg: 'No tiene acceso a la sucursal solicitada.' }] });
+      }
+      baseWhere.id_sucursal = Number(req.query.id_sucursal);
+    }
+    if (req.query.id_storage) baseWhere.id_storage = Number(req.query.id_storage);
     if (req.query.status) baseWhere.status = req.query.status;
     if (req.query.boleta) baseWhere[Op.or] = [
       { cod: { [Op.iLike]: `%${req.query.boleta}%` } },
@@ -75,6 +82,7 @@ const getProviderTraceability = async (req = request, res = response) => {
       include: [{ association: 'abonosAccountsPayable', required: false }] };
     const purchaseInclude = [
       { association: 'sucursal', attributes: ['id', 'name'] },
+      { association: 'storage', attributes: ['id', 'name'], required: false },
       { association: 'user', attributes: ['id', 'full_names', 'role'] },
       { association: 'detailsInput', required: false, include: [{ association: 'product', required: false }] },
       accountInclude,

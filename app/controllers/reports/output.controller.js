@@ -660,8 +660,13 @@ const dataPdfReturnOutputVoucher = (output, sucursal, decimal) => [
             rows: [
                 { label: 'Nombre:', value: output?.client?.full_names || '-', labelWidth: 50 },
                 { label: 'Nro. Nit:', value: output?.client?.number_document || '-', labelWidth: 50 },
-                { label: 'Teléfono:', value: output?.client?.cellphone || '-', labelWidth: 50 },
-                { label: 'Dirección:', value: output?.client?.direction || '-', labelWidth: 50 },
+            ]
+        },
+        {
+            title: 'CONTACTOS',
+            rows: [
+                { label: 'Teléfono:', value: output?.client?.cellphone || '-', labelWidth: 55 },
+                { label: 'Dirección:', value: output?.client?.direction || '-', labelWidth: 55 },
             ]
         }
     ]),

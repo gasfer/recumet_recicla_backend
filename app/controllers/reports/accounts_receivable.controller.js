@@ -733,12 +733,17 @@ const dataPdfReturnAccountPayableVoucher = (accountsReceivable, decimal) => [
     buildHr([0, 1, 0, 4]),
     buildInfoPanel([
         {
-            title: 'DATOS DE CRÉDITO',
+            title: 'DATOS CLIENTE',
             rows: [
-                { label: 'Cliente:', value: `${accountsReceivable.client?.number_document ?? ''} ${accountsReceivable.client?.full_names || '-'}`, labelWidth: 70 },
-                { label: 'Descripción:', value: accountsReceivable.description || '-', labelWidth: 70 },
-                { label: 'Monto crédito:', value: `Bs. ${Number(accountsReceivable.total).toFixed(decimal)}`, labelWidth: 70 },
-                { label: 'Estado:', value: `CRÉDITO ${accountsReceivable.status_account}`, labelWidth: 70 },
+                { label: 'Nombre:', value: accountsReceivable?.client?.full_names || accountsReceivable.output?.client?.full_names || '-', labelWidth: 50 },
+                { label: 'Nro. Nit/CI:', value: accountsReceivable?.client?.number_document || accountsReceivable.output?.client?.number_document || '-', labelWidth: 50 },
+            ]
+        },
+        {
+            title: 'CONTACTOS',
+            rows: [
+                { label: 'Teléfono:', value: accountsReceivable?.client?.cellphone || accountsReceivable.output?.client?.cellphone || '-', labelWidth: 50 },
+                { label: 'Dirección:', value: accountsReceivable?.client?.direction || accountsReceivable.output?.client?.direction || '-', labelWidth: 50 },
             ]
         }
     ]),

@@ -947,8 +947,13 @@ const dataPdfReturnInputVoucher = (input, sucursal, decimal) => [
             rows: [
                 { label: 'Nombre:', value: input?.provider?.full_names || '-', labelWidth: 50 },
                 { label: 'Nro. Nit:', value: input?.provider?.number_document || '-', labelWidth: 50 },
-                { label: 'Teléfono:', value: input?.provider?.cellphone || '-', labelWidth: 50 },
-                { label: 'Dirección:', value: input?.provider?.direction || '-', labelWidth: 50 },
+            ]
+        },
+        {
+            title: 'CONTACTOS',
+            rows: [
+                { label: 'Teléfono:', value: input?.provider?.cellphone || '-', labelWidth: 55 },
+                { label: 'Dirección:', value: input?.provider?.direction || '-', labelWidth: 55 },
             ]
         }
     ]),

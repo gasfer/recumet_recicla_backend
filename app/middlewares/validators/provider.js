@@ -17,9 +17,7 @@ const validationSchema =  {
         custom: { options: numberDocumentExistProvider }
     },
     id_sector: {
-        isEmpty: {
-            negated: true, errorMessage: "La sector es obligatorio",
-        },
+        optional: { options: { nullable: true } },
         custom: { options: idExistSector },
     },
     id_type_provider: {
@@ -69,6 +67,21 @@ const getValidateCreate = [
     validatedResponse
 ];
 
+const getValidatePreRegister = [
+    checkSchema({
+        full_names: {
+            trim: true,
+            notEmpty: { errorMessage: 'La razón social es obligatoria' },
+            isLength: { options: { max: 174 }, errorMessage: 'La razón social debe tener máximo 174 caracteres' },
+        },
+        number_document: { optional: true, trim: true, isLength: { options: { max: 80 }, errorMessage: 'El CI / NIT debe tener máximo 80 caracteres' } },
+        cellphone: { optional: true, trim: true, isLength: { options: { max: 30 }, errorMessage: 'El celular debe tener máximo 30 caracteres' } },
+        id_sector: { optional: { options: { nullable: true } }, isInt: { errorMessage: 'El sector no es válido' } },
+        id_category: { optional: { options: { nullable: true } }, isInt: { errorMessage: 'La categoría no es válida' } },
+    }),
+    validatedResponse,
+];
+
 const getValidateCreateSector = [
     checkSchema(validationSchemaSector),
     validatedResponse
@@ -79,7 +92,35 @@ const getValidateUpdate= [
         id: {
             custom: { options: idExistProvider},
         },
-        ...validationSchema
+        ...validationSchema,
+        full_names: {
+            trim: true,
+            notEmpty: { errorMessage: 'La razón social es obligatoria' },
+            isLength: { options: { min: 2, max: 174 }, errorMessage: 'La razón social debe tener entre 2 y 174 caracteres' },
+            custom: { options: nameExistProvider },
+        },
+        number_document: {
+            optional: { options: { nullable: true } },
+            trim: true,
+            isLength: { options: { max: 80 }, errorMessage: 'El CI / NIT debe tener máximo 80 caracteres' },
+            custom: { options: numberDocumentExistProvider },
+        },
+        cellphone: { optional: { options: { nullable: true } }, isLength: { options: { max: 30 }, errorMessage: 'El celular debe tener máximo 30 caracteres' } },
+        direction: { optional: { options: { nullable: true } }, isLength: { options: { max: 254 }, errorMessage: 'La dirección debe tener máximo 254 caracteres' } },
+        commercial_name: { optional: { options: { nullable: true } }, trim: true, isLength: { options: { max: 174 }, errorMessage: 'El nombre comercial debe tener máximo 174 caracteres' } },
+        commercial_observations: { optional: { options: { nullable: true } }, isLength: { options: { max: 2000 }, errorMessage: 'Las observaciones comerciales deben tener máximo 2000 caracteres' } },
+        general_observations: { optional: { options: { nullable: true } }, isLength: { options: { max: 2000 }, errorMessage: 'Las observaciones generales deben tener máximo 2000 caracteres' } },
+        contact_email: { optional: { options: { nullable: true, checkFalsy: true } }, isEmail: { errorMessage: 'El correo de contacto no es válido' } },
+        department: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'El departamento debe tener máximo 120 caracteres' } },
+        province: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'La provincia debe tener máximo 120 caracteres' } },
+        city: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'La ciudad debe tener máximo 120 caracteres' } },
+        zone: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'La zona debe tener máximo 120 caracteres' } },
+        latitude: { optional: { options: { nullable: true, checkFalsy: true } }, isFloat: { options: { min: -90, max: 90 }, errorMessage: 'La latitud no es válida' } },
+        longitude: { optional: { options: { nullable: true, checkFalsy: true } }, isFloat: { options: { min: -180, max: 180 }, errorMessage: 'La longitud no es válida' } },
+        geolocation_text: { optional: { options: { nullable: true } }, isLength: { options: { max: 500 }, errorMessage: 'La referencia geográfica debe tener máximo 500 caracteres' } },
+        google_maps_url: { optional: { options: { nullable: true, checkFalsy: true } }, isURL: { errorMessage: 'El enlace de Google Maps no es válido' }, isLength: { options: { max: 1000 }, errorMessage: 'El enlace de Google Maps debe tener máximo 1000 caracteres' } },
+        account_holder: { optional: { options: { nullable: true } }, isLength: { options: { max: 174 }, errorMessage: 'El titular de cuenta debe tener máximo 174 caracteres' } },
+        account_number: { optional: { options: { nullable: true } }, isLength: { options: { max: 100 }, errorMessage: 'El número de cuenta debe tener máximo 100 caracteres' } },
     }),
     validatedResponse
 ];
@@ -106,6 +147,7 @@ const validateDeleteSector = [
 
 module.exports = {
     getValidateCreate,
+    getValidatePreRegister,
     getValidateUpdate,
     validateDelete,
     getValidateCreateSector,

@@ -3,20 +3,72 @@ const { validateDelete, getValidateCreate, getValidateUpdate } = require('../mid
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const { validarIsAdmin } = require('../middlewares/validators/validar-is-admin');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getUsers, newUser, updateUser, activeInactiveUser, updateAssignPermissions, updateAssignShift, updateAssignSucursales } = require('../controllers/user.controller');
+const {
+    getUsers,
+    newUser,
+    updateUser,
+    activeInactiveUser,
+    updateAssignPermissions,
+    updateAssignShift,
+    updateAssignSucursales,
+    getMyProfile,
+    updateMyProfile,
+    changeMyPassword
+} = require('../controllers/user.controller');
 const { validateAssignPermission } = require('../middlewares/validators/assign_permission');
 const { validateUpdateShifts } = require('../middlewares/validators/assign_shifts');
 const { validateUpdateAssignSucursales } = require('../middlewares/validators/assign_sucursales');
 
 const router = Router();
 
-
 /**
  * @swagger
  * tags:
  *   name: Users
- *   description: Gestión de usuarios
+ *   description: Gestión de usuarios y perfil
  */
+
+/**
+ * @swagger
+ * /user/profile/me:
+ *   get:
+ *     summary: Obtener perfil del usuario autenticado
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: Perfil de usuario obtenido exitosamente
+ */
+router.get('/profile/me', [
+    validarJWT
+], getMyProfile);
+
+/**
+ * @swagger
+ * /user/profile/me:
+ *   put:
+ *     summary: Actualizar contacto y foto del perfil propio
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: Perfil actualizado exitosamente
+ */
+router.put('/profile/me', [
+    validarJWT
+], updateMyProfile);
+
+/**
+ * @swagger
+ * /user/profile/change-password:
+ *   put:
+ *     summary: Cambiar contraseña personal del usuario autenticado
+ *     tags: [Users]
+ *     responses:
+ *       200:
+ *         description: Contraseña modificada exitosamente
+ */
+router.put('/profile/change-password', [
+    validarJWT
+], changeMyPassword);
 
 /**
  * @swagger
@@ -143,6 +195,5 @@ router.put('/assign/sucursales', [
     validarIsAdmin,
     validateUpdateAssignSucursales
 ], updateAssignSucursales);
-
 
 module.exports = router;

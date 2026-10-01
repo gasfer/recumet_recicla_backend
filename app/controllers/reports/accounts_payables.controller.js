@@ -860,12 +860,17 @@ const dataPdfReturnAccountPayableVoucher = (accountsPayable, decimal) => [
     buildHr([0, 1, 0, 4]),
     buildInfoPanel([
         {
-            title: 'DATOS DE CRÉDITO',
+            title: 'DATOS PROVEEDOR',
             rows: [
-                { label: 'Proveedor:', value: `${accountsPayable.provider?.number_document ?? ''} ${accountsPayable?.provider?.full_names || '-'}`, labelWidth: 70 },
-                { label: 'Descripción:', value: accountsPayable.description || '-', labelWidth: 70 },
-                { label: 'Monto crédito:', value: `Bs. ${Number(accountsPayable.total).toFixed(decimal)}`, labelWidth: 70 },
-                { label: 'Estado:', value: `CRÉDITO ${accountsPayable.status_account}`, labelWidth: 70 },
+                { label: 'Nombre:', value: accountsPayable?.provider?.full_names || accountsPayable.input?.provider?.full_names || '-', labelWidth: 50 },
+                { label: 'Nro. Nit:', value: accountsPayable?.provider?.number_document || accountsPayable.input?.provider?.number_document || '-', labelWidth: 50 },
+            ]
+        },
+        {
+            title: 'CONTACTOS',
+            rows: [
+                { label: 'Teléfono:', value: accountsPayable?.provider?.cellphone || accountsPayable.input?.provider?.cellphone || accountsPayable?.provider?.corporate_cellphone || '-', labelWidth: 50 },
+                { label: 'Dirección:', value: accountsPayable?.provider?.direction || accountsPayable.input?.provider?.direction || '-', labelWidth: 50 },
             ]
         }
     ]),

@@ -20,6 +20,8 @@ module.exports = (sequelize, DataTypes) => {
       User.hasMany(models.Notification,{as: 'notifications', foreignKey:'id_user'});
       User.hasMany(models.TransferReviewNote,{as: 'transferReviewNotes', foreignKey:'id_user'});
       User.hasMany(models.TransferHistoricalDifferenceCompletion,{as: 'historicalTransferDifferenceCompletions', foreignKey:'id_user'});
+      User.hasMany(models.Provider, { as: 'commercialProviders', foreignKey: 'id_commercial_user' });
+      User.hasMany(models.ProviderCompany, { as: 'commercialProviderCompanies', foreignKey: 'id_commercial_user' });
     }
   }
   User.init({

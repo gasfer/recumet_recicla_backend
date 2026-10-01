@@ -19,6 +19,7 @@ module.exports = (sequelize, DataTypes) => {
       Product.hasMany(models.TransferReviewNoteDetail,{as: 'transferReviewNoteDetails', foreignKey:'id_product'});
       Product.hasMany(models.TransferHistoricalDifferenceCompletion,{as: 'historicalDifferenceCompletions', foreignKey:'id_product'});
       Product.hasOne(models.ProductCosts,{as: 'productCosts', foreignKey:'id_product'});
+      Product.hasMany(models.ProviderMaterial, { as: 'providerMaterials', foreignKey: 'id_product' });
     }
   }
   Product.init({

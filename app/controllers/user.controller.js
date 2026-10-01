@@ -1,8 +1,7 @@
-
 const bcrypt = require('bcrypt');
 const generarJWT = require('../helpers/jwt');
 const { response, request } = require('express');
-const { User , assignPermission, assignShift, assignSucursales, sequelize} = require('../database/config');
+const { User, assignPermission, assignShift, assignSucursales, sequelize } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require("sequelize");
 const { sendPermissionDenied } = require('../helpers/permission-denied');
@@ -126,7 +125,6 @@ const activeInactiveUser = async (req = request, res = response) => {
     }
 }
 
-
 const updateAssignPermissions = async (req = request, res = response) => {
     let transaction;
     try {
@@ -233,6 +231,158 @@ const updateAssignSucursales = async (req = request, res = response) => {
     }
 }
 
+const getMyProfile = async (req = request, res = response) => {
+    try {
+        const id = req.userAuth?.id;
+        if (!id) {
+            return res.status(401).json({
+                ok: false,
+                errors: [{ msg: 'Usuario no autenticado' }]
+            });
+        }
+        const user = await User.findByPk(id, {
+            attributes: { exclude: ['password', 'createdAt', 'updatedAt'] },
+            include: [
+                { association: 'assign_permission', required: false, attributes: { exclude: ['createdAt', 'updatedAt', 'id_user', 'status'] } },
+                { association: 'assign_shift', required: false, attributes: { exclude: ['createdAt', 'updatedAt', 'id_user', 'status'] } },
+                { association: 'assign_sucursales', required: false, where: { status: true }, attributes: { exclude: ['createdAt', 'updatedAt', 'id_user', 'status'] } }
+            ]
+        });
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                errors: [{ msg: 'Usuario no encontrado' }]
+            });
+        }
+        return res.status(200).json({
+            ok: true,
+            user
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }]
+        });
+    }
+};
+
+const updateMyProfile = async (req = request, res = response) => {
+    try {
+        const id = req.userAuth?.id;
+        if (!id) {
+            return res.status(401).json({
+                ok: false,
+                errors: [{ msg: 'Usuario no autenticado' }]
+            });
+        }
+        const user = await User.findByPk(id);
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                errors: [{ msg: 'Usuario no encontrado' }]
+            });
+        }
+
+        const { cellphone, photo } = req.body;
+        const updateData = {};
+        if (cellphone !== undefined) {
+            updateData.cellphone = cellphone;
+        }
+        if (photo !== undefined) {
+            updateData.photo = photo;
+        }
+
+        await user.update(updateData);
+
+        const updatedUser = await User.findByPk(id, {
+            attributes: { exclude: ['password', 'createdAt', 'updatedAt'] },
+            include: [
+                { association: 'assign_permission', required: false, attributes: { exclude: ['createdAt', 'updatedAt', 'id_user', 'status'] } },
+                { association: 'assign_shift', required: false, attributes: { exclude: ['createdAt', 'updatedAt', 'id_user', 'status'] } },
+                { association: 'assign_sucursales', required: false, where: { status: true }, attributes: { exclude: ['createdAt', 'updatedAt', 'id_user', 'status'] } }
+            ]
+        });
+
+        return res.status(200).json({
+            ok: true,
+            msg: 'Perfil actualizado exitosamente',
+            user: updatedUser
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }]
+        });
+    }
+};
+
+const changeMyPassword = async (req = request, res = response) => {
+    try {
+        const id = req.userAuth?.id;
+        if (!id) {
+            return res.status(401).json({
+                ok: false,
+                errors: [{ msg: 'Usuario no autenticado' }]
+            });
+        }
+        const { current_password, new_password, confirm_password } = req.body;
+
+        if (!current_password || !new_password) {
+            return res.status(400).json({
+                ok: false,
+                errors: [{ msg: 'Debe ingresar la contraseña actual y la nueva contraseña' }]
+            });
+        }
+
+        if (confirm_password && new_password !== confirm_password) {
+            return res.status(400).json({
+                ok: false,
+                errors: [{ msg: 'La nueva contraseña y su confirmación no coinciden' }]
+            });
+        }
+
+        if (new_password.length < 6) {
+            return res.status(400).json({
+                ok: false,
+                errors: [{ msg: 'La nueva contraseña debe tener al menos 6 caracteres' }]
+            });
+        }
+
+        const user = await User.findByPk(id);
+        if (!user) {
+            return res.status(404).json({
+                ok: false,
+                errors: [{ msg: 'Usuario no encontrado' }]
+            });
+        }
+
+        const validPassword = await bcrypt.compare(current_password, user.password);
+        if (!validPassword) {
+            return res.status(400).json({
+                ok: false,
+                errors: [{ msg: 'La contraseña actual no es correcta' }]
+            });
+        }
+
+        const salt = bcrypt.genSaltSync();
+        const hashedPassword = bcrypt.hashSync(new_password, salt);
+        await user.update({ password: hashedPassword });
+
+        return res.status(200).json({
+            ok: true,
+            msg: 'Contraseña actualizada exitosamente'
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }]
+        });
+    }
+};
+
 module.exports = {
     getUsers,
     newUser,
@@ -240,5 +390,8 @@ module.exports = {
     activeInactiveUser,
     updateAssignPermissions,
     updateAssignShift,
-    updateAssignSucursales
+    updateAssignSucursales,
+    getMyProfile,
+    updateMyProfile,
+    changeMyPassword
 };

@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete } = require('../controllers/provider.controller');
-const { getValidateCreate, getValidateUpdate, validateDelete, getValidateCreateSector, validateDeleteSector } = require('../middlewares/validators/provider');
+const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete, preRegisterProvider, checkDuplicateProvider, getProviderCommercialDetails, commercialValidationProvider, saveProviderDetail, deleteProviderDetail, resolveGoogleMapsLink } = require('../controllers/provider.controller');
+const { getValidateCreate, getValidatePreRegister, getValidateUpdate, validateDelete, getValidateCreateSector, validateDeleteSector } = require('../middlewares/validators/provider');
 const { generateExcelProviders } = require('../controllers/reports/providers.controller');
 
 const router = Router();
@@ -32,6 +32,34 @@ router.get('/', [
 router.get('/autocomplete', [
     validarJWT,
 ], getProviderAutocomplete);
+
+router.get('/check-duplicate', [
+    validarJWT,
+], checkDuplicateProvider);
+
+router.get('/resolve-map-link', [validarJWT], resolveGoogleMapsLink);
+
+router.post('/pre-register', [
+    validarJWT,
+    toUpperCaseConvert,
+    getValidatePreRegister,
+], preRegisterProvider);
+
+router.get('/:id/commercial-details', [
+    validarJWT,
+], getProviderCommercialDetails);
+
+router.put('/:id/commercial-validation', [
+    validarJWT,
+    toUpperCaseConvert,
+], commercialValidationProvider);
+
+for (const detail of ['branches', 'contacts', 'bank-accounts', 'materials']) {
+    const kind = detail === 'bank-accounts' ? 'bankAccounts' : detail;
+    router.post(`/:id/${detail}`, [validarJWT, toUpperCaseConvert], saveProviderDetail(kind));
+    router.put(`/:id/${detail}/:detailId`, [validarJWT, toUpperCaseConvert], saveProviderDetail(kind));
+    router.delete(`/:id/${detail}/:detailId`, [validarJWT], deleteProviderDetail(kind));
+}
 
 
 /**
