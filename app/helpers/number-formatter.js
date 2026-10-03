@@ -1,5 +1,7 @@
 
 const { getDecimalPlaces } = require('./decimals-value');
+const { getDecimalPolicy } = require('./decimal-operation-context');
+const calculationScale = () => getDecimalPolicy()?.inventory ? 4 : getDecimalPlaces();
 
 const normalizeScale = (scale) => {
   if (!Number.isInteger(scale) || scale < 0 || scale > 4) {
@@ -30,23 +32,25 @@ const decimalToString = (value, scale = getDecimalPlaces()) => {
 
 
 const formattedDecimalSetter = (value) => {
-    const decimalPlaces = getDecimalPlaces();
+    const decimalPlaces = calculationScale();
+    if (getDecimalPolicy()?.inventory) return decimalToString(value, decimalPlaces);
     return decimalToNumber(value, decimalPlaces);
 };
 
 const formattedDecimalQuantitySetter = (value) => {
-  return decimalToNumber(value, getDecimalPlaces());
+  if (getDecimalPolicy()?.inventory) return decimalToString(value, calculationScale());
+  return decimalToNumber(value, calculationScale());
 };
 
-const decimalAdd = (left, right, scale = getDecimalPlaces()) => (
+const decimalAdd = (left, right, scale = calculationScale()) => (
   Number(toScaledInteger(left, scale) + toScaledInteger(right, scale)) / (10 ** scale)
 );
 
-const decimalSubtract = (left, right, scale = getDecimalPlaces()) => (
+const decimalSubtract = (left, right, scale = calculationScale()) => (
   Number(toScaledInteger(left, scale) - toScaledInteger(right, scale)) / (10 ** scale)
 );
 
-const decimalCompare = (left, right, scale = getDecimalPlaces()) => {
+const decimalCompare = (left, right, scale = calculationScale()) => {
   const difference = toScaledInteger(left, scale) - toScaledInteger(right, scale);
   return difference === 0n ? 0 : (difference > 0n ? 1 : -1);
 };
@@ -75,6 +79,41 @@ const decimalDivide = (left, right, scale = getDecimalPlaces()) => {
 
 const decimalTolerance = (scale = getDecimalPlaces()) => 1 / (10 ** normalizeScale(scale));
 
+const scaledToString = (scaled, scale = 4) => {
+  const negative = scaled < 0n ? '-' : '';
+  const raw = (scaled < 0n ? -scaled : scaled).toString().padStart(scale + 1, '0');
+  return scale === 0 ? `${negative}${raw}` : `${negative}${raw.slice(0, -scale)}.${raw.slice(-scale)}`;
+};
+const parseExact = (value) => {
+  const source = String(value ?? 0).trim();
+  const raw = source.includes(',') ? source.replace(/\./g, '').replace(',', '.') : source;
+  const match = /^(-?)(\d+)(?:\.(\d+))?$/.exec(raw);
+  if (!match) throw new TypeError('El valor decimal exacto no es válido.');
+  const fraction = match[3] || '';
+  return { units: BigInt(`${match[1]}${match[2]}${fraction}`), scale: fraction.length };
+};
+const exactOperands = (left, right) => {
+  const first = parseExact(left); const second = parseExact(right);
+  const scale = Math.max(4, first.scale, second.scale);
+  return { left: first.units * 10n ** BigInt(scale - first.scale), right: second.units * 10n ** BigInt(scale - second.scale), scale };
+};
+const exactAdd = (left, right) => { const values = exactOperands(left, right); return scaledToString(values.left + values.right, values.scale); };
+const exactSubtract = (left, right) => { const values = exactOperands(left, right); return scaledToString(values.left - values.right, values.scale); };
+const exactCompare = (left, right) => { const values = exactOperands(left, right); return values.left === values.right ? 0 : values.left > values.right ? 1 : -1; };
+const exactMultiply = (left, right) => { const first = parseExact(left); const second = parseExact(right); return scaledToString(first.units * second.units, first.scale + second.scale); };
+const exactDivide = (left, right, scale = 4) => {
+  normalizeScale(scale);
+  const first = parseExact(left); const second = parseExact(right);
+  if (second.units === 0n) throw new RangeError('No se puede dividir entre cero.');
+  const numerator = first.units * 10n ** BigInt(second.scale + scale);
+  const denominator = second.units * 10n ** BigInt(first.scale);
+  return scaledToString(divideAndRoundHalfUp(numerator, denominator), scale);
+};
+const exactMin = (left, right) => exactAdd(exactCompare(left, right) <= 0 ? left : right, 0);
+const exactMax = (left, right) => exactAdd(exactCompare(left, right) >= 0 ? left : right, 0);
+const exactAbs = (value) => exactCompare(value, 0) < 0 ? exactSubtract(0, value) : exactAdd(value, 0);
+const inventoryQuantity = (value) => decimalToString(value, getDecimalPlaces());
+
 const formatDecimalEsBo = (value, scale = getDecimalPlaces()) => new Intl.NumberFormat('es-BO', {
   minimumFractionDigits: normalizeScale(scale),
   maximumFractionDigits: normalizeScale(scale),
@@ -99,4 +138,10 @@ module.exports = {
     formatDecimalEsBo,
     excelNumberMask,
     toScaledInteger,
+    exactAdd,
+    exactSubtract,
+    exactCompare,
+    inventoryQuantity,
+    exactMin, exactMax, exactAbs,
+    exactMultiply, exactDivide,
 }

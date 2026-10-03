@@ -5,6 +5,7 @@ const {
   applyExplicitEffect,
 } = require('./inventory-posting.service');
 const { ValuedKardexService } = require('./valued-kardex.service');
+const { exactAdd, exactSubtract, exactCompare } = require('../helpers/number-formatter');
 
 const valuedKardex = new ValuedKardexService();
 
@@ -35,18 +36,18 @@ const createMovement = async ({ type, date, details, quantity, cost, productId, 
 
 const applyAcceptedReceipt = async ({ transfer, detail, quantityReceived, mermaProduct, userId, transaction }) => {
   const location = { sucursalId: transfer.id_sucursal_received, storageId: transfer.id_storage_received };
-  const sent = Number(detail.quantity);
-  const baseReceived = Math.min(sent, Number(quantityReceived));
-  if (baseReceived > 0) await incrementStock({ productId: detail.id_product, ...location, quantity: baseReceived, transaction,
+  const sent = detail.quantity;
+  const baseReceived = exactCompare(sent, quantityReceived) <= 0 ? sent : quantityReceived;
+  if (exactCompare(baseReceived, 0) > 0) await incrementStock({ productId: detail.id_product, ...location, quantity: baseReceived, transaction,
     valuation: { sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
   });
   const movements = [];
-  if (quantityReceived > sent) {
-    movements.push(await createMovement({ type: 'INPUT', date: transfer.date_received, details: `EXCEDENTE TRASPASO #${transfer.cod}`, quantity: quantityReceived - sent, cost: detail.cost, productId: detail.id_product, userId, ...location, registryNumber: transfer.registry_number, sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'SURPLUS', transaction }));
+  if (exactCompare(quantityReceived, sent) > 0) {
+    movements.push(await createMovement({ type: 'INPUT', date: transfer.date_received, details: `EXCEDENTE TRASPASO #${transfer.cod}`, quantity: exactSubtract(quantityReceived, sent), cost: detail.cost, productId: detail.id_product, userId, ...location, registryNumber: transfer.registry_number, sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'SURPLUS', transaction }));
   }
-  if (quantityReceived < sent) {
+  if (exactCompare(quantityReceived, sent) < 0) {
     if (!mermaProduct) throw Object.assign(new Error('Debe seleccionar un producto activo de la categoría de diferencias.'), { statusCode: 422 });
-    const shortage = sent - quantityReceived;
+    const shortage = exactSubtract(sent, quantityReceived);
     movements.push(await createMovement({ type: 'INPUT', date: transfer.date_received, details: `MERMA TRASPASO #${transfer.cod}`, quantity: shortage, cost: null, productId: mermaProduct.id, userId, ...location, registryNumber: transfer.registry_number, sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'SHORTAGE', transaction }));
   }
   return movements;
@@ -59,7 +60,7 @@ const applyBlockedShortageReceipt = async ({ transfer, shortageDetails, mermaPro
   const location = { sucursalId: transfer.id_sucursal_received, storageId: transfer.id_storage_received };
 
   for (const { detail, quantityReceived } of shortageDetails) {
-    if (quantityReceived > 0) {
+    if (exactCompare(quantityReceived, 0) > 0) {
       await incrementStock({ productId: detail.id_product, ...location, quantity: quantityReceived, transaction,
         valuation: { sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
       });
@@ -67,7 +68,7 @@ const applyBlockedShortageReceipt = async ({ transfer, shortageDetails, mermaPro
   }
 
   const totalShortage = shortageDetails.reduce((sum, { detail, quantityReceived }) => (
-    sum + (Number(detail.quantity) - quantityReceived)
+    exactAdd(sum, exactSubtract(detail.quantity, quantityReceived))
   ), 0);
 
   const shortageMovement = await createMovement({
@@ -91,15 +92,15 @@ const applyBlockedShortageReceipt = async ({ transfer, shortageDetails, mermaPro
 
 const applyBlockedExcessReceipt = async ({ transfer, detail, quantityReceived, userId, transaction }) => {
   const location = { sucursalId: transfer.id_sucursal_received, storageId: transfer.id_storage_received };
-  const sent = Number(detail.quantity);
-  const excess = quantityReceived - sent;
+  const sent = detail.quantity;
+  const excess = exactSubtract(quantityReceived, sent);
 
-  if (sent > 0) await incrementStock({ productId: detail.id_product, ...location, quantity: sent, transaction,
+  if (exactCompare(sent, 0) > 0) await incrementStock({ productId: detail.id_product, ...location, quantity: sent, transaction,
     valuation: { sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
   });
 
   let excessMovement = null;
-  if (excess > 0) {
+  if (exactCompare(excess, 0) > 0) {
     excessMovement = await createMovement({
       type: 'INPUT',
       date: transfer.date_received,

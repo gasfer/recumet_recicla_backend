@@ -5,6 +5,7 @@ const { MissingCostBasisError, ValuedBalanceDiscontinuityError } = require('../e
 const { ValuedInventoryRepository } = require('../repositories/valued-inventory.repository');
 const { SOURCE_CONTRACTS, VALUATION_STATUS } = require('./valued-kardex-contract.service');
 const { applyEntry, applyOutput, round, valueOf } = require('./weighted-average.service');
+const { exactAdd, exactSubtract, exactCompare } = require('../helpers/number-formatter');
 
 class ValuedKardexService {
   constructor({ sequelize = db.sequelize, repository = new ValuedInventoryRepository() } = {}) {
@@ -43,10 +44,10 @@ class ValuedKardexService {
 
     const location = { id_product, id_sucursal, id_storage };
     const balance = await this.repository.lockBalance(location, transaction);
-    const quantityBefore = Number(balance.quantity || 0);
+    const quantityBefore = exactAdd(balance.quantity || 0, 0);
     const valueBefore = Number(balance.balance_value || 0);
     const averageBefore = balance.average_unit_cost == null ? null : Number(balance.average_unit_cost);
-    if (expectedQuantityBefore !== undefined && round(expectedQuantityBefore) !== round(quantityBefore)) {
+    if (expectedQuantityBefore !== undefined && exactCompare(expectedQuantityBefore, quantityBefore) !== 0) {
       throw new ValuedBalanceDiscontinuityError(location);
     }
 
@@ -68,7 +69,7 @@ class ValuedKardexService {
       status = VALUATION_STATUS.UNVALUED;
       reason = error.message;
       result = {
-        quantityAfter: direction === 'INPUT' ? round(quantityBefore + Number(quantity)) : round(quantityBefore - Number(quantity)),
+        quantityAfter: direction === 'INPUT' ? exactAdd(quantityBefore, quantity) : exactSubtract(quantityBefore, quantity),
         valueAfter: null,
         averageAfter: null,
         appliedUnitCost: null,
@@ -112,12 +113,12 @@ class ValuedKardexService {
 
   async recordReversal({ originalEntry, sourceType, sourceId, sourceDetailId = null, effectType = 'REVERSAL', id_user, movementDate = new Date(), transaction }) {
     if (!originalEntry) throw new TypeError('La reversión requiere el movimiento valorado original.');
-    const originalDirection = Number(originalEntry.quantity_input || 0) > 0 ? 'INPUT' : 'OUTPUT';
+    const originalDirection = exactCompare(originalEntry.quantity_input || 0, 0) > 0 ? 'INPUT' : 'OUTPUT';
     return this.recordMovement({
       sourceType, sourceId, sourceDetailId, effectType, id_user, movementDate, transaction,
       id_product: originalEntry.id_product, id_sucursal: originalEntry.id_sucursal, id_storage: originalEntry.id_storage,
       direction: originalDirection === 'INPUT' ? 'OUTPUT' : 'INPUT',
-      quantity: Number(originalEntry.quantity_input || originalEntry.quantity_output),
+      quantity: exactAdd(originalEntry.quantity_input || originalEntry.quantity_output, 0),
       unitCost: originalEntry.applied_unit_cost,
       historicalUnitCost: originalEntry.applied_unit_cost,
       originalEntryId: originalEntry.id,

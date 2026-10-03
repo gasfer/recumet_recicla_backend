@@ -19,6 +19,7 @@ const bulkReconciliationService = require('../services/bulk-transfer-review-reco
 const historicalDifferenceService = require('../services/historical-transfer-difference.service');
 const receptionDifferenceListService = require('../services/reception-difference-reconciliation-list.service');
 const { permissionDeniedError, sendPermissionDenied } = require('../helpers/permission-denied');
+const { recordInventoryRejection } = require('../services/inventory-rejection-audit.service');
 
 const noteInclude = [
   { association: 'transfer', include: [{ association: 'sucursal_send', attributes: ['name'] }, { association: 'sucursal_received', attributes: ['name'] }] },
@@ -59,12 +60,14 @@ const hasReviewPermission = (user, action) => {
   return permission?.[REVIEW_PERMISSION_ACTIONS[action]] === true;
 };
 
-const sendWorkflowError = (res, error) => {
+const sendWorkflowError = async (res, error, req) => {
+  try { error = await recordInventoryRejection(error, req?.userAuth); }
+  catch (_) { error = Object.assign(new Error('No se pudo registrar la auditoría del rechazo. La operación no se confirmó.'), { statusCode: 503, code: 'INTEGRITY_AUDIT_FAILED' }); }
   console.log(error);
   const trackingId = error.statusCode ? null : randomUUID();
   return res.status(error.statusCode || 500).json({
     ok: false,
-    tracking_id: trackingId,
+    tracking_id: error.correlationId || trackingId,
     code: error.statusCode ? (error.code || 'TRANSFER_REVIEW_ERROR') : 'INTERNAL_ERROR',
     details: error.statusCode && Array.isArray(error.details) ? error.details : undefined,
     errors: [{ msg: error.statusCode ? error.message : `Ocurrió un imprevisto interno. Informe a soporte el código ${trackingId}.` }],
@@ -96,7 +99,7 @@ const getReviewNote = async (req = request, res = response) => {
     const note = await findAuthorizedNote(req);
     return res.status(200).json({ ok: true, note });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -114,7 +117,7 @@ const getManagedReconciliations = async (req = request, res = response) => {
       idSucursal, dateFrom: req.query.date_from, dateTo: req.query.date_to,
     });
     return res.status(200).json({ ok: true, reconciliations });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const getReceptionDifferences = async (req = request, res = response) => {
@@ -137,7 +140,7 @@ const getReceptionDifferences = async (req = request, res = response) => {
       dateTo: req.query.date_to,
     });
     return res.status(200).json({ ok: true, differences });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const reverseReconciliation = async (req = request, res = response) => {
@@ -145,7 +148,7 @@ const reverseReconciliation = async (req = request, res = response) => {
     await findAuthorizedNote(req);
     const note = await reconciliationManagementService.reverse({ noteId: Number(req.params.id), reason: req.body.reason, actorUserId: req.userAuth.id });
     return res.status(200).json({ ok: true, msg: 'Conciliación revertida. La diferencia volvió a revisión.', note });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const deleteReconciliation = async (req = request, res = response) => {
@@ -153,7 +156,7 @@ const deleteReconciliation = async (req = request, res = response) => {
     await findAuthorizedNote(req);
     const note = await reconciliationManagementService.remove({ noteId: Number(req.params.id), reason: req.body.reason, actorUserId: req.userAuth.id });
     return res.status(200).json({ ok: true, msg: 'Conciliación eliminada de la operación y conservada en auditoría.', note });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const getOpenReviews = async (req = request, res = response) => {
@@ -174,7 +177,7 @@ const getOpenReviews = async (req = request, res = response) => {
       irregularities_total: stockKardexIrregularities.length,
     });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -186,7 +189,7 @@ const getAssignableUsers = async (req = request, res = response) => {
     const users = await workflowService.listAssignableUsers(idSucursal);
     return res.status(200).json({ ok: true, users });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -198,7 +201,7 @@ const getTraceability = async (req = request, res = response) => {
     }
     return res.status(200).json({ ok: true, traceability });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -212,7 +215,7 @@ const previewHistoricalDifferenceCompletion = async (req = request, res = respon
     });
     return res.status(200).json({ ok: true, preview });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -234,7 +237,7 @@ const completeHistoricalDifference = async (req = request, res = response) => {
       ...result,
     });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -259,7 +262,7 @@ const getReviewReport = async (req = request, res = response) => {
     });
     return res.status(200).json({ ok: true, report });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -273,7 +276,7 @@ const getReviewStockDiagnostic = async (req = request, res = response) => {
     const rows = await getStockDiagnostic({ idSucursal, idStorage, limit: req.query.limit });
     return res.status(200).json({ ok: true, diagnostic: rows });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -287,7 +290,7 @@ const getRetainedWithoutAdjustment = async (req = request, res = response) => {
     const retained = await getRetainedWithoutAdjustmentReport({ idSucursal, idStorage, limit: req.query.limit });
     return res.status(200).json({ ok: true, retained, total: retained.length });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -302,7 +305,7 @@ const assignReview = async (req = request, res = response) => {
     });
     return res.status(200).json({ ok: true, msg: 'Revisión asignada correctamente.', note });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -314,7 +317,7 @@ const addComment = async (req = request, res = response) => {
     const event = await workflowService.addComment({ noteId: req.params.id, description, actorUserId: req.userAuth.id });
     return res.status(201).json({ ok: true, msg: 'Comentario registrado.', event });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -343,7 +346,7 @@ const addManualAction = async (req = request, res = response) => {
     });
     return res.status(201).json({ ok: true, msg: 'Acción incorporada a la trazabilidad.', event });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -357,7 +360,7 @@ const addEvidence = async (req = request, res = response) => {
     const evidence = await workflowService.addEvidence({ noteId: req.params.id, evidence: { evidence_type, file_name, file_url, description, checksum }, actorUserId: req.userAuth.id });
     return res.status(201).json({ ok: true, msg: 'Evidencia registrada.', evidence });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -367,7 +370,7 @@ const closeReview = async (req = request, res = response) => {
     const note = await workflowService.closeReview({ noteId: req.params.id, actorUserId: req.userAuth.id });
     return res.status(200).json({ ok: true, msg: 'Revisión cerrada.', note });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -379,7 +382,7 @@ const reopenReview = async (req = request, res = response) => {
     const note = await workflowService.reopenReview({ noteId: req.params.id, detailIds: req.body.detail_ids, reason, actorUserId: req.userAuth.id });
     return res.status(200).json({ ok: true, msg: 'Revisión reabierta.', note });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -404,7 +407,7 @@ const resolveReviewDetail = async (req = request, res = response) => {
       ...result,
     });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -432,7 +435,7 @@ const documentaryCloseReviewDetail = async (req = request, res = response) => {
       ...result,
     });
   } catch (error) {
-    return sendWorkflowError(res, error);
+    return sendWorkflowError(res, error, req);
   }
 };
 
@@ -441,7 +444,7 @@ const previewAutomaticResolution = async (req = request, res = response) => {
     await findAuthorizedNote(req);
     const preview = await automatedResolutionService.preview({ noteId: Number(req.params.id), detailId: Number(req.params.detail_id) });
     return res.status(200).json({ ok: true, preview });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const confirmAutomaticResolution = async (req = request, res = response) => {
@@ -459,7 +462,7 @@ const confirmAutomaticResolution = async (req = request, res = response) => {
       idempotencyKey: req.header('Idempotency-Key') || req.body.idempotency_key || randomUUID(), actorUserId: req.userAuth.id,
     });
     return res.status(result.idempotent ? 200 : 201).json({ ok: true, msg: result.idempotent ? 'La conciliación ya había sido aplicada.' : 'Conciliación automática creada con todos sus registros.', ...result });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const previewBulkReconciliation = async (req = request, res = response) => {
@@ -467,7 +470,7 @@ const previewBulkReconciliation = async (req = request, res = response) => {
     await findAuthorizedNote(req);
     const preview = await bulkReconciliationService.preview({ noteId: Number(req.params.id), items: req.body.items });
     return res.status(200).json({ ok: true, preview });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const confirmBulkReconciliation = async (req = request, res = response) => {
@@ -478,7 +481,7 @@ const confirmBulkReconciliation = async (req = request, res = response) => {
       idempotencyKey: req.header('Idempotency-Key') || req.body.idempotency_key || randomUUID(), actorUserId: req.userAuth.id,
     });
     return res.status(result.idempotent ? 200 : 201).json({ ok: true, msg: 'Conciliación agrupada aplicada.', ...result });
-  } catch (error) { return sendWorkflowError(res, error); }
+  } catch (error) { return sendWorkflowError(res, error, req); }
 };
 
 const printReviewNote = async (req = request, res = response) => {

@@ -64,9 +64,9 @@ test('§1.2 Stock > Kardex: detecta diferencia positiva con dirección correcta 
   assert.equal(irregularities.length, 1, 'debe encontrar exactamente una irregularidad');
   const item = irregularities[0];
   assert.equal(item.difference_direction, 'STOCK_GREATER_THAN_KARDEX');
-  assert.equal(item.physical_stock, 120);
-  assert.equal(item.kardex_balance, 100);
-  assert.equal(item.physical_kardex_difference, 20);
+  assert.equal(item.physical_stock, '120.0000');
+  assert.equal(item.kardex_balance, '100.0000');
+  assert.equal(item.physical_kardex_difference, '20.0000');
   assert.ok(Array.isArray(item.traceable_transfers), 'debe incluir array de traslados trazables');
   // Verificar que NO se modifica ninguna estructura de BD (solo lectura)
   assert.equal(item.cause, undefined, 'no infiere causa: requiere investigación humana');
@@ -83,9 +83,9 @@ test('§1.2 Kardex > Stock: detecta diferencia negativa sin corregir automática
   assert.equal(irregularities.length, 1);
   const item = irregularities[0];
   assert.equal(item.difference_direction, 'KARDEX_GREATER_THAN_STOCK');
-  assert.equal(item.physical_stock, 80);
-  assert.equal(item.kardex_balance, 100);
-  assert.equal(item.physical_kardex_difference, -20);
+  assert.equal(item.physical_stock, '80.0000');
+  assert.equal(item.kardex_balance, '100.0000');
+  assert.equal(item.physical_kardex_difference, '-20.0000');
   assert.deepEqual(item.traceable_transfers, [], 'sin traslados identificables la lista queda vacía');
   // La función devuelve datos; NO escribe nada
   assert.equal(item.id_storage, 1);

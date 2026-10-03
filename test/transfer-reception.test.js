@@ -22,8 +22,8 @@ test('preserva el peso físico recibido y permite excedentes por producto', () =
         id: detail.id,
         quantityReceived,
     })), [
-        { id: 1, quantityReceived: 23 },
-        { id: 2, quantityReceived: 11.6 },
+        { id: 1, quantityReceived: '23.00' },
+        { id: 2, quantityReceived: '11.60' },
     ]);
 });
 
@@ -44,11 +44,11 @@ test('rechaza detalles ajenos y duplicados', () => {
 
 test('descompone un excedente en recepción base y diferencia consecutiva', () => {
     assert.deepEqual(reconcileTransferReceipt(81.7, 83), {
-        sent: 81.7,
-        base: 81.7,
-        excess: 1.3,
-        shortage: 0,
-        received: 83,
+        sent: '81.7000',
+        base: '81.7000',
+        excess: '1.3000',
+        shortage: '0.0000',
+        received: '83.0000',
     });
 });
 
@@ -60,9 +60,9 @@ test('concilia varios ítems con excedente, faltante y recepción exacta', () =>
     ];
 
     assert.deepEqual(reconciliations.map(({ base, excess, shortage, received }) => ({ base, excess, shortage, received })), [
-        { base: 10, excess: 2, shortage: 0, received: 12 },
-        { base: 6.5, excess: 0, shortage: 1.5, received: 6.5 },
-        { base: 4, excess: 0, shortage: 0, received: 4 },
+        { base: '10.0000', excess: '2.0000', shortage: '0.0000', received: '12.0000' },
+        { base: '6.5000', excess: '0.0000', shortage: '1.5000', received: '6.5000' },
+        { base: '4.0000', excess: '0.0000', shortage: '0.0000', received: '4.0000' },
     ]);
 });
 
@@ -116,11 +116,12 @@ const loadReceivedTransfer = (models, notifications = []) => {
         TransferReviewEvent: { create: async (data) => data },
         TransferReviewInventoryHold: { bulkCreate: async (data) => data },
         ...models,
+        sequelize: { ...models.sequelize, query: async () => [] },
         Stock: {
             ...suppliedStock,
             findOne: async (options = {}) => {
                 const supplied = suppliedStock.findOne ? await suppliedStock.findOne(options) : null;
-                if (supplied) return supplied;
+                if (supplied) { supplied.setDataValue = (key, value) => { supplied[key] = Number(value); }; return supplied; }
                 const where = options.where || {};
                 return createdStockRows.find((row) => Object.entries(where).every(([key, value]) => row[key] === value)) || null;
             },
@@ -129,7 +130,7 @@ const loadReceivedTransfer = (models, notifications = []) => {
                 const row = created && typeof created === 'object'
                     ? created
                     : { ...data, async save() {} };
-                createdStockRows.push(row);
+                row.setDataValue = (key, value) => { row[key] = Number(value); }; createdStockRows.push(row);
                 return row;
             },
         },
@@ -262,17 +263,17 @@ test('recepción con excedente actualiza stock, Kardex y una nota independiente'
     assert.equal(result.status, 201);
     assert.equal(operations.commits, 1);
     assert.equal(operations.rollbacks, 0);
-    assert.equal(transfer.detailsTransfers[0].quantity_received, 7);
+    assert.equal(transfer.detailsTransfers[0].quantity_received, '7.00');
     assert.equal(transfer.detailsTransfers[0].saveCalls, 1);
     assert.equal(operations.stockCreates[0].stock, 7);
     assert.deepEqual(operations.kardex.map(({ details, quantity, id_product }) => ({ details, quantity, id_product })), [
-        { details: 'EXCEDENTE TRASPASO #TRAS00044', quantity: 2, id_product: 10 },
+        { details: 'EXCEDENTE TRASPASO #TRAS00044', quantity: '2.0000', id_product: 10 },
     ]);
     assert.deepEqual(operations.kardex.map(({ date, registry_number }) => ({ date, registry_number })), [
         { date: '2026-08-14T09:00:00.000Z', registry_number: 'SF-00044' },
     ]);
     assert.equal(operations.notes[0].type, 'EXCEDENTE_PARA_REVISION');
-    assert.equal(operations.noteDetails[0].quantity_difference, 2);
+    assert.equal(operations.noteDetails[0].quantity_difference, '2.0000');
 });
 
 test('recepción sin diferencia no crea movimientos ni notas de revisión', async (t) => {
@@ -338,13 +339,13 @@ test('recepción con faltante registra la diferencia consolidada en el producto 
         { id_product: 321, stock: 1.5 },
     ]);
     assert.deepEqual(operations.kardex.map(({ details, quantity, id_product }) => ({ details, quantity, id_product })), [
-        { details: 'MERMA TRASPASO #TRAS00044', quantity: 1.5, id_product: 321 },
+        { details: 'MERMA TRASPASO #TRAS00044', quantity: '1.5000', id_product: 321 },
     ]);
     assert.deepEqual(operations.kardex.map(({ date, registry_number }) => ({ date, registry_number })), [
         { date: '2026-08-14T09:00:00.000Z', registry_number: 'SF-00044' },
     ]);
     assert.equal(operations.notes[0].type, 'FALTANTE_PARA_REVISION');
-    assert.equal(operations.noteDetails[0].quantity_difference, 1.5);
+    assert.equal(operations.noteDetails[0].quantity_difference, '1.5000');
 });
 
 test('recepción con varios faltantes crea un único movimiento y nota consolidada', async (t) => {
@@ -374,12 +375,12 @@ test('recepción con varios faltantes crea un único movimiento y nota consolida
     }, response);
 
     assert.equal(result.status, 201);
-    assert.deepEqual(operations.kardex.map(({ quantity, id_product }) => ({ quantity, id_product })), [{ quantity: 3.5, id_product: 321 }]);
+    assert.deepEqual(operations.kardex.map(({ quantity, id_product }) => ({ quantity, id_product })), [{ quantity: '3.5000', id_product: 321 }]);
     assert.equal(operations.notes.length, 1);
     assert.equal(operations.notes[0].type, 'FALTANTE_PARA_REVISION');
     assert.deepEqual(operations.noteDetails.map(({ id_product, quantity_difference }) => ({ id_product, quantity_difference })), [
-        { id_product: 10, quantity_difference: 1.5 },
-        { id_product: 11, quantity_difference: 2 },
+        { id_product: 10, quantity_difference: '1.5000' },
+        { id_product: 11, quantity_difference: '2.0000' },
     ]);
 });
 
@@ -411,7 +412,7 @@ test('recepción con varios excedentes crea un movimiento y nota por producto', 
 
     assert.equal(result.status, 201);
     assert.deepEqual(operations.kardex.map(({ quantity, id_product }) => ({ quantity, id_product })), [
-        { quantity: 2, id_product: 10 }, { quantity: 1.5, id_product: 11 },
+        { quantity: '2.0000', id_product: 10 }, { quantity: '1.5000', id_product: 11 },
     ]);
     assert.deepEqual(operations.kardex.map(({ date, registry_number }) => ({ date, registry_number })), [
         { date: '2026-08-14T09:00:00.000Z', registry_number: 'SF-00044' },
@@ -420,7 +421,7 @@ test('recepción con varios excedentes crea un movimiento y nota por producto', 
     assert.equal(operations.notes.length, 2);
     assert.ok(operations.notes.every(({ type }) => type === 'EXCEDENTE_PARA_REVISION'));
     assert.deepEqual(operations.noteDetails.map(({ id_product, quantity_difference }) => ({ id_product, quantity_difference })), [
-        { id_product: 10, quantity_difference: 2 }, { id_product: 11, quantity_difference: 1.5 },
+        { id_product: 10, quantity_difference: '2.0000' }, { id_product: 11, quantity_difference: '1.5000' },
     ]);
 });
 

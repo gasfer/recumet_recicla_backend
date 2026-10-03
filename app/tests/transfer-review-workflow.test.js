@@ -211,23 +211,23 @@ test('3.4 getTransferTraceability enriquece medición, normal, bloqueada y efect
 
   // Item dentro de tolerancia
   const acceptedItem = traceability.detailsTransfers[0];
-  assert.equal(acceptedItem.quantity_sent, 100);
-  assert.equal(acceptedItem.quantity_physical_received, 100.5);
-  assert.equal(acceptedItem.quantity_normal_received, 100.5);
-  assert.equal(acceptedItem.quantity_blocked_difference, 0);
-  assert.equal(acceptedItem.quantity_held, 0);
-  assert.equal(acceptedItem.quantity_available, 100.5);
+  assert.equal(acceptedItem.quantity_sent, '100.0000');
+  assert.equal(acceptedItem.quantity_physical_received, '100.5000');
+  assert.equal(acceptedItem.quantity_normal_received, '100.5000');
+  assert.equal(acceptedItem.quantity_blocked_difference, '0.0000');
+  assert.equal(acceptedItem.quantity_held, '0.0000');
+  assert.equal(acceptedItem.quantity_available, '100.5000');
   assert.equal(acceptedItem.inventory_integrity, 'INTEGRA');
   assert.equal(acceptedItem.tolerance_decision, 'ACCEPTED');
 
   // Item fuera de tolerancia
   const reviewItem = traceability.detailsTransfers[1];
-  assert.equal(reviewItem.quantity_sent, 100);
-  assert.equal(reviewItem.quantity_physical_received, 110);
-  assert.equal(reviewItem.quantity_normal_received, 100);
-  assert.equal(reviewItem.quantity_blocked_difference, 10);
-  assert.equal(reviewItem.quantity_held, 10);
-  assert.equal(reviewItem.quantity_available, 100);
+  assert.equal(reviewItem.quantity_sent, '100.0000');
+  assert.equal(reviewItem.quantity_physical_received, '110.0000');
+  assert.equal(reviewItem.quantity_normal_received, '100.0000');
+  assert.equal(reviewItem.quantity_blocked_difference, '10.0000');
+  assert.equal(reviewItem.quantity_held, '10.0000');
+  assert.equal(reviewItem.quantity_available, '100.0000');
   assert.equal(reviewItem.inventory_integrity, 'INTEGRA');
   assert.equal(reviewItem.receipt_difference_percentage, 10);
   assert.equal(reviewItem.tolerance_decision, 'REQUIRES_REVIEW');
@@ -235,9 +235,9 @@ test('3.4 getTransferTraceability enriquece medición, normal, bloqueada y efect
   // Un faltante no retiene el producto físico recibido: la retención es de Merma.
   const shortageItem = traceability.detailsTransfers[2];
   assert.equal(shortageItem.is_shortage, true);
-  assert.equal(shortageItem.quantity_shortage_pending, 5.5);
-  assert.equal(shortageItem.quantity_held, 0);
-  assert.equal(shortageItem.quantity_available, 21);
+  assert.equal(shortageItem.quantity_shortage_pending, '5.5000');
+  assert.equal(shortageItem.quantity_held, '0.0000');
+  assert.equal(shortageItem.quantity_available, '21.0000');
 
   // Acción con efecto aplicado
   const note = traceability.reviewNotes[0];

@@ -13,7 +13,7 @@ test('edición de precio conserva creador y guarda ejecutor autorizador y motivo
   let committed = false;
   const tx = { ...transaction, commit: async () => { committed = true; }, rollback: async () => {} };
   t.mock.method(db.sequelize, 'transaction', async () => tx);
-  t.mock.method(db.sequelize, 'query', async () => []);
+  t.mock.method(db.sequelize, 'query', async (sql) => sql.includes('physical_kardex_balance') ? [{ kardex_balance: 50, physical_kardex_balance: 50, duplicate_effects: 0 }] : []);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
   t.mock.method(db.User, 'findByPk', async () => ({ id: 9, status: true, role: 'ENCARGADO' }));
   const detail = { id: 11, id_product: 2, quantity: 50, cost: 14, total: 700, status: 'ACTIVE',
@@ -24,7 +24,7 @@ test('edición de precio conserva creador y guarda ejecutor autorizador y motivo
   let reads = 0;
   t.mock.method(db.Input, 'findByPk', async () => ++reads === 1 ? original : { ...original, ...payload });
   t.mock.method(db.Input, 'update', async data => { payload = data; return [1]; });
-  const stock = { id_product: 2, id_sucursal: 3, id_storage: 4, stock: 50, save: async () => {} };
+  const stock = { id_product: 2, id_sucursal: 3, id_storage: 4, stock: 50, setDataValue(key, value) { this[key] = Number(value); }, save: async () => {} };
   t.mock.method(db.Stock, 'findOne', async () => stock);
   t.mock.method(db.History, 'create', async () => ({}));
   const events = [];
@@ -53,7 +53,7 @@ test('asignación inicial guarda precios y trazabilidad sin motivo ni autorizado
   let committed = false;
   const tx = { ...transaction, commit: async () => { committed = true; }, rollback: async () => {} };
   t.mock.method(db.sequelize, 'transaction', async () => tx);
-  t.mock.method(db.sequelize, 'query', async () => []);
+  t.mock.method(db.sequelize, 'query', async (sql) => sql.includes('physical_kardex_balance') ? [{ kardex_balance: 50, physical_kardex_balance: 50, duplicate_effects: 0 }] : []);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
   const authorizerLookup = t.mock.method(db.User, 'findByPk', async () => { throw Error('No debe consultar autorizadores'); });
   const detail = { id: 11, id_product: 2, quantity: 50, cost: 0, total: 0, status: 'ACTIVE',
@@ -66,7 +66,7 @@ test('asignación inicial guarda precios y trazabilidad sin motivo ni autorizado
   let reads = 0;
   t.mock.method(db.Input, 'findByPk', async () => ++reads === 1 ? original : { ...original, ...payload });
   t.mock.method(db.Input, 'update', async data => { payload = data; return [1]; });
-  const stock = { id_product: 2, id_sucursal: 3, id_storage: 4, stock: 50, save: async () => {} };
+  const stock = { id_product: 2, id_sucursal: 3, id_storage: 4, stock: 50, setDataValue(key, value) { this[key] = Number(value); }, save: async () => {} };
   t.mock.method(db.Stock, 'findOne', async () => stock);
   t.mock.method(db.History, 'create', async () => ({}));
   const events = [];

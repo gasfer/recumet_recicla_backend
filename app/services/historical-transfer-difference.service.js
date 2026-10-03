@@ -29,46 +29,39 @@ const {
   HISTORICAL_COMPLETION_ACTIONS: ACTIONS,
 } = require('../constants/historical-transfer-difference');
 
-const EPSILON_UNITS = 1;
-const { toScaledInteger, decimalToNumber, decimalToString } = require('../helpers/number-formatter');
+const { decimalToString, exactAdd, exactSubtract, exactCompare, exactMin, exactMax } = require('../helpers/number-formatter');
 
 const operationError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
-const toUnits = (value) => toScaledInteger(value || 0);
-const fromUnits = (value) => decimalToNumber(value || 0);
-const approximatelyEqual = (left, right) => {
-  const difference = toUnits(left) - toUnits(right);
-  return (difference < 0n ? -difference : difference) <= BigInt(EPSILON_UNITS);
-};
+const normalizeHistoricalQuantity = (value) => decimalToString(value || 0, 4);
+const approximatelyEqual = (left, right) => exactCompare(normalizeHistoricalQuantity(left), normalizeHistoricalQuantity(right)) === 0;
 
 const expectedDifference = (detail) => {
-  const sent = toUnits(detail.quantity);
+  const sent = normalizeHistoricalQuantity(detail.quantity);
   if (detail.quantity_received === null || detail.quantity_received === undefined || detail.quantity_received === '') {
     return {
       type: TYPES.UNDETERMINED,
-      sent: fromUnits(sent),
+      sent,
       received: null,
       baseExpected: null,
       differenceExpected: null,
     };
   }
-  const received = toUnits(detail.quantity_received);
-  if (received === sent) {
-    return { type: TYPES.EXACT, sent: fromUnits(sent), received: fromUnits(received), baseExpected: fromUnits(sent), differenceExpected: 0 };
+  const received = normalizeHistoricalQuantity(detail.quantity_received);
+  if (exactCompare(received, sent) === 0) {
+    return { type: TYPES.EXACT, sent, received, baseExpected: sent, differenceExpected: '0.0000' };
   }
-  if (received > sent) {
-    return { type: TYPES.SURPLUS, sent: fromUnits(sent), received: fromUnits(received), baseExpected: fromUnits(sent), differenceExpected: fromUnits(received - sent) };
+  if (exactCompare(received, sent) > 0) {
+    return { type: TYPES.SURPLUS, sent, received, baseExpected: sent, differenceExpected: exactSubtract(received, sent) };
   }
-  return { type: TYPES.SHORTAGE, sent: fromUnits(sent), received: fromUnits(received), baseExpected: fromUnits(received), differenceExpected: fromUnits(sent - received) };
+  return { type: TYPES.SHORTAGE, sent, received, baseExpected: received, differenceExpected: exactSubtract(sent, received) };
 };
 
 const allocateCoveredQuantity = (items, coveredQuantity) => {
-  let remainingUnits = toUnits(coveredQuantity);
-  if (remainingUnits < 0n) remainingUnits = 0n;
+  let remaining = exactMax(0, coveredQuantity);
   return [...items].sort((left, right) => Number(left.id) - Number(right.id)).map((item) => {
-    const expectedUnits = toUnits(item.difference_expected);
-    const coveredUnits = expectedUnits < remainingUnits ? expectedUnits : remainingUnits;
-    remainingUnits -= coveredUnits;
-    return { id: item.id, covered: fromUnits(coveredUnits), pending: fromUnits(expectedUnits - coveredUnits) };
+    const covered = exactMin(item.difference_expected, remaining);
+    remaining = exactSubtract(remaining, covered);
+    return { id: item.id, covered, pending: exactSubtract(item.difference_expected, covered) };
   });
 };
 
@@ -144,12 +137,12 @@ const loadLatestInventory = async (transfer, productIds, transaction) => {
       transaction,
     }),
   ]);
-  const stockMap = new Map(stocks.map((stock) => [Number(stock.id_product), Number(stock.stock)]));
-  const kardexMap = new Map(kardexRows.map((row) => [Number(row.id_product), Number(row.saldo)]));
+  const stockMap = new Map(stocks.map((stock) => [Number(stock.id_product), normalizeHistoricalQuantity(stock.stock)]));
+  const kardexMap = new Map(kardexRows.map((row) => [Number(row.id_product), normalizeHistoricalQuantity(row.saldo)]));
   return new Map(productIds.map((productId) => {
-    const stock = stockMap.get(Number(productId)) || 0;
-    const kardex = kardexMap.get(Number(productId)) || 0;
-    return [Number(productId), { stock, kardex, difference: fromUnits(toUnits(stock) - toUnits(kardex)) }];
+    const stock = stockMap.get(Number(productId)) || '0.0000';
+    const kardex = kardexMap.get(Number(productId)) || '0.0000';
+    return [Number(productId), { stock, kardex, difference: exactSubtract(stock, kardex) }];
   }));
 };
 
@@ -173,7 +166,7 @@ const loadCandidateMovements = async (transfer, transaction) => kardexMovements.
 const movementView = (movement, confidence, product) => ({
   id: Number(movement.id),
   type: movement.type,
-  quantity: Number(movement.quantity),
+  quantity: normalizeHistoricalQuantity(movement.quantity),
   details: movement.details,
   registry_number: movement.registry_number,
   id_product: Number(movement.id_product),
@@ -209,7 +202,7 @@ const reviewNoteForItem = (transfer, item) => {
 const historicalVerificationInventory = (item) => {
   const stock = item.registered_stock ?? item.stock;
   const kardex = item.registered_kardex ?? item.kardex;
-  if (Number(item.difference_covered || 0) > 0) {
+  if (exactCompare(item.difference_covered || 0, 0) > 0) {
     return {
       before_stock: stock,
       before_kardex: kardex,
@@ -272,7 +265,7 @@ const buildProjection = async (transfer, { transaction } = {}) => {
   ];
   const candidateMovements = [...new Map([...queriedMovements, ...relatedMovements]
     .map((movement) => [Number(movement.id), movement])).values()];
-  const baseByProduct = new Map(baseRows.map((row) => [Number(row.id_product), Number(row.quantity)]));
+  const baseByProduct = new Map(baseRows.map((row) => [Number(row.id_product), normalizeHistoricalQuantity(row.quantity)]));
   const productIds = new Set(details.map(({ id_product: productId }) => productId));
   for (const note of transfer.reviewNotes || []) if (note.id_product) productIds.add(Number(note.id_product));
   for (const movement of candidateMovements) productIds.add(Number(movement.id_product));
@@ -297,13 +290,13 @@ const buildProjection = async (transfer, { transaction } = {}) => {
   }
 
   const projected = details.map((detail) => {
-    const originalInventory = inventory.get(detail.id_product) || { stock: 0, kardex: 0, difference: 0 };
+    const originalInventory = inventory.get(detail.id_product) || { stock: '0.0000', kardex: '0.0000', difference: '0.0000' };
     const sameProductDetails = details.filter(({ id_product: productId }) => productId === detail.id_product);
-    const baseFound = sameProductDetails.length === 1 ? fromUnits(toUnits(baseByProduct.get(detail.id_product))) : null;
+    const baseFound = sameProductDetails.length === 1 ? baseByProduct.get(detail.id_product) : null;
     const baseConfidence = sameProductDetails.length === 1 ? CONFIDENCE.LINKED : CONFIDENCE.AMBIGUOUS;
     if (detail.difference_type === TYPES.UNDETERMINED) {
       return {
-        ...detail, base_found: baseFound, base_confidence: baseConfidence, difference_covered: 0, difference_pending: null,
+        ...detail, base_found: baseFound, base_confidence: baseConfidence, difference_covered: '0.0000', difference_pending: null,
         registered_product: null, difference_movements: [], evidence_confidence: CONFIDENCE.NOT_FOUND,
         stock: originalInventory.stock, kardex: originalInventory.kardex, stock_kardex_difference: originalInventory.difference,
         registered_stock: null, registered_kardex: null, registered_stock_kardex_difference: null,
@@ -315,7 +308,7 @@ const buildProjection = async (transfer, { transaction } = {}) => {
       const baseConsistent = approximatelyEqual(baseFound, detail.base_expected);
       const inventoryConsistent = approximatelyEqual(originalInventory.difference, 0);
       return {
-        ...detail, base_found: baseFound, base_confidence: baseConfidence, difference_covered: 0, difference_pending: 0,
+        ...detail, base_found: baseFound, base_confidence: baseConfidence, difference_covered: '0.0000', difference_pending: '0.0000',
         registered_product: detail.product, difference_movements: [], evidence_confidence: CONFIDENCE.LINKED,
         stock: originalInventory.stock, kardex: originalInventory.kardex, stock_kardex_difference: originalInventory.difference,
         registered_stock: originalInventory.stock, registered_kardex: originalInventory.kardex,
@@ -345,15 +338,15 @@ const buildProjection = async (transfer, { transaction } = {}) => {
     const ambiguous = unlinked.length > 1 || (unlinked.length === 1 && (surplusItemsByProduct.get(item.id_product) || []).length > 1);
     const accepted = [...linked, ...(!ambiguous && unlinked.length === 1 ? unlinked : [])];
     const unique = [...new Map(accepted.map((movement) => [Number(movement.id), movement])).values()];
-    const covered = Math.min(Number(item.difference_expected), unique.reduce((sum, movement) => sum + Number(movement.quantity), 0));
-    const pending = fromUnits(toUnits(item.difference_expected) - toUnits(covered));
+    const covered = exactMin(item.difference_expected, unique.reduce((sum, movement) => exactAdd(sum, movement.quantity), '0.0000'));
+    const pending = exactSubtract(item.difference_expected, covered);
     const baseConsistent = item.base_confidence !== CONFIDENCE.AMBIGUOUS && approximatelyEqual(item.base_found, item.base_expected);
     const attributable = approximatelyEqual(item.stock_kardex_difference, pending);
     const confidence = ambiguous ? CONFIDENCE.AMBIGUOUS : linked.length > 0 ? CONFIDENCE.LINKED : unique.length === 1 ? CONFIDENCE.UNIQUE_MATCH : CONFIDENCE.NOT_FOUND;
     item.difference_movements = unique.map((movement) => movementView(movement, linkedIds.has(Number(movement.id)) ? CONFIDENCE.LINKED : CONFIDENCE.UNIQUE_MATCH, productMap.get(item.id_product)));
     item.evidence_confidence = confidence;
-    item.difference_covered = fromUnits(toUnits(covered));
-    item.difference_pending = Math.max(0, pending);
+    item.difference_covered = covered;
+    item.difference_pending = exactMax(0, pending);
     item.registered_product = item.product;
     item.registered_stock = item.stock;
     item.registered_kardex = item.kardex;
@@ -362,9 +355,9 @@ const buildProjection = async (transfer, { transaction } = {}) => {
       item.reconciliation_status = STATUSES.NOT_ATTRIBUTABLE;
       item.allowed_action = null;
       item.message = ambiguous ? 'Existen movimientos candidatos ambiguos.' : 'La diferencia actual no puede atribuirse únicamente a esta boleta.';
-    } else if (pending > 0) {
-      item.reconciliation_status = covered > 0 ? STATUSES.PARTIAL : STATUSES.SURPLUS_PENDING_KARDEX;
-      item.allowed_action = { code: ACTIONS.REGISTER_SURPLUS, label: `Registrar excedente de ${decimalToString(pending)} kg`, quantity: pending, scope: 'ITEM', requires_merma_product: false };
+    } else if (exactCompare(pending, 0) > 0) {
+      item.reconciliation_status = exactCompare(covered, 0) > 0 ? STATUSES.PARTIAL : STATUSES.SURPLUS_PENDING_KARDEX;
+      item.allowed_action = { code: ACTIONS.REGISTER_SURPLUS, label: `Registrar excedente de ${pending} kg`, quantity: pending, scope: 'ITEM', requires_merma_product: false };
       item.message = 'Stock contiene el peso recibido y falta completar el ingreso adicional en Kardex.';
     } else {
       item.reconciliation_status = STATUSES.COMPLETE;
@@ -375,7 +368,7 @@ const buildProjection = async (transfer, { transaction } = {}) => {
 
   const shortageItems = projected.filter(({ difference_type: type }) => type === TYPES.SHORTAGE);
   if (shortageItems.length > 0) {
-    const expectedTotal = shortageItems.reduce((sum, item) => sum + Number(item.difference_expected), 0);
+    const expectedTotal = shortageItems.reduce((sum, item) => exactAdd(sum, item.difference_expected), '0.0000');
     const shortageLinkedIds = new Set();
     for (const item of shortageItems) for (const id of collectLinkedMovementIds(transfer, item.id, 'FALTANTE_PARA_REVISION')) shortageLinkedIds.add(id);
     const matching = candidateMovements.filter((movement) => /MERMA|FALTANTE/i.test(movement.details || ''));
@@ -384,7 +377,7 @@ const buildProjection = async (transfer, { transaction } = {}) => {
     const ambiguous = unlinked.length > 1 || new Set(matching.map((movement) => Number(movement.id_product))).size > 1;
     const accepted = [...linked, ...(!ambiguous && unlinked.length === 1 ? unlinked : [])];
     const unique = [...new Map(accepted.map((movement) => [Number(movement.id), movement])).values()];
-    const coveredTotal = Math.min(expectedTotal, unique.reduce((sum, movement) => sum + Number(movement.quantity), 0));
+    const coveredTotal = exactMin(expectedTotal, unique.reduce((sum, movement) => exactAdd(sum, movement.quantity), '0.0000'));
     const allocations = allocateCoveredQuantity(shortageItems, coveredTotal);
     const registeredProductId = unique[0]?.id_product || (transfer.reviewNotes || []).find(({ type }) => type === 'FALTANTE_PARA_REVISION')?.id_product || null;
     const registeredProduct = registeredProductId ? productMap.get(Number(registeredProductId)) : null;
@@ -394,8 +387,8 @@ const buildProjection = async (transfer, { transaction } = {}) => {
       && registeredProduct?.category?.type === 'RAW_MATERIAL';
     const confidence = ambiguous ? CONFIDENCE.AMBIGUOUS : linked.length > 0 ? CONFIDENCE.LINKED : unique.length === 1 ? CONFIDENCE.UNIQUE_MATCH : CONFIDENCE.NOT_FOUND;
     const movementViews = unique.map((movement) => movementView(movement, shortageLinkedIds.has(Number(movement.id)) ? CONFIDENCE.LINKED : CONFIDENCE.UNIQUE_MATCH, productMap.get(Number(movement.id_product))));
-    const totalPending = fromUnits(toUnits(expectedTotal) - toUnits(coveredTotal));
-    const actionDetailId = allocations.find(({ pending }) => Number(pending) > 0)?.id || null;
+    const totalPending = exactSubtract(expectedTotal, coveredTotal);
+    const actionDetailId = allocations.find(({ pending }) => exactCompare(pending, 0) > 0)?.id || null;
     const mermaInventory = registeredProductId ? inventory.get(Number(registeredProductId)) : null;
     for (const item of shortageItems) {
       const allocation = allocations.find(({ id }) => id === item.id);
@@ -414,11 +407,11 @@ const buildProjection = async (transfer, { transaction } = {}) => {
         item.reconciliation_status = STATUSES.NOT_ATTRIBUTABLE;
         item.allowed_action = null;
         item.message = ambiguous ? 'Existen registros de faltante ambiguos.' : 'El registro base o el producto MERMAS no es válido para completar automáticamente.';
-      } else if (totalPending > 0 && Number(allocation.pending) > 0) {
-        item.reconciliation_status = Number(allocation.covered) > 0 ? STATUSES.PARTIAL : STATUSES.SHORTAGE_PENDING_WASTE;
+      } else if (exactCompare(totalPending, 0) > 0 && exactCompare(allocation.pending, 0) > 0) {
+        item.reconciliation_status = exactCompare(allocation.covered, 0) > 0 ? STATUSES.PARTIAL : STATUSES.SHORTAGE_PENDING_WASTE;
         item.allowed_action = item.id === actionDetailId ? {
           code: ACTIONS.REGISTER_SHORTAGE,
-          label: `Registrar faltante de ${decimalToString(totalPending)} kg en Merma traslado`,
+          label: `Registrar faltante de ${totalPending} kg en Merma traslado`,
           quantity: totalPending,
           scope: 'TRANSFER',
           requires_merma_product: !registeredProduct,
@@ -493,15 +486,15 @@ const resolvePreviewAction = async ({ transferId, detailId, mermaProductId, tran
     registeredProduct = { id: Number(product.id), cod: product.cod, name: product.name };
   }
   const inventory = item.allowed_action.code === ACTIONS.REGISTER_SURPLUS
-    ? { before_stock: item.stock, before_kardex: item.kardex, after_stock: item.stock, after_kardex: fromUnits(toUnits(item.kardex) + toUnits(item.allowed_action.quantity)) }
+    ? { before_stock: item.stock, before_kardex: item.kardex, after_stock: item.stock, after_kardex: exactAdd(item.kardex, item.allowed_action.quantity) }
     : { before_stock: null, before_kardex: null, after_stock: null, after_kardex: null };
   if (item.allowed_action.code === ACTIONS.REGISTER_SHORTAGE) {
     const snapshots = await loadLatestInventory(transfer, [registeredProduct.id], transaction);
-    const current = snapshots.get(registeredProduct.id) || { stock: 0, kardex: 0 };
+    const current = snapshots.get(registeredProduct.id) || { stock: '0.0000', kardex: '0.0000' };
     inventory.before_stock = current.stock;
     inventory.before_kardex = current.kardex;
-    inventory.after_stock = fromUnits(toUnits(current.stock) + toUnits(item.allowed_action.quantity));
-    inventory.after_kardex = fromUnits(toUnits(current.kardex) + toUnits(item.allowed_action.quantity));
+    inventory.after_stock = exactAdd(current.stock, item.allowed_action.quantity);
+    inventory.after_kardex = exactAdd(current.kardex, item.allowed_action.quantity);
   }
   const previewFingerprint = fingerprint({ projection: projection.fingerprint, action: item.allowed_action, registered_product_id: registeredProduct.id, inventory });
   return {
@@ -516,7 +509,7 @@ const resolvePreviewAction = async ({ transferId, detailId, mermaProductId, tran
       location: { id_sucursal: Number(transfer.id_sucursal_received), id_storage: Number(transfer.id_storage_received) },
       inventory,
       allocations: item.allowed_action.code === ACTIONS.REGISTER_SHORTAGE
-        ? projection.items.filter(({ difference_type: type, difference_pending: pending }) => type === TYPES.SHORTAGE && Number(pending) > 0)
+        ? projection.items.filter(({ difference_type: type, difference_pending: pending }) => type === TYPES.SHORTAGE && exactCompare(pending || 0, 0) > 0)
           .map(({ id, product, difference_pending: quantity }) => ({ id_detail_transfer: id, product, quantity }))
         : [{ id_detail_transfer: item.id, product: item.product, quantity: item.difference_pending }],
     },
@@ -529,7 +522,7 @@ const previewCompletion = async (params) => {
     fingerprint: result.projection.fingerprint,
     action: result.item.allowed_action,
     requires_merma_product: true,
-    allocations: result.projection.items.filter(({ difference_type: type, difference_pending: pending }) => type === TYPES.SHORTAGE && Number(pending) > 0)
+    allocations: result.projection.items.filter(({ difference_type: type, difference_pending: pending }) => type === TYPES.SHORTAGE && exactCompare(pending || 0, 0) > 0)
       .map(({ id, product, difference_pending: quantity }) => ({ id_detail_transfer: id, product, quantity })),
   };
 };
@@ -675,8 +668,8 @@ const completeDifference = async ({ transferId, detailId, mermaProductId, previe
     await TransferReviewEvent.create({
       event_type: 'REGISTRO_HISTORICO_COMPLETADO',
       description: action.code === ACTIONS.REGISTER_SURPLUS
-        ? `Se completó el excedente histórico omitido de ${decimalToString(action.quantity)} kg en Kardex.`
-        : `Se completó el faltante histórico omitido de ${decimalToString(action.quantity)} kg en el producto MERMAS.`,
+        ? `Se completó el excedente histórico omitido de ${action.quantity} kg en Kardex.`
+        : `Se completó el faltante histórico omitido de ${action.quantity} kg en el producto MERMAS.`,
       metadata: {
         completion_id: completion.id,
         completion_type: action.code,
@@ -692,7 +685,7 @@ const completeDifference = async ({ transferId, detailId, mermaProductId, previe
     await History.create({
       id_user: actorUserId,
       id_sucursal: transfer.id_sucursal_received,
-      description: `${action.code} EN TRASLADO #${transfer.cod}: ${decimalToString(action.quantity)} KG`,
+      description: `${action.code} EN TRASLADO #${transfer.cod}: ${action.quantity} KG`,
       type: 'REGULARIZACION HISTORICA DE TRASLADO',
       module: 'TRANSFER_REVIEW',
       action: 'CREATE',

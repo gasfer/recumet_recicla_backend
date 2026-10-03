@@ -19,9 +19,10 @@ const {
 const notificationService = require('./notification.service');
 const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
 const stockAvailabilityService = require('./stock-availability.service');
+const { formatDecimalEsBo, exactAdd, exactSubtract, exactCompare, exactMin, exactAbs, exactMax } = require('../helpers/number-formatter');
 const { buildOpenReviewWhere } = require('./open-reception-review-query.service');
 const historicalDifferenceService = require('./historical-transfer-difference.service');
-const { formatDecimalEsBo } = require('../helpers/number-formatter');
+const reviewClosure = require('./transfer-review-closure.service');
 
 const commonNoteInclude = [
   { association: 'assignedUser', attributes: ['id', 'full_names'] },
@@ -37,7 +38,7 @@ const deriveReconciliationStatus = (details = []) => {
   if (details.length > 0 && details.every(({ reconciliation_status: status }) => status === DETAIL_REVIEW_STATUSES.COMPLETED)) {
     return REVIEW_STATUSES.COMPLETED;
   }
-  if (details.some((detail) => detail.reconciliation_status === DETAIL_REVIEW_STATUSES.COMPLETED || Number(detail.quantity_resolved) > 0)) {
+  if (details.some((detail) => detail.reconciliation_status === DETAIL_REVIEW_STATUSES.COMPLETED || exactCompare(detail.quantity_resolved || 0, 0) > 0)) {
     return REVIEW_STATUSES.PARTIAL;
   }
   return REVIEW_STATUSES.IN_REVIEW;
@@ -66,6 +67,7 @@ const syncNoteStatus = async (noteId, transaction) => {
     lock: transaction ? transaction.LOCK.UPDATE : undefined,
   });
   const status = deriveReconciliationStatus(details);
+  if (status === REVIEW_STATUSES.COMPLETED) await reviewClosure.assertReviewClosure({ noteId, transaction });
   note.reconciliation_status = status;
   if (status !== REVIEW_STATUSES.COMPLETED) {
     note.resolved_at = null;
@@ -100,12 +102,12 @@ const validateResolutionIntegrity = async (noteId, transaction) => {
   };
   for (const detail of note.details) {
     const activeActions = detail.resolutionActions.filter(({ management_status }) => management_status !== 'REVERTIDA');
-    const actionTotal = activeActions.reduce((sum, action) => sum + Number(action.quantity), 0);
+    const actionTotal = activeActions.reduce((sum, action) => exactAdd(sum, action.quantity), '0');
     if (detail.reconciliation_status === DETAIL_REVIEW_STATUSES.COMPLETED
-      && Math.abs(Number(detail.quantity_difference) - Number(detail.quantity_resolved || 0)) > 0.0001) {
+      && exactCompare(detail.quantity_difference, detail.quantity_resolved || 0) !== 0) {
       throw Object.assign(new Error(`El detalle ${detail.id} figura completado pero conserva cantidad pendiente.`), { statusCode: 409 });
     }
-    if (Math.abs(actionTotal - Number(detail.quantity_resolved || 0)) > 0.0001) {
+    if (exactCompare(actionTotal, detail.quantity_resolved || 0) !== 0) {
       throw Object.assign(new Error(`El detalle ${detail.id} no concilia sus acciones con la cantidad resuelta.`), { statusCode: 409 });
     }
     for (const action of activeActions) {
@@ -113,7 +115,7 @@ const validateResolutionIntegrity = async (noteId, transaction) => {
       if (expectedCount === undefined || action.movementLinks.length !== expectedCount) {
         throw Object.assign(new Error(`La acción ${action.id} no tiene los movimientos Kardex esperados.`), { statusCode: 409 });
       }
-      if (action.movementLinks.some(({ kardexMovement }) => Math.abs(Number(kardexMovement.quantity) - Number(action.quantity)) > 0.0001)) {
+      if (action.movementLinks.some(({ kardexMovement }) => exactCompare(kardexMovement.quantity, action.quantity) !== 0)) {
         throw Object.assign(new Error(`La acción ${action.id} no coincide con la cantidad de sus movimientos Kardex.`), { statusCode: 409 });
       }
     }
@@ -237,15 +239,15 @@ const getTransferTraceability = async (transferId) => {
   const historicalDifferenceReconciliation = await historicalDifferenceService.getProjection(transfer.id);
   const transferJson = transfer.toJSON ? transfer.toJSON() : transfer;
   const detailsTransfers = (transferJson.detailsTransfers || []).map((detail) => {
-    const sent = Number(detail.quantity || 0);
-    const received = Number(detail.quantity_received || 0);
+    const sent = exactAdd(detail.quantity || 0, 0);
+    const received = exactAdd(detail.quantity_received || 0, 0);
     const isAccepted = isAcceptedToleranceDecision(detail.tolerance_decision);
-    const normalQuantity = isAccepted ? received : Math.min(sent, received);
+    const normalQuantity = isAccepted ? received : exactMin(sent, received);
     const diffPct = detail.receipt_difference_percentage !== null && detail.receipt_difference_percentage !== undefined
       ? Number(detail.receipt_difference_percentage)
       : null;
-    const blockedQuantity = isAccepted ? 0 : Math.abs(received - sent);
-    const isShortage = !isAccepted && received < sent;
+    const blockedQuantity = isAccepted ? '0.0000' : exactAbs(exactSubtract(received, sent));
+    const isShortage = !isAccepted && exactCompare(received, sent) < 0;
 
     const matchingNote = (transferJson.reviewNotes || []).find((note) =>
       (note.details || []).some((nd) => Number(nd.id_detail_transfer) === Number(detail.id))
@@ -253,15 +255,15 @@ const getTransferTraceability = async (transferId) => {
     const matchingNoteDetail = matchingNote
       ? (matchingNote.details || []).find((nd) => Number(nd.id_detail_transfer) === Number(detail.id))
       : null;
-    const heldQuantity = Number((matchingNoteDetail?.inventoryHolds || [])
+    const heldQuantity = (matchingNoteDetail?.inventoryHolds || [])
       .filter(({ disposition, id_product: holdProductId }) => (
         !isShortage
         && Number(holdProductId) === Number(detail.id_product)
         && (disposition === REVIEW_HOLD_DISPOSITIONS.IN_REVIEW
           || disposition === REVIEW_HOLD_DISPOSITIONS.RETAINED_WITHOUT_ADJUSTMENT)
       ))
-      .reduce((total, hold) => total + Number(hold.quantity || 0), 0));
-    const availableQuantity = Math.max(0, received - heldQuantity);
+      .reduce((total, hold) => exactAdd(total, hold.quantity || 0), '0.0000');
+    const availableQuantity = exactMax(0, exactSubtract(received, heldQuantity));
 
     let releaseStatus = 'NO_APLICA';
     let blockedDocument = null;
@@ -270,7 +272,7 @@ const getTransferTraceability = async (transferId) => {
       releaseStatus = 'PENDIENTE';
     } else if (isAccepted) {
       releaseStatus = 'ACEPTADO';
-    } else if (blockedQuantity > 0) {
+    } else if (exactCompare(blockedQuantity, 0) > 0) {
       if (matchingNote) {
         blockedDocument = {
           id: matchingNote.id,
@@ -278,7 +280,7 @@ const getTransferTraceability = async (transferId) => {
           type: matchingNote.type,
         };
       }
-      if (matchingNoteDetail?.reconciliation_status === DETAIL_REVIEW_STATUSES.COMPLETED || detail.accounting_status === 'CONTABILIZADO') {
+      if (matchingNoteDetail?.reconciliation_status === DETAIL_REVIEW_STATUSES.COMPLETED && exactCompare(heldQuantity, 0) === 0) {
         releaseStatus = 'LIBERADO';
       } else {
         releaseStatus = 'BLOQUEADO';
@@ -471,6 +473,7 @@ const addEvidence = async ({ noteId, evidence, actorUserId }) => sequelize.trans
 });
 
 const closeReview = async ({ noteId, actorUserId }) => sequelize.transaction(async (transaction) => {
+  await reviewClosure.assertReviewClosure({ noteId, transaction });
   await validateResolutionIntegrity(noteId, transaction);
   const note = await syncNoteStatus(noteId, transaction);
   if (note.reconciliation_status !== REVIEW_STATUSES.COMPLETED) {

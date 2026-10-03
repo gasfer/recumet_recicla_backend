@@ -1,7 +1,7 @@
 const { response, request } = require('express');
-const { Company, History } = require('../database/config');
+const { Company, History, sequelize } = require('../database/config');
 const paginate = require('../helpers/paginate');
-const { normalizeDecimalPlaces, setDecimalPlaces } = require('../helpers/decimals-value');
+const { normalizeDecimalPlaces } = require('../helpers/decimals-value');
 const path = require('path');
 const fs = require('fs');
 
@@ -30,15 +30,19 @@ const updateCompany = async (req = request, res = response) => {
     try {
         const { id } = req.params;
         const body = { ...req.body };
-        const company = await Company.findByPk(id);
-        if (!company) return res.status(404).json({ ok: false, errors: [{ msg: 'Empresa no encontrada' }] });
-        const previousDecimals = company.decimals;
-        if (Object.prototype.hasOwnProperty.call(body, 'decimals')) body.decimals = normalizeDecimalPlaces(body.decimals);
-        await company.update(body);
-        if (body.decimals !== undefined) {
-            setDecimalPlaces(body.decimals);
-            await History.create({ id_user: req.userAuth?.id, module: 'EMPRESA', type: 'CONFIGURACION_DECIMALES', action: 'UPDATE', id_reference: company.id, status: true, description: `Decimales operativos: ${previousDecimals} → ${body.decimals}`, query: JSON.stringify({ previousDecimals, decimals: body.decimals }) });
+        if (Object.prototype.hasOwnProperty.call(body, 'decimals')) {
+            try { body.decimals = normalizeDecimalPlaces(body.decimals); }
+            catch (error) { return res.status(422).json({ ok: false, errors: [{ msg: error.message }] }); }
         }
+        await sequelize.transaction(async (transaction) => {
+            const company = await Company.findByPk(id, { transaction, lock: transaction.LOCK.UPDATE });
+            if (!company) throw Object.assign(new Error('Empresa no encontrada'), { statusCode: 404 });
+            const previousDecimals = company.decimals;
+            await company.update(body, { transaction });
+            if (body.decimals !== undefined && Number(previousDecimals) !== body.decimals) {
+                await History.create({ id_user: req.userAuth?.id, module: 'EMPRESA', type: 'CONFIGURACION_DECIMALES', action: 'UPDATE', id_reference: company.id, status: true, description: `Decimales operativos: ${previousDecimals} → ${body.decimals}`, query: JSON.stringify({ previousDecimals, decimals: body.decimals, changedAt: new Date().toISOString() }) }, { transaction });
+            }
+        });
         return res.status(201).json({
             ok: true,
             msg: 'Modificación exitosamente'

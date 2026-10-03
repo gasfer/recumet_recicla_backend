@@ -27,7 +27,7 @@ test('construye excedentes y faltantes con producto destino y precisión decimal
 
   const result = buildTransferVoucherReconciliation(notes);
 
-  assert.deepEqual(result.totals, { excess: 0.25, shortage: 0.125 });
+  assert.deepEqual(result.totals, { excess: '0.2500', shortage: '0.1250' });
   assert.deepEqual(result.rows.map(({ type, sent, received, difference, destinationProduct }) => ({
     type, sent, received, difference, destinationProduct,
   })), [
@@ -39,6 +39,6 @@ test('construye excedentes y faltantes con producto destino y precisión decimal
 
 test('sin notas no fabrica movimientos ni filas de conciliación', () => {
   assert.deepEqual(buildTransferVoucherReconciliation([]), {
-    rows: [], totals: { excess: 0, shortage: 0 },
+    rows: [], totals: { excess: '0.0000', shortage: '0.0000' },
   });
 });

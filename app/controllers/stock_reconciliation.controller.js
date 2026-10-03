@@ -14,11 +14,17 @@ const {
 } = require('../services/stock-reconciliation.service');
 const { sendPermissionDenied } = require('../helpers/permission-denied');
 
-const errorResponse = (res, error) => res.status(error.statusCode || 500).json({
+const { recordInventoryRejection } = require('../services/inventory-rejection-audit.service');
+const errorResponse = async (res, error, req) => {
+  try { error = await recordInventoryRejection(error, req?.userAuth); }
+  catch (_) { return res.status(503).json({ ok: false, errors: [{ msg: 'No se pudo guardar la auditoría del rechazo.' }] }); }
+  return res.status(error.statusCode || 500).json({
   ok: false,
   errors: [{ msg: error.statusCode ? error.message : 'Ocurrió un imprevisto interno | hable con soporte' }],
   ...(error.details ? { details: error.details } : {}),
+  ...(error.correlationId ? { tracking_id: error.correlationId } : {}),
 });
+};
 
 const canAccessSucursal = (user, idSucursal) => user?.role === 'ADMINISTRADOR' || (
   (user?.assign_sucursales || []).some(({ id_sucursal, status }) => status !== false && Number(id_sucursal) === Number(idSucursal))
@@ -45,7 +51,7 @@ const detect = async (req = request, res = response) => {
       limit: req.body.limit,
     });
     return res.status(200).json({ ok: true, ...result, inventory_modified: false });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const list = async (req = request, res = response) => {
@@ -63,7 +69,7 @@ const list = async (req = request, res = response) => {
       query: req.query.query,
     });
     return res.status(200).json({ ok: true, cases });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const getOne = async (req = request, res = response) => {
@@ -71,7 +77,7 @@ const getOne = async (req = request, res = response) => {
     const record = await ensureCaseAccess(req, res);
     if (!record) return undefined;
     return res.status(200).json({ ok: true, case: record });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const authorizers = async (req = request, res = response) => {
@@ -80,7 +86,7 @@ const authorizers = async (req = request, res = response) => {
       return sendPermissionDenied(res, 'consultar autorizadores fuera de una sucursal autorizada');
     }
     return res.status(200).json({ ok: true, users: await listAuthorizers({ sucursalId: req.query.id_sucursal }) });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const countResponsibles = async (req = request, res = response) => {
@@ -89,7 +95,7 @@ const countResponsibles = async (req = request, res = response) => {
       return sendPermissionDenied(res, 'consultar responsables de conteo fuera de una sucursal autorizada');
     }
     return res.status(200).json({ ok: true, users: await listCountResponsibles({ sucursalId: req.query.id_sucursal }) });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const investigate = async (req = request, res = response) => {
@@ -108,14 +114,14 @@ const investigate = async (req = request, res = response) => {
       evidences: req.body.evidences,
     });
     return res.status(200).json({ ok: true, case: record });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const preview = async (req = request, res = response) => {
   try {
     if (!await ensureCaseAccess(req, res)) return undefined;
     return res.status(200).json({ ok: true, preview: await previewCase(req.params.id) });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const resolve = async (req = request, res = response) => {
@@ -128,7 +134,7 @@ const resolve = async (req = request, res = response) => {
       idempotencyKey: req.body.idempotency_key,
     });
     return res.status(200).json({ ok: true, ...result });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 const batchResolve = async (req = request, res = response) => {
@@ -140,7 +146,7 @@ const batchResolve = async (req = request, res = response) => {
     }
     const results = await resolveCases({ cases: items, actorUserId: req.userAuth.id });
     return res.status(200).json({ ok: true, results, partial: results.some(({ ok }) => !ok) });
-  } catch (error) { return errorResponse(res, error); }
+  } catch (error) { return errorResponse(res, error, req); }
 };
 
 module.exports = { detect, list, getOne, authorizers, countResponsibles, investigate, preview, resolve, batchResolve };

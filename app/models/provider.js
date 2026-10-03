@@ -47,6 +47,11 @@ module.exports = (sequelize, DataTypes) => {
     commercial_observations: DataTypes.TEXT,
     requires_certificate: DataTypes.BOOLEAN,
     requires_traceability_report: DataTypes.BOOLEAN,
+    certificate_file_name: DataTypes.STRING,
+    traceability_file_name: DataTypes.STRING,
+    department: DataTypes.STRING,
+    zone: DataTypes.STRING,
+    frequency_mode: DataTypes.STRING,
     service_mode: DataTypes.STRING,
     general_observations: DataTypes.TEXT
   }, {

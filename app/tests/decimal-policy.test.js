@@ -41,10 +41,10 @@ test('la aritmética decimal comercial conserva la diferencia de cuatro decimale
 test('la recepción mantiene excedente y faltante de 0,0004 kg', () => {
   setDecimalPlaces(4);
   assert.deepEqual(reconcileTransferReceipt('10.0000', '10.0004'), {
-    sent: 10, base: 10, excess: 0.0004, shortage: 0, received: 10.0004,
+    sent: '10.0000', base: '10.0000', excess: '0.0004', shortage: '0.0000', received: '10.0004',
   });
   assert.deepEqual(reconcileTransferReceipt('10.0000', '9.9996'), {
-    sent: 10, base: 9.9996, excess: 0, shortage: 0.0004, received: 9.9996,
+    sent: '10.0000', base: '9.9996', excess: '0.0000', shortage: '0.0004', received: '9.9996',
   });
 });
 

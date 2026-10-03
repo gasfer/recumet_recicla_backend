@@ -21,18 +21,18 @@ test('un conteo vacío no se interpreta como cero', () => {
 
 test('registrar Kardex omitido sólo cambia Kardex y muestra el efecto', () => {
   const result = buildPreview({ strategy: STRATEGIES.REGISTER_MISSING_KARDEX, stock: 12, kardex: 10, physicalCount: 12, sourceReferenceCode: 'COMP-1' });
-  assert.equal(result.stock_after, 12);
-  assert.equal(result.kardex_after, 12);
+  assert.equal(result.stock_after, '12.0000');
+  assert.equal(result.kardex_after, '12.0000');
   assert.equal(result.movement.type, 'INPUT');
-  assert.equal(result.movement.quantity, 2);
+  assert.equal(result.movement.quantity, '2.0000');
 });
 
 test('ajustar Stock requiere que el conteo confirme Kardex', () => {
   assert.throws(() => buildPreview({ strategy: STRATEGIES.ADJUST_STOCK_BY_COUNT, stock: 12, kardex: 10, physicalCount: 12 }), /conteo físico/i);
   const result = buildPreview({ strategy: STRATEGIES.ADJUST_STOCK_BY_COUNT, stock: 12, kardex: 10, physicalCount: 10 });
-  assert.equal(result.stock_after, 10);
-  assert.equal(result.kardex_after, 10);
-  assert.deepEqual(result.stock_adjustment, { type: 'DECREASE', quantity: 2 });
+  assert.equal(result.stock_after, '10.0000');
+  assert.equal(result.kardex_after, '10.0000');
+  assert.deepEqual(result.stock_adjustment, { type: 'DECREASE', quantity: '2.0000' });
 });
 
 test('muestra el resultado final del caso 3196 / 2617.25 con conteo 2617.25', () => {
@@ -42,10 +42,10 @@ test('muestra el resultado final del caso 3196 / 2617.25 con conteo 2617.25', ()
     kardex: 2617.25,
     physicalCount: 2617.25,
   });
-  assert.equal(result.stock_after, 2617.25);
-  assert.equal(result.kardex_after, 2617.25);
-  assert.equal(result.difference_after, 0);
-  assert.deepEqual(result.stock_adjustment, { type: 'DECREASE', quantity: 578.75 });
+  assert.equal(result.stock_after, '2617.2500');
+  assert.equal(result.kardex_after, '2617.2500');
+  assert.equal(result.difference_after, '0.0000');
+  assert.deepEqual(result.stock_adjustment, { type: 'DECREASE', quantity: '578.7500' });
   assert.equal(result.movement, null);
 });
 
@@ -57,10 +57,10 @@ test('el ajuste físico lleva ambos libros al conteo, incluso cuando es un terce
   ];
   for (const scenario of scenarios) {
     const preview = buildPreview({ strategy: STRATEGIES.ADJUST_BOTH_TO_PHYSICAL_COUNT, stock: scenario.stock, kardex: scenario.kardex, physicalCount: scenario.count });
-    assert.equal(preview.stock_after, scenario.count);
-    assert.equal(preview.kardex_after, scenario.count);
-    assert.equal(preview.difference_after, 0);
-    assert.deepEqual(preview.movement, { type: scenario.type, quantity: scenario.quantity });
+    assert.equal(preview.stock_after, `${scenario.count}.0000`);
+    assert.equal(preview.kardex_after, `${scenario.count}.0000`);
+    assert.equal(preview.difference_after, '0.0000');
+    assert.deepEqual(preview.movement, { type: scenario.type, quantity: `${scenario.quantity}.0000` });
   }
 });
 
@@ -86,8 +86,8 @@ test('la política deriva acciones compatibles para ambas direcciones de diferen
       physicalCount: scenario.physicalCount,
       sourceReferenceCode: 'DOC-1',
     });
-    assert.deepEqual(preview.movement, { type: scenario.movementType, quantity: scenario.quantity });
-    assert.equal(preview.difference_after, 0);
+    assert.deepEqual(preview.movement, { type: scenario.movementType, quantity: `${scenario.quantity}.0000` });
+    assert.equal(preview.difference_after, '0.0000');
 
     const stockPreview = buildPreview({
       strategy: STRATEGIES.ADJUST_STOCK_BY_COUNT,
@@ -95,7 +95,7 @@ test('la política deriva acciones compatibles para ambas direcciones de diferen
       kardex: scenario.kardex,
       physicalCount: scenario.kardex,
     });
-    assert.equal(stockPreview.stock_after, scenario.kardex);
-    assert.equal(stockPreview.difference_after, 0);
+    assert.equal(stockPreview.stock_after, `${scenario.kardex}.0000`);
+    assert.equal(stockPreview.difference_after, '0.0000');
   }
 });

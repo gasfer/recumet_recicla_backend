@@ -3,9 +3,9 @@
 const {
   STOCK_RECONCILIATION_STRATEGIES: STRATEGIES,
 } = require('../constants/stock-reconciliation');
-const { decimalSubtract, decimalTolerance } = require('../helpers/number-formatter');
+const { exactSubtract, exactAdd, exactAbs, exactCompare } = require('../helpers/number-formatter');
 
-const getEpsilon = () => decimalTolerance();
+const getEpsilon = () => 0;
 const executableStrategies = new Set([
   STRATEGIES.ADJUST_BOTH_TO_PHYSICAL_COUNT,
   STRATEGIES.REGISTER_MISSING_KARDEX,
@@ -13,7 +13,7 @@ const executableStrategies = new Set([
   STRATEGIES.LINK_EXISTING,
 ]);
 
-const closeEnough = (first, second) => Math.abs(decimalSubtract(first, second)) <= getEpsilon();
+const closeEnough = (first, second) => exactCompare(first, second) === 0;
 
 const ALLOWED_STATUS_TRANSITIONS = Object.freeze({
   DETECTADA: Object.freeze(['EN_INVESTIGACION', 'LISTA_PARA_REGULARIZAR']),
@@ -50,62 +50,24 @@ const investigationErrors = ({ physicalCount, cause, notes, strategy, assignedUs
 };
 
 const buildPreview = ({ strategy, stock, kardex, physicalCount, sourceReferenceCode }) => {
-  const physicalStock = Number(stock);
-  const kardexBalance = Number(kardex);
-  const difference = decimalSubtract(physicalStock, kardexBalance);
-  if (!executableStrategies.has(strategy)) {
-    const error = new Error('La acción seleccionada sólo registra seguimiento y no puede regularizar saldos.');
-    error.statusCode = 422;
-    throw error;
-  }
-  if (strategy === STRATEGIES.REGISTER_MISSING_KARDEX && !closeEnough(physicalCount, physicalStock)) {
-    const error = new Error('El conteo físico debe confirmar el Stock antes de registrar un movimiento Kardex omitido.');
-    error.statusCode = 422;
-    throw error;
-  }
-  if (strategy === STRATEGIES.ADJUST_STOCK_BY_COUNT && !closeEnough(physicalCount, kardexBalance)) {
-    const error = new Error('El conteo físico debe confirmar el saldo Kardex antes de ajustar Stock.');
-    error.statusCode = 422;
-    throw error;
-  }
-  const preview = {
-    strategy,
-    stock_before: physicalStock,
-    kardex_before: kardexBalance,
-    difference_before: difference,
-    stock_after: physicalStock,
-    kardex_after: kardexBalance,
-    difference_after: difference,
-    source_reference_code: sourceReferenceCode || null,
-    effect_label: 'Verificar regularización existente',
-    registry_number: null,
-    movement: null,
-    stock_adjustment: null,
-  };
+  const physicalStock = exactAdd(stock, 0); const kardexBalance = exactAdd(kardex, 0);
+  const difference = exactSubtract(physicalStock, kardexBalance);
+  if (!executableStrategies.has(strategy)) throw Object.assign(new Error('La acción seleccionada sólo registra seguimiento y no puede regularizar saldos.'), { statusCode: 422 });
+  if (strategy === STRATEGIES.REGISTER_MISSING_KARDEX && !closeEnough(physicalCount, physicalStock)) throw Object.assign(new Error('El conteo físico debe confirmar el Stock antes de registrar un movimiento Kardex omitido.'), { statusCode: 422 });
+  if (strategy === STRATEGIES.ADJUST_STOCK_BY_COUNT && !closeEnough(physicalCount, kardexBalance)) throw Object.assign(new Error('El conteo físico debe confirmar el saldo Kardex antes de ajustar Stock.'), { statusCode: 422 });
+  const preview = { strategy, stock_before: physicalStock, kardex_before: kardexBalance, difference_before: difference, stock_after: physicalStock, kardex_after: kardexBalance, difference_after: strategy === STRATEGIES.LINK_EXISTING ? difference : '0.0000', source_reference_code: sourceReferenceCode || null, effect_label: 'Verificar regularización existente', registry_number: null, movement: null, stock_adjustment: null };
   if (strategy === STRATEGIES.ADJUST_BOTH_TO_PHYSICAL_COUNT) {
-    const target = Number(physicalCount);
-    preview.stock_after = target;
-    preview.kardex_after = target;
-    preview.difference_after = 0;
-    const stockDelta = decimalSubtract(target, physicalStock);
-    const delta = decimalSubtract(target, kardexBalance);
-    preview.stock_adjustment = Math.abs(stockDelta) <= getEpsilon() ? null : {
-      type: stockDelta > 0 ? 'INCREASE' : 'DECREASE', quantity: Math.abs(stockDelta),
-    };
-    preview.effect_label = delta > getEpsilon() ? 'Ingreso Kardex por ajuste físico' : delta < -getEpsilon() ? 'Egreso Kardex por ajuste físico' : 'Ajuste físico sin movimiento Kardex';
-    preview.movement = Math.abs(delta) <= getEpsilon() ? null : { type: delta > 0 ? 'INPUT' : 'OUTPUT', quantity: Math.abs(delta) };
+    const target = exactAdd(physicalCount, 0); preview.stock_after = target; preview.kardex_after = target;
+    const stockDelta = exactSubtract(target, physicalStock); const delta = exactSubtract(target, kardexBalance);
+    preview.stock_adjustment = exactCompare(stockDelta, 0) === 0 ? null : { type: exactCompare(stockDelta, 0) > 0 ? 'INCREASE' : 'DECREASE', quantity: exactAbs(stockDelta) };
+    preview.effect_label = exactCompare(delta, 0) > 0 ? 'Ingreso Kardex por ajuste físico' : exactCompare(delta, 0) < 0 ? 'Egreso Kardex por ajuste físico' : 'Ajuste físico sin movimiento Kardex';
+    preview.movement = exactCompare(delta, 0) === 0 ? null : { type: exactCompare(delta, 0) > 0 ? 'INPUT' : 'OUTPUT', quantity: exactAbs(delta) };
   } else if (strategy === STRATEGIES.REGISTER_MISSING_KARDEX) {
-    preview.kardex_after = physicalStock;
-    preview.difference_after = 0;
-    preview.effect_label = `${difference >= 0 ? 'Registrar entrada' : 'Registrar salida'} Kardex`;
-    preview.movement = { type: difference >= 0 ? 'INPUT' : 'OUTPUT', quantity: Math.abs(difference) };
+    preview.kardex_after = physicalStock; preview.effect_label = exactCompare(difference, 0) >= 0 ? 'Registrar entrada Kardex' : 'Registrar salida Kardex';
+    preview.movement = { type: exactCompare(difference, 0) >= 0 ? 'INPUT' : 'OUTPUT', quantity: exactAbs(difference) };
   } else if (strategy === STRATEGIES.ADJUST_STOCK_BY_COUNT) {
-    preview.stock_after = kardexBalance;
-    preview.difference_after = 0;
-    const stockDelta = decimalSubtract(kardexBalance, physicalStock);
-    preview.stock_adjustment = Math.abs(stockDelta) <= getEpsilon() ? null : {
-      type: stockDelta > 0 ? 'INCREASE' : 'DECREASE', quantity: Math.abs(stockDelta),
-    };
+    preview.stock_after = kardexBalance; const stockDelta = exactSubtract(kardexBalance, physicalStock);
+    preview.stock_adjustment = exactCompare(stockDelta, 0) === 0 ? null : { type: exactCompare(stockDelta, 0) > 0 ? 'INCREASE' : 'DECREASE', quantity: exactAbs(stockDelta) };
     preview.effect_label = 'Ajustar Stock según conteo físico';
   }
   return preview;

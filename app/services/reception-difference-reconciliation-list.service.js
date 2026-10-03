@@ -9,7 +9,7 @@ const {
   HISTORICAL_RECONCILIATION_STATUSES: STATUSES,
 } = require('../constants/historical-transfer-difference');
 
-const EPSILON = 0.0001;
+const EPSILON = 0;
 const MAX_CANDIDATES = 1000;
 
 const presentationStatus = (status) => {

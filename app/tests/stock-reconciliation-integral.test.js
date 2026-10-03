@@ -67,7 +67,7 @@ test('8.2 pruebas integrales de flujo completo Stock-Kardex: detección, investi
     status: true,
     async save() { return this; },
   }));
-  t.mock.method(db.sequelize, 'query', async () => [{ id: 88, saldo: currentKardex, date: stockUpdatedAt }]);
+  t.mock.method(db.sequelize, 'query', async (sql) => sql.includes('physical_kardex_balance') ? [{ kardex_balance: currentKardex, physical_kardex_balance: currentKardex, duplicate_effects: 0, held_quantity: 0 }] : [{ id: 88, saldo: currentKardex, date: stockUpdatedAt }]);
   t.mock.method(db.StockReconciliationEvidence, 'count', async () => 1);
   t.mock.method(db.StockReconciliationEvidence, 'create', async () => ({ id: 1 }));
   t.mock.method(db.StockReconciliationDecision, 'create', async () => ({ id: 1 }));
@@ -100,12 +100,12 @@ test('8.2 pruebas integrales de flujo completo Stock-Kardex: detección, investi
 
   // 2. Previsualizar la regularización
   const preview = await previewCase(42);
-  assert.equal(preview.stock_before, 120);
-  assert.equal(preview.kardex_before, 100);
-  assert.equal(preview.kardex_after, 120);
-  assert.equal(preview.difference_after, 0);
+  assert.equal(preview.stock_before, '120.0000');
+  assert.equal(preview.kardex_before, '100.0000');
+  assert.equal(preview.kardex_after, '120.0000');
+  assert.equal(preview.difference_after, '0.0000');
   assert.equal(preview.movement.type, 'INPUT');
-  assert.equal(preview.movement.quantity, 20);
+  assert.equal(preview.movement.quantity, '20.0000');
 
   // 3. Confirmar regularización transaccional
   const result = await resolveCase({

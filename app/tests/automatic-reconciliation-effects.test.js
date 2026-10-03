@@ -104,7 +104,7 @@ for (const type of ['EXCEDENTE_PARA_REVISION', 'FALTANTE_PARA_REVISION']) {
     const result = await service.confirm({ ...f.request, solutionCode: 'CONFIRM_DIFFERENCE' });
     assert.equal(result.operation.type, 'CONFIRMATION');
     assert.equal(result.operation.id, null);
-    assert.equal(result.pending_quantity, 0);
+    assert.equal(result.pending_quantity, '0.0000');
     for (const mock of [f.transfer, f.classification, f.directStock, f.directKardex, f.links]) {
       assert.equal(mock.mock.callCount(), 0);
     }
@@ -121,7 +121,7 @@ test('devolver excedente crea solamente el traslado con producto y recorrido der
   const { command, transaction } = f.transfer.mock.calls[0].arguments[0];
   assert.equal(transaction, f.transaction);
   assert.equal(command.productId, 5);
-  assert.equal(command.quantity, 8);
+  assert.equal(command.quantity, '8.00');
   assert.equal(command.sourceSucursalId, 2);
   assert.equal(command.sourceStorageId, 20);
   assert.equal(command.targetSucursalId, 3);
@@ -129,7 +129,7 @@ test('devolver excedente crea solamente el traslado con producto y recorrido der
   assert.equal(f.links.mock.callCount(), 1);
   assert.equal(f.directKardex.mock.callCount(), 0);
   assert.equal(result.pending_reception, true);
-  assert.equal(result.pending_quantity, 8);
+  assert.equal(result.pending_quantity, '8.0000');
   assert.equal(f.actions.mock.calls[0].arguments[0].operation_status, 'PENDING_RECEPTION');
 });
 
@@ -152,7 +152,7 @@ for (const [type, solution, source, target] of [
     assert.equal(transaction, f.transaction);
     assert.equal(command.productId, source);
     assert.equal(command.targetProductId, target);
-    assert.equal(command.quantity, 8);
+    assert.equal(command.quantity, '8.00');
     assert.equal(f.links.mock.callCount(), 2);
     assert.equal(f.directKardex.mock.callCount(), 0);
   });
@@ -201,14 +201,14 @@ test('3.2 previsualización expone normal_receipt, blocked_document y soluciones
 
     assert.equal(previewResult.status, 'READY');
     assert.ok(previewResult.normal_receipt, 'Debe incluir normal_receipt');
-    assert.equal(typeof previewResult.normal_receipt.normal_quantity, 'number');
+    assert.equal(typeof previewResult.normal_receipt.normal_quantity, 'string');
     assert.ok(previewResult.blocked_document, 'Debe incluir blocked_document');
     assert.equal(previewResult.blocked_document.status, 'BLOQUEADO_EN_REVISION');
     assert.equal(
       previewResult.blocked_document.document_type,
       type === 'EXCEDENTE_PARA_REVISION' ? 'NOTA_INGRESO_EXCEDENTE' : 'INGRESO_TEMPORAL_DIFERENCIAS'
     );
-    assert.equal(previewResult.blocked_document.quantity_blocked, 8);
+    assert.equal(previewResult.blocked_document.quantity_blocked, '8.0000');
 
     const allowedEffects = ['LIBERAR', 'RECLASIFICAR', 'REVERTIR', 'AJUSTAR'];
     for (const sol of previewResult.solutions) {

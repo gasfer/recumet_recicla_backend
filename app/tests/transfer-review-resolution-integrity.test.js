@@ -23,10 +23,10 @@ test('la resolución de faltante verifica producto de diferencia y producto reci
   ]);
 });
 
-test('la resolución manual no altera inventario ni requiere verificación de saldo', () => {
+test('la resolución manual verifica ambas ubicaciones aunque no altere inventario', () => {
   assert.deepEqual(affectedLocations({
     note,
     detail: { id_product: 11 },
     strategy: 'ACCION_MANUAL_VERIFICADA',
-  }), []);
+  }), [{ productId: 90, sucursalId: 1, storageId: 2 }, { productId: 11, sucursalId: 1, storageId: 2 }]);
 });

@@ -50,8 +50,8 @@ test('el contrato de boleta abierta calcula pendientes y remanentes sin alterar 
   const result = mapOpenReviewNote(note);
 
   assert.equal(result.pending_items, 1);
-  assert.equal(result.details[0].quantity_remaining, 6.25);
-  assert.equal(result.details[1].quantity_remaining, 0);
+  assert.equal(result.details[0].quantity_remaining, '6.2500');
+  assert.equal(result.details[1].quantity_remaining, '0.0000');
   assert.equal(note.details[0].quantity_remaining, undefined);
 });
 

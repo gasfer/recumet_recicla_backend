@@ -47,12 +47,12 @@ test('genera un orden total estable para fecha, tipo, movimiento y detalle empat
 test('calcula promedio ponderado, salida parcial y saldo exactamente cero', () => {
   const first = applyEntry({ quantityBefore: 0, valueBefore: 0, quantity: 10, unitCost: 20 });
   const second = applyEntry({ quantityBefore: first.quantityAfter, valueBefore: first.valueAfter, quantity: 10, unitCost: 30 });
-  assert.deepEqual(second, { quantityAfter: 20, valueAfter: 500, averageAfter: 25, appliedUnitCost: 30 });
+  assert.deepEqual(second, { quantityAfter: '20.0000', valueAfter: 500, averageAfter: 25, appliedUnitCost: 30 });
   const partial = applyOutput({ quantityBefore: 20, valueBefore: 500, quantity: 4, averageBefore: 25 });
   assert.equal(partial.valueAfter, 400);
   assert.equal(partial.averageAfter, 25);
   const empty = applyOutput({ quantityBefore: 16, valueBefore: 400, quantity: 16, averageBefore: 25 });
-  assert.equal(empty.quantityAfter, 0);
+  assert.equal(empty.quantityAfter, '0.0000');
   assert.equal(empty.valueAfter, 0);
   assert.equal(empty.averageAfter, null);
 });

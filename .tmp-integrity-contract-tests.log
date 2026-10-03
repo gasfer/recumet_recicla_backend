@@ -1,0 +1,420 @@
+TAP version 13
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: la conciliación revierte antes de cerrar cuando falla la paridad Stock–Kardex
+ok 1 - la conciliación revierte antes de cerrar cuando falla la paridad Stock–Kardex
+  ---
+  duration_ms: 34.0597
+  ...
+# Subtest: 8.1 previsualización cubre toda la matriz de motivos y soluciones para EXCEDENTE_PARA_REVISION
+ok 2 - 8.1 previsualización cubre toda la matriz de motivos y soluciones para EXCEDENTE_PARA_REVISION
+  ---
+  duration_ms: 7.2164
+  ...
+# Subtest: 8.1 previsualización cubre toda la matriz de motivos y soluciones para FALTANTE_PARA_REVISION
+ok 3 - 8.1 previsualización cubre toda la matriz de motivos y soluciones para FALTANTE_PARA_REVISION
+  ---
+  duration_ms: 6.194
+  ...
+# Subtest: mantener EXCEDENTE_PARA_REVISION no crea operación, stock ni Kardex adicional
+ok 4 - mantener EXCEDENTE_PARA_REVISION no crea operación, stock ni Kardex adicional
+  ---
+  duration_ms: 2.4837
+  ...
+# Subtest: mantener FALTANTE_PARA_REVISION no crea operación, stock ni Kardex adicional
+ok 5 - mantener FALTANTE_PARA_REVISION no crea operación, stock ni Kardex adicional
+  ---
+  duration_ms: 1.5471
+  ...
+# Subtest: devolver excedente crea solamente el traslado con producto y recorrido derivados
+not ok 6 - devolver excedente crea solamente el traslado con producto y recorrido derivados
+  ---
+  duration_ms: 4.3697
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\automatic-reconciliation-effects.test.js:116:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '8.0000'
+    - '8.00'
+           ^
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '8.00'
+  actual: '8.0000'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\automatic-reconciliation-effects.test.js:132:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: CLASSIFY_EXCESS delega una sola clasificación y respeta productos derivados
+ok 7 - CLASSIFY_EXCESS delega una sola clasificación y respeta productos derivados
+  ---
+  duration_ms: 2.0337
+  ...
+# Subtest: CLASSIFY_SHORTAGE delega una sola clasificación y respeta productos derivados
+ok 8 - CLASSIFY_SHORTAGE delega una sola clasificación y respeta productos derivados
+  ---
+  duration_ms: 1.7315
+  ...
+# Subtest: LOCATE_SHORTAGE delega una sola clasificación y respeta productos derivados
+ok 9 - LOCATE_SHORTAGE delega una sola clasificación y respeta productos derivados
+  ---
+  duration_ms: 2.0685
+  ...
+# Subtest: un faltante no permite crear una devolución ni una operación incompatible
+ok 10 - un faltante no permite crear una devolución ni una operación incompatible
+  ---
+  duration_ms: 1.7824
+  ...
+# Subtest: 8.2 rechaza autorizador no permitido sin crear ningún efecto
+ok 11 - 8.2 rechaza autorizador no permitido sin crear ningún efecto
+  ---
+  duration_ms: 2.3556
+  ...
+# Subtest: 8.2 rechaza versión obsoleta antes de documentos, acciones y notificaciones
+ok 12 - 8.2 rechaza versión obsoleta antes de documentos, acciones y notificaciones
+  ---
+  duration_ms: 4.4721
+  ...
+# Subtest: 8.2 un duplicado idempotente devuelve la acción existente sin repetir efectos
+ok 13 - 8.2 un duplicado idempotente devuelve la acción existente sin repetir efectos
+  ---
+  duration_ms: 0.7961
+  ...
+# Subtest: 3.2 previsualización expone normal_receipt, blocked_document y soluciones con specific_effect
+not ok 14 - 3.2 previsualización expone normal_receipt, blocked_document y soluciones con specific_effect
+  ---
+  duration_ms: 1.5118
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\automatic-reconciliation-effects.test.js:196:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '8.0000'
+    - '8.00'
+           ^
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '8.00'
+  actual: '8.0000'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\automatic-reconciliation-effects.test.js:211:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: 3.2 confirmación expone normal_receipt, blocked_document y specific_effect aplicado
+ok 15 - 3.2 confirmación expone normal_receipt, blocked_document y specific_effect aplicado
+  ---
+  duration_ms: 1.7012
+  ...
+# Subtest: 3.2 confirmación idempotente preserva specific_effect
+ok 16 - 3.2 confirmación idempotente preserva specific_effect
+  ---
+  duration_ms: 0.8014
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: normaliza y serializa con precisión 0, 2 y 4 sin toFixed
+ok 17 - normaliza y serializa con precisión 0, 2 y 4 sin toFixed
+  ---
+  duration_ms: 4.7761
+  ...
+# Subtest: la aritmética decimal comercial conserva la diferencia de cuatro decimales
+ok 18 - la aritmética decimal comercial conserva la diferencia de cuatro decimales
+  ---
+  duration_ms: 0.905
+  ...
+# Subtest: la recepción mantiene excedente y faltante de 0,0004 kg
+ok 19 - la recepción mantiene excedente y faltante de 0,0004 kg
+  ---
+  duration_ms: 3.5281
+  ...
+# Subtest: los formatos regional y Excel siguen la precisión activa
+ok 20 - los formatos regional y Excel siguen la precisión activa
+  ---
+  duration_ms: 42.4186
+  ...
+# Subtest: los setters de Stock y Kardex preservan cuatro decimales
+ok 21 - los setters de Stock y Kardex preservan cuatro decimales
+  ---
+  duration_ms: 2.5582
+  ...
+# Subtest: el aviso cuenta una boleta antigua aunque la consulta histórica mensual la excluya
+ok 22 - el aviso cuenta una boleta antigua aunque la consulta histórica mensual la excluya
+  ---
+  duration_ms: 5.1189
+  ...
+# Subtest: la bandeja inconclusa respeta únicamente un rango elegido expresamente
+ok 23 - la bandeja inconclusa respeta únicamente un rango elegido expresamente
+  ---
+  duration_ms: 0.347
+  ...
+# Subtest: una nota sólo deja de estar abierta cuando está completada y cerrada
+ok 24 - una nota sólo deja de estar abierta cuando está completada y cerrada
+  ---
+  duration_ms: 0.332
+  ...
+# Subtest: el contrato de boleta abierta calcula pendientes y remanentes sin alterar la nota
+ok 25 - el contrato de boleta abierta calcula pendientes y remanentes sin alterar la nota
+  ---
+  duration_ms: 1.2254
+  ...
+# Subtest: un traslado conserva acciones individuales para cada boleta abierta
+ok 26 - un traslado conserva acciones individuales para cada boleta abierta
+  ---
+  duration_ms: 0.885
+  ...
+# Subtest: resolver una boleta no retira el traslado mientras otra siga abierta
+ok 27 - resolver una boleta no retira el traslado mientras otra siga abierta
+  ---
+  duration_ms: 0.3403
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: §5.1 Stock mayor que Kardex: dirección y magnitud correctas
+ok 28 - §5.1 Stock mayor que Kardex: dirección y magnitud correctas
+  ---
+  duration_ms: 10.9556
+  ...
+# Subtest: §5.1 Kardex mayor que Stock: dirección y magnitud correctas
+ok 29 - §5.1 Kardex mayor que Stock: dirección y magnitud correctas
+  ---
+  duration_ms: 0.993
+  ...
+# Subtest: §5.1 antigüedad en días calculada desde stock_updated_at
+ok 30 - §5.1 antigüedad en días calculada desde stock_updated_at
+  ---
+  duration_ms: 0.8745
+  ...
+# Subtest: §5.1 antigüedad es null cuando stock_updated_at no está disponible
+ok 31 - §5.1 antigüedad es null cuando stock_updated_at no está disponible
+  ---
+  duration_ms: 1.1242
+  ...
+# Subtest: §5.1 relación candidata NO autoriza corrección por sí sola
+ok 32 - §5.1 relación candidata NO autoriza corrección por sí sola
+  ---
+  duration_ms: 1.0423
+  ...
+# Subtest: §5.1 relación confirmada (con nota de revisión) se distingue de candidata
+ok 33 - §5.1 relación confirmada (con nota de revisión) se distingue de candidata
+  ---
+  duration_ms: 0.7309
+  ...
+# Subtest: §5.1 sin traslados candidatos: candidate_document_count=0 y desfase se mantiene en investigación
+ok 34 - §5.1 sin traslados candidatos: candidate_document_count=0 y desfase se mantiene en investigación
+  ---
+  duration_ms: 0.771
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: §1.2 Stock > Kardex: detecta diferencia positiva con dirección correcta sin modificar datos
+ok 35 - §1.2 Stock > Kardex: detecta diferencia positiva con dirección correcta sin modificar datos
+  ---
+  duration_ms: 10.8314
+  ...
+# Subtest: §1.2 Kardex > Stock: detecta diferencia negativa sin corregir automáticamente
+ok 36 - §1.2 Kardex > Stock: detecta diferencia negativa sin corregir automáticamente
+  ---
+  duration_ms: 1.6932
+  ...
+# Subtest: §1.2 causa desconocida: sin traslados identifica desfase pero no asume origen
+ok 37 - §1.2 causa desconocida: sin traslados identifica desfase pero no asume origen
+  ---
+  duration_ms: 0.5672
+  ...
+# Subtest: §1.2 producto conciliado (diferencia=0) es excluido del resultado de irregularidades
+ok 38 - §1.2 producto conciliado (diferencia=0) es excluido del resultado de irregularidades
+  ---
+  duration_ms: 0.6126
+  ...
+# Subtest: §1.2 getStockDiagnostic devuelve filas sin escritura cuando no hay diferencias
+ok 39 - §1.2 getStockDiagnostic devuelve filas sin escritura cuando no hay diferencias
+  ---
+  duration_ms: 0.6849
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: detecta únicamente diferencias Stock–Kardex y conserva los traslados trazables
+ok 40 - detecta únicamente diferencias Stock–Kardex y conserva los traslados trazables
+  ---
+  duration_ms: 5.7221
+  ...
+# Subtest: identifica cuando el Kardex es mayor que el stock físico
+ok 41 - identifica cuando el Kardex es mayor que el stock físico
+  ---
+  duration_ms: 1.7792
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: 1.2 caracterización de consulta y diagnóstico Stock-Kardex: Stock > Kardex, Kardex > Stock y causa desconocida
+ok 42 - 1.2 caracterización de consulta y diagnóstico Stock-Kardex: Stock > Kardex, Kardex > Stock y causa desconocida
+  ---
+  duration_ms: 4.1535
+  ...
+# Subtest: 1.2 y 7.5 syncStocksHandler no altera saldos directamente y deriva a detección de casos individuales
+ok 43 - 1.2 y 7.5 syncStocksHandler no altera saldos directamente y deriva a detección de casos individuales
+  ---
+  duration_ms: 0.952
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: continuar y vincular una regularización registran auditoría sin crear movimientos
+not ok 44 - continuar y vincular una regularización registran auditoría sin crear movimientos
+  ---
+  duration_ms: 8.2197
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\stock-reconciliation-investigation.test.js:13:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected exception.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  operator: 'throws'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\stock-reconciliation-investigation.test.js:64:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: 4.1 mapOpenReviewNote excluye ítems dentro de tolerancia aceptados
+ok 45 - 4.1 mapOpenReviewNote excluye ítems dentro de tolerancia aceptados
+  ---
+  duration_ms: 4.0914
+  ...
+# Subtest: 4.2 getTransferTraceability refleja medición física, recepción normal, diferencia bloqueada, documento y estado en boleta mixta
+not ok 46 - 4.2 getTransferTraceability refleja medición física, recepción normal, diferencia bloqueada, documento y estado en boleta mixta
+  ---
+  duration_ms: 6.5165
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\transfer-reception-interface-vouchers.test.js:42:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + '100.0000'
+    - 100
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 100
+  actual: '100.0000'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\transfer-reception-interface-vouchers.test.js:161:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: 4.3 Guía de recepción: cálculo por ítem y total contable en impresión inicial y reimpresión
+ok 47 - 4.3 Guía de recepción: cálculo por ítem y total contable en impresión inicial y reimpresión
+  ---
+  duration_ms: 1.8874
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: bloquea la conciliacion cuando no se registra una operacion real
+ok 48 - bloquea la conciliacion cuando no se registra una operacion real
+  ---
+  duration_ms: 4.76
+  ...
+# Subtest: acepta una clasificacion activa del mismo producto y con salida a merma suficiente
+ok 49 - acepta una clasificacion activa del mismo producto y con salida a merma suficiente
+  ---
+  duration_ms: 3.5709
+  ...
+# Subtest: bloquea un traslado complementario que todavía no fue recibido
+ok 50 - bloquea un traslado complementario que todavía no fue recibido
+  ---
+  duration_ms: 1.1898
+  ...
+# Subtest: excluye el traslado original de la búsqueda del traslado correctivo
+ok 51 - excluye el traslado original de la búsqueda del traslado correctivo
+  ---
+  duration_ms: 0.8569
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: deriva EN_REVISION cuando ningún detalle fue conciliado
+ok 52 - deriva EN_REVISION cuando ningún detalle fue conciliado
+  ---
+  duration_ms: 2.1238
+  ...
+# Subtest: deriva PARCIAL cuando existe una resolución parcial o un detalle completado
+ok 53 - deriva PARCIAL cuando existe una resolución parcial o un detalle completado
+  ---
+  duration_ms: 0.2948
+  ...
+# Subtest: deriva COMPLETADO sólo cuando todos los detalles están completos
+ok 54 - deriva COMPLETADO sólo cuando todos los detalles están completos
+  ---
+  duration_ms: 0.1615
+  ...
+# Subtest: una recepción exacta sin notas está COMPLETADA
+ok 55 - una recepción exacta sin notas está COMPLETADA
+  ---
+  duration_ms: 0.213
+  ...
+# Subtest: la recepción refleja estado parcial y pendiente de sus notas
+ok 56 - la recepción refleja estado parcial y pendiente de sus notas
+  ---
+  duration_ms: 0.3177
+  ...
+# Subtest: una conciliación eliminada no mantiene la recepción en estado pendiente
+ok 57 - una conciliación eliminada no mantiene la recepción en estado pendiente
+  ---
+  duration_ms: 0.1682
+  ...
+# Subtest: la derivación registra responsable, observación, actor y fecha antes de conciliar
+ok 58 - la derivación registra responsable, observación, actor y fecha antes de conciliar
+  ---
+  duration_ms: 1.7913
+  ...
+# Executing (5402a57e-c421-4452-b2e8-49c716f0dd46): START TRANSACTION;
+# Executing (5402a57e-c421-4452-b2e8-49c716f0dd46): ROLLBACK;
+# Subtest: la derivación sin observación válida se rechaza antes de modificar la nota
+ok 59 - la derivación sin observación válida se rechaza antes de modificar la nota
+  ---
+  duration_ms: 185.318
+  ...
+# Subtest: 3.4 getTransferTraceability enriquece medición, normal, bloqueada y efectos aplicados
+ok 60 - 3.4 getTransferTraceability enriquece medición, normal, bloqueada y efectos aplicados
+  ---
+  duration_ms: 2.9224
+  ...
+# Subtest: construye excedentes y faltantes con producto destino y precisión decimal
+ok 61 - construye excedentes y faltantes con producto destino y precisión decimal
+  ---
+  duration_ms: 4.8588
+  ...
+# Subtest: sin notas no fabrica movimientos ni filas de conciliación
+ok 62 - sin notas no fabrica movimientos ni filas de conciliación
+  ---
+  duration_ms: 0.3285
+  ...
+1..62
+# tests 62
+# suites 0
+# pass 58
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12375.3964

@@ -22,7 +22,8 @@ const operationalVerificationService = require('./transfer-review-operational-ve
 const stockKardexIntegrity = require('./stock-kardex-integrity.service');
 const notificationService = require('./notification.service');
 
-const EPSILON = 0.0001;
+const EPSILON = 0;
+const { exactAdd, exactSubtract, exactCompare, exactMax, inventoryQuantity } = require('../helpers/number-formatter');
 const BUSINESS_TIME_ZONE = process.env.BUSINESS_TIME_ZONE || 'America/La_Paz';
 
 const workflowError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
@@ -40,9 +41,9 @@ const currentBusinessDate = () => {
 
 const normalizeQuantity = (value, pendingQuantity) => {
   if (value === undefined || value === null || value === '') return pendingQuantity;
-  const quantity = Number(value);
-  if (!Number.isFinite(quantity) || quantity <= 0) throw workflowError('La cantidad a conciliar debe ser mayor a cero.');
-  if (quantity - pendingQuantity > EPSILON) throw workflowError(`La cantidad excede el pendiente de ${pendingQuantity}.`);
+  const quantity = inventoryQuantity(value);
+  if (exactCompare(quantity, 0) <= 0) throw workflowError('La cantidad a conciliar debe ser mayor a cero.');
+  if (exactCompare(quantity, pendingQuantity) > 0) throw workflowError(`La cantidad excede el pendiente de ${pendingQuantity}.`);
   return quantity;
 };
 
@@ -185,8 +186,8 @@ const documentaryCloseDetail = async ({
       });
       if (!authorizer) throw workflowError('El responsable autorizador no está activo o no tiene un rol autorizado.');
     }
-    const pendingBefore = Number(detail.quantity_difference) - Number(detail.quantity_resolved || 0);
-    if (pendingBefore <= EPSILON) throw workflowError('La diferencia ya fue conciliada.', 409);
+    const pendingBefore = exactSubtract(detail.quantity_difference, detail.quantity_resolved || 0);
+    if (exactCompare(pendingBefore, 0) <= 0) throw workflowError('La diferencia ya fue conciliada.', 409);
     const requestedQuantity = normalizeQuantity(quantity, pendingBefore);
 
     const operationalResolution = await operationalVerificationService.verifyOperationalResolution({
@@ -213,7 +214,7 @@ const documentaryCloseDetail = async ({
       lock: transaction.LOCK.UPDATE,
     });
     const inReviewHold = holds.find(({ disposition }) => disposition === REVIEW_HOLD_DISPOSITIONS.IN_REVIEW);
-    if (!inReviewHold || Number(inReviewHold.quantity) + EPSILON < requestedQuantity) {
+    if (!inReviewHold || exactCompare(inReviewHold.quantity, requestedQuantity) < 0) {
       throw workflowError('La retención pendiente no cubre la cantidad solicitada.', 409);
     }
 
@@ -227,18 +228,18 @@ const documentaryCloseDetail = async ({
     }
 
     const retainedHold = holds.find(({ disposition }) => disposition === REVIEW_HOLD_DISPOSITIONS.RETAINED_WITHOUT_ADJUSTMENT);
-    if (retainedHold && Number(retainedHold.quantity) > EPSILON) {
+    if (retainedHold && exactCompare(retainedHold.quantity, 0) > 0) {
       throw workflowError('Esta diferencia contiene una retención histórica sin regularización verificada. Requiere revisión administrativa antes de cerrarla.', 409);
     }
     const releasedHold = holds.find(({ disposition }) => disposition === REVIEW_HOLD_DISPOSITIONS.RELEASED_BY_ADJUSTMENT);
-    const inReviewAfter = Number(inReviewHold.quantity) - requestedQuantity;
-    if (inReviewAfter <= EPSILON) await inReviewHold.destroy({ transaction });
+    const inReviewAfter = exactSubtract(inReviewHold.quantity, requestedQuantity);
+    if (exactCompare(inReviewAfter, 0) <= 0) await inReviewHold.destroy({ transaction });
     else {
       inReviewHold.quantity = inReviewAfter;
       await inReviewHold.save({ transaction });
     }
     if (releasedHold) {
-      releasedHold.quantity = Number(releasedHold.quantity) + requestedQuantity;
+      releasedHold.quantity = exactAdd(releasedHold.quantity, requestedQuantity);
       await releasedHold.save({ transaction });
     } else {
       await TransferReviewInventoryHold.create({
@@ -281,11 +282,11 @@ const documentaryCloseDetail = async ({
       detail_version: Number(detail.updatedAt?.getTime?.() || 1),
     }, { transaction });
 
-    detail.quantity_resolved = Number(detail.quantity_resolved || 0) + requestedQuantity;
+    detail.quantity_resolved = exactAdd(detail.quantity_resolved || 0, requestedQuantity);
     detail.cause = reasonCode;
-    const pendingAfter = Math.max(0, Number(detail.quantity_difference) - Number(detail.quantity_resolved));
-    if (pendingAfter <= EPSILON) {
-      detail.quantity_resolved = Number(detail.quantity_difference);
+    const pendingAfter = exactMax(0, exactSubtract(detail.quantity_difference, detail.quantity_resolved));
+    if (exactCompare(pendingAfter, EPSILON) <= 0) {
+      detail.quantity_resolved = detail.quantity_difference;
       detail.reconciliation_status = DETAIL_REVIEW_STATUSES.COMPLETED;
       detail.resolved_at = new Date();
       detail.id_resolved_user = actorUserId;
@@ -300,10 +301,10 @@ const documentaryCloseDetail = async ({
       transaction,
       lock: transaction.LOCK.UPDATE,
     });
-    const activeHoldTotal = activeHolds.reduce((total, hold) => total + Number(hold.quantity), 0);
-    const releasedHoldTotal = Number(detail.quantity_resolved || 0);
-    const expectedActiveHoldTotal = Math.max(0, Number(detail.quantity_difference) - releasedHoldTotal);
-    if (Math.abs(activeHoldTotal - expectedActiveHoldTotal) > EPSILON) {
+    const activeHoldTotal = activeHolds.reduce((total, hold) => exactAdd(total, hold.quantity), 0);
+    const releasedHoldTotal = detail.quantity_resolved || 0;
+    const expectedActiveHoldTotal = exactMax(0, exactSubtract(detail.quantity_difference, releasedHoldTotal));
+    if (exactCompare(activeHoldTotal, expectedActiveHoldTotal) !== 0) {
       throw workflowError('Las retenciones activas no coinciden con la cantidad pendiente.', 409);
     }
 

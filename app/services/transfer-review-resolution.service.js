@@ -7,6 +7,7 @@ const {
   TransferReviewResolutionAction,
   TransferReviewActionMovement,
   TransferReviewEvidence,
+  TransferReviewInventoryHold,
   TransferReviewEvent,
   Product,
   History,
@@ -16,6 +17,7 @@ const { createEvent, syncNoteStatus } = require('./transfer-review-workflow.serv
 const notificationService = require('./notification.service');
 const { applyExplicitEffect } = require('./inventory-posting.service');
 const integrityService = require('./stock-kardex-integrity.service');
+const { exactAdd, exactSubtract, exactCompare, inventoryQuantity } = require('../helpers/number-formatter');
 
 const EXCESS_STRATEGIES = new Set([
   'ORIGEN_ENVIO_MAYOR',
@@ -113,7 +115,7 @@ const applyShortageStrategy = async ({ strategy, quantity, detail, note, targetP
 
 const affectedLocations = ({ note, detail, strategy, targetProductId }) => {
   const destination = { sucursalId: note.id_sucursal, storageId: note.id_storage };
-  if (strategy === 'ACCION_MANUAL_VERIFICADA') return [];
+  if (strategy === 'ACCION_MANUAL_VERIFICADA') return [{ productId: note.id_product, ...destination }, { productId: detail.id_product, ...destination }];
   if (note.type === 'EXCEDENTE_PARA_REVISION') {
     if (strategy === 'ORIGEN_ENVIO_MAYOR') return [{
       productId: note.id_product,
@@ -135,8 +137,8 @@ const affectedLocations = ({ note, detail, strategy, targetProductId }) => {
 
 const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause, observations, targetProductId, idempotencyKey, actorUserId, actorCanApprove }) => {
   if (!idempotencyKey) throw workflowError('La clave de idempotencia es obligatoria.');
-  const requestedQuantity = Number(quantity);
-  if (!Number.isFinite(requestedQuantity) || requestedQuantity <= 0) throw workflowError('La cantidad a conciliar debe ser mayor a cero.');
+  const requestedQuantity = inventoryQuantity(quantity);
+  if (exactCompare(requestedQuantity, 0) <= 0) throw workflowError('La cantidad a conciliar debe ser mayor a cero.');
 
   return sequelize.transaction(async (transaction) => {
     const existing = await TransferReviewResolutionAction.findOne({
@@ -174,8 +176,8 @@ const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause
       }
     }
 
-    const pendingQuantity = Number(detail.quantity_difference) - Number(detail.quantity_resolved || 0);
-    if (requestedQuantity > pendingQuantity) throw workflowError(`La cantidad excede el pendiente de ${pendingQuantity}.`);
+    const pendingQuantity = exactSubtract(detail.quantity_difference, detail.quantity_resolved || 0);
+    if (exactCompare(requestedQuantity, pendingQuantity) > 0) throw workflowError(`La cantidad excede el pendiente de ${pendingQuantity}.`);
 
     const action = await TransferReviewResolutionAction.create({
       idempotency_key: idempotencyKey,
@@ -204,9 +206,18 @@ const resolveReviewDetail = async ({ noteId, detailId, strategy, quantity, cause
     await linkMovements(action.id, movements, transaction);
     await integrityService.verifyLocationsIntegrityPreserved({ locations, beforeDiagnostics, transaction });
 
-    detail.quantity_resolved = Number(detail.quantity_resolved || 0) + requestedQuantity;
+    const hold = await TransferReviewInventoryHold.findOne({ where: { id_transfer_review_note_detail: detail.id, disposition: 'EN_REVISION' }, transaction, lock: transaction.LOCK.UPDATE });
+    if (!hold || exactCompare(hold.quantity, requestedQuantity) < 0) throw workflowError('La retención no cubre la cantidad solicitada.', 409);
+    const heldAfter = exactSubtract(hold.quantity, requestedQuantity);
+    if (exactCompare(heldAfter, 0) === 0) await hold.destroy({ transaction });
+    else { hold.quantity = heldAfter; await hold.save({ transaction }); }
+    const released = await TransferReviewInventoryHold.findOne({ where: { id_transfer_review_note_detail: detail.id, disposition: 'LIBERADO_POR_AJUSTE' }, transaction, lock: transaction.LOCK.UPDATE });
+    if (released) { released.quantity = exactAdd(released.quantity, requestedQuantity); await released.save({ transaction }); }
+    else await TransferReviewInventoryHold.create({ id_transfer_review_note_detail: detail.id, id_product: hold.id_product, id_sucursal: hold.id_sucursal, id_storage: hold.id_storage, quantity: requestedQuantity, disposition: 'LIBERADO_POR_AJUSTE', id_created_user: actorUserId }, { transaction });
+
+    detail.quantity_resolved = exactAdd(detail.quantity_resolved || 0, requestedQuantity);
     detail.cause = cause || strategy;
-    if (Number(detail.quantity_resolved) === Number(detail.quantity_difference)) {
+    if (exactCompare(detail.quantity_resolved, detail.quantity_difference) === 0) {
       detail.reconciliation_status = DETAIL_REVIEW_STATUSES.COMPLETED;
       detail.resolved_at = new Date();
       detail.id_resolved_user = actorUserId;

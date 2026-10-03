@@ -34,6 +34,7 @@ test('no evalúa automáticamente una cantidad enviada igual a cero', () => {
 test('applyBlockedShortageReceipt contabiliza recepción normal y bloquea diferencia en producto temporal', async (t) => {
   const { applyBlockedShortageReceipt } = require('../services/transfer-reception-inventory.service');
   const db = require('../database/config');
+  t.mock.method(db.sequelize, 'query', async () => []);
   const createdStocks = [];
   const createdMovements = [];
 
@@ -43,7 +44,7 @@ test('applyBlockedShortageReceipt contabiliza recepción normal y bloquea difere
       && stock.id_storage === where.id_storage
   )) || null);
   t.mock.method(db.Stock, 'create', async (data) => {
-    const stock = { ...data, save: async () => {} };
+    const stock = { ...data, setDataValue(key, value) { this[key] = value; }, save: async () => {} };
     createdStocks.push(stock);
     return stock;
   });
@@ -75,15 +76,15 @@ test('applyBlockedShortageReceipt contabiliza recepción normal y bloquea difere
     transaction: {},
   });
 
-  assert.equal(result.totalShortage, 10);
+  assert.equal(result.totalShortage, '10.0000');
   assert.equal(createdStocks.length, 2);
   assert.deepEqual(createdStocks.map(({ id_product, stock }) => ({ id_product, stock })), [
-    { id_product: 50, stock: 90 },
-    { id_product: 200, stock: 10 },
+    { id_product: 50, stock: '90.0000' },
+    { id_product: 200, stock: '10.0000' },
   ]);
   assert.equal(createdMovements.length, 1);
   assert.equal(createdMovements[0].id_product, 200);
-  assert.equal(createdMovements[0].quantity, 10);
+  assert.equal(Number(createdMovements[0].quantity), 10);
   assert.equal(createdMovements[0].details, 'MERMA TRASPASO #TRAS00001');
   assert.equal(createdMovements[0].cost, null, 'Una merma sin base de costo debe quedar sin valorar, no con costo cero.');
   assert.equal(valued.length, 2);
@@ -107,6 +108,7 @@ test('applyBlockedShortageReceipt rechaza operación si producto de diferencias 
 test('applyBlockedExcessReceipt contabiliza stock físico y movimiento de excedente', async (t) => {
   const { applyBlockedExcessReceipt } = require('../services/transfer-reception-inventory.service');
   const db = require('../database/config');
+  t.mock.method(db.sequelize, 'query', async () => []);
   const createdStocks = [];
   const createdMovements = [];
 
@@ -116,7 +118,7 @@ test('applyBlockedExcessReceipt contabiliza stock físico y movimiento de excede
       && stock.id_storage === where.id_storage
   )) || null);
   t.mock.method(db.Stock, 'create', async (data) => {
-    const stock = { ...data, save: async () => {} };
+    const stock = { ...data, setDataValue(key, value) { this[key] = value; }, save: async () => {} };
     createdStocks.push(stock);
     return stock;
   });
@@ -145,12 +147,12 @@ test('applyBlockedExcessReceipt contabiliza stock físico y movimiento de excede
     transaction: {},
   });
 
-  assert.equal(result.excess, 10);
+  assert.equal(Number(result.excess), 10);
   assert.equal(createdStocks.length, 1);
-  assert.equal(createdStocks[0].stock, 110);
+  assert.equal(Number(createdStocks[0].stock), 110);
   assert.equal(createdMovements.length, 1);
   assert.equal(createdMovements[0].details, 'EXCEDENTE TRASPASO #TRAS00001');
-  assert.equal(createdMovements[0].quantity, 10);
+  assert.equal(Number(createdMovements[0].quantity), 10);
   assert.equal(createdMovements[0].cost, 12.5);
   assert.equal(valued.length, 2);
 });
@@ -158,6 +160,7 @@ test('applyBlockedExcessReceipt contabiliza stock físico y movimiento de excede
 test('impide que la retención de un excedente se libere dos veces', async (t) => {
   const resolutionService = require('../services/automated-transfer-review-resolution.service');
   const db = require('../database/config');
+  t.mock.method(db.sequelize, 'query', async () => []);
   const row = (data) => ({ ...data, save: async () => {}, destroy: async () => {} });
 
   const note = row({

@@ -17,6 +17,8 @@ module.exports = (sequelize, DataTypes) => {
     account_type: DataTypes.ENUM('CAJA_AHORRO', 'CUENTA_CORRIENTE', 'OTRA'),
     currency: DataTypes.ENUM('BOB', 'USD'),
     is_main: DataTypes.BOOLEAN,
+    qr_file_name: DataTypes.STRING,
+    qr_original_name: DataTypes.STRING,
     status: DataTypes.BOOLEAN,
   }, { sequelize, modelName: 'ProviderBankAccount', tableName: 'provider_bank_accounts' });
 

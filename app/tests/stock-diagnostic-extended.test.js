@@ -61,7 +61,7 @@ test('§5.1 Stock mayor que Kardex: dirección y magnitud correctas', async (t) 
 
   assert.equal(rows.length, 1);
   assert.equal(rows[0].direction, 'STOCK_MAYOR_QUE_KARDEX');
-  assert.equal(rows[0].magnitude, 20);
+  assert.equal(rows[0].magnitude, '20.0000');
 });
 
 test('§5.1 Kardex mayor que Stock: dirección y magnitud correctas', async (t) => {
@@ -74,7 +74,7 @@ test('§5.1 Kardex mayor que Stock: dirección y magnitud correctas', async (t) 
   const rows = await getStockDiagnostic({ idSucursal: 1, idStorage: 1 });
 
   assert.equal(rows[0].direction, 'KARDEX_MAYOR_QUE_STOCK');
-  assert.equal(rows[0].magnitude, 20, 'magnitud es siempre positiva (valor absoluto)');
+  assert.equal(rows[0].magnitude, '20.0000', 'magnitud es siempre positiva (valor absoluto)');
 });
 
 // ─── §5.1 Antigüedad ─────────────────────────────────────────────────────────

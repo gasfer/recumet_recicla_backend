@@ -1,10 +1,10 @@
-﻿'use strict';
+'use strict';
 
 const { QueryTypes } = require('sequelize');
 const { sequelize, Stock } = require('../database/config');
-const { decimalSubtract, decimalTolerance } = require('../helpers/number-formatter');
+const { exactAdd, exactSubtract, exactCompare } = require('../helpers/number-formatter');
 
-const getDefaultTolerance = () => decimalTolerance();
+const getDefaultTolerance = () => 0;
 
 const normalizeLocation = ({ productId, sucursalId, storageId }) => ({
   productId: Number(productId),
@@ -32,27 +32,61 @@ const getStockKardexIntegrity = async ({ productId, sucursalId, storageId, trans
     },
     transaction,
   });
-  const physicalStock = stock ? Number(stock.stock) : 0;
+  const physicalStock = exactAdd(stock?.stock ?? 0, 0);
   const [projection = {}] = await sequelize.query(`
-    SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS kardex_balance
-    FROM view_kardex_detalle
-    WHERE id_product = :productId
-      AND id_sucursal = :sucursalId
-      AND id_storage = :storageId
+    WITH detail AS (
+      SELECT quantity_input, quantity_output
+      FROM view_kardex_detalle
+      WHERE id_product = :productId AND id_sucursal = :sucursalId AND id_storage = :storageId
+    ), physical AS (
+      SELECT id_product, id_sucursal, id_storage,
+        COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+      FROM view_kardex_detalle
+      WHERE id_product = :productId AND id_sucursal = :sucursalId AND id_storage = :storageId
+      GROUP BY id_product, id_sucursal, id_storage
+    ), duplicates AS (
+      SELECT source_type, source_id, source_detail_id, effect_type
+      FROM kardex_movements
+      WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+        AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+        AND (source_type,source_id,source_detail_id,effect_type) IN (
+          SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+          WHERE status = true AND id_product = :productId AND id_sucursal = :sucursalId AND id_storage = :storageId
+        )
+      GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+    )
+    SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+      COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+      (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+      (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+        WHERE id_product=:productId AND id_sucursal=:sucursalId AND id_storage=:storageId
+          AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
   `, {
     replacements: location,
     type: QueryTypes.SELECT,
     transaction,
   });
-  const kardexBalance = Number(projection.kardex_balance || 0);
-  const difference = decimalSubtract(physicalStock, kardexBalance);
+  if (projection.kardex_balance == null || projection.physical_kardex_balance == null) {
+    throw Object.assign(new Error('No se pudieron verificar ambas proyecciones Kardex.'), { statusCode: 409, code: 'KARDEX_PROJECTION_UNAVAILABLE' });
+  }
+  const kardexBalance = exactAdd(projection.kardex_balance, 0);
+  const physicalKardexBalance = exactAdd(projection.physical_kardex_balance, 0);
+  const difference = exactSubtract(physicalStock, kardexBalance);
+  const physicalDifference = exactSubtract(physicalStock, physicalKardexBalance);
+  const heldQuantity = exactAdd(projection.held_quantity ?? 0, 0);
+  const availableQuantity = exactSubtract(physicalStock, heldQuantity);
   return {
-    consistent: Math.abs(difference) <= Number(tolerance),
+    consistent: exactCompare(difference, 0) === 0 && exactCompare(physicalDifference, 0) === 0 && Number(projection.duplicate_effects) === 0 && exactCompare(physicalStock, 0) >= 0 && exactCompare(availableQuantity, 0) >= 0 && exactCompare(heldQuantity, 0) >= 0,
     ...location,
     physicalStock,
     kardexBalance,
     difference,
-    tolerance: Number(tolerance),
+    physicalKardexBalance,
+    physicalDifference,
+    heldQuantity,
+    availableQuantity,
+    duplicateEffects: Number(projection.duplicate_effects),
+    tolerance: 0,
   };
 };
 
@@ -61,13 +95,16 @@ const parityError = (diagnostics) => Object.assign(
   {
     statusCode: 409,
     code: 'STOCK_KARDEX_PARITY_VIOLATION',
-    details: diagnostics.map(({ productId, sucursalId, storageId, physicalStock, kardexBalance, difference }) => ({
+    details: diagnostics.map(({ productId, sucursalId, storageId, physicalStock, kardexBalance, difference, physicalKardexBalance, physicalDifference, duplicateEffects }) => ({
       product_id: productId,
       sucursal_id: sucursalId,
       storage_id: storageId,
       stock: physicalStock,
       kardex: kardexBalance,
       difference,
+      physical_kardex: physicalKardexBalance,
+      physical_difference: physicalDifference,
+      duplicate_effects: duplicateEffects,
     })),
   },
 );
@@ -88,34 +125,7 @@ const verifyLocationsIntegrity = async ({ locations, transaction, tolerance = ge
   return diagnostics;
 };
 
-const verifyLocationsIntegrityPreserved = async ({ locations, beforeDiagnostics, transaction, tolerance = getDefaultTolerance() }) => {
-  const beforeByLocation = new Map((beforeDiagnostics || []).map((diagnostic) => [locationKey(diagnostic), diagnostic]));
-  const afterDiagnostics = [];
-  const changed = [];
-  for (const location of uniqueSortedLocations(locations)) {
-    const after = await getStockKardexIntegrity({ ...location, transaction, tolerance });
-    const before = beforeByLocation.get(locationKey(location));
-    afterDiagnostics.push(after);
-    if (!before || Math.abs(Number(after.difference) - Number(before.difference)) > Number(tolerance)) {
-      changed.push({ ...after, previousDifference: before?.difference ?? null });
-    }
-  }
-  if (changed.length) {
-    const error = parityError(changed);
-    error.message = 'La operación no puede confirmarse porque modificó la diferencia previa entre Stock y Kardex.';
-    error.details = changed.map(({ productId, sucursalId, storageId, physicalStock, kardexBalance, difference, previousDifference }) => ({
-      product_id: productId,
-      sucursal_id: sucursalId,
-      storage_id: storageId,
-      stock: physicalStock,
-      kardex: kardexBalance,
-      previous_difference: previousDifference,
-      difference,
-    }));
-    throw error;
-  }
-  return afterDiagnostics;
-};
+const verifyLocationsIntegrityPreserved = async ({ locations, transaction }) => verifyLocationsIntegrity({ locations, transaction });
 
 module.exports = {
   getDefaultTolerance,

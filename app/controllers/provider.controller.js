@@ -1,8 +1,9 @@
 const { response, request } = require('express');
-const { Provider, Sector, TypesProvider,DetailsInput, ViewProviderTotals } = require('../database/config');
+const { Provider, Sector, TypesProvider, DetailsInput, ViewProviderTotals } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const providerService = require('../services/provider.service');
+const providerFrequencyService = require('../services/provider-frequency.service');
 
 const resolveGoogleMapsLink = async (req = request, res = response) => {
     try {
@@ -207,8 +208,6 @@ const deleteSectorProvider = async (req = request, res = response ) => {
     }
 }
 
-
-
 const getAllTypesProvider = async (req = request, res = response) => {
     try {
         let typesProvider =  await TypesProvider.findAll({where:{status: true}});
@@ -224,7 +223,6 @@ const getAllTypesProvider = async (req = request, res = response) => {
         });
     }
 }
-
 
 const getProviderAutocomplete = async (req = request, res = response) => {
     try {
@@ -309,6 +307,24 @@ const deleteProviderDetail = (kind) => async (req = request, res = response) => 
     }
 };
 
+const getProviderFrequencyAnalysis = async (req = request, res = response) => {
+    try {
+        const providerId = req.params.id;
+        const { id_product, id_sucursal } = req.query;
+        const analysis = await providerFrequencyService.calculateFrequency(providerId, id_product, id_sucursal);
+        return res.status(200).json({
+            ok: true,
+            analysis
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            ok: false,
+            errors: [{ msg: 'Error al calcular la frecuencia inteligente del proveedor.' }]
+        });
+    }
+};
+
 module.exports = {
     getProviderPaginate,
     newProvider,
@@ -319,12 +335,13 @@ module.exports = {
     deleteSectorProvider,
     getProviderByProductPaginate,
     getAllTypesProvider,
-    getProviderAutocomplete
-    ,preRegisterProvider
-    ,checkDuplicateProvider
-    ,getProviderCommercialDetails
-    ,commercialValidationProvider
-    ,saveProviderDetail
-    ,deleteProviderDetail
-    ,resolveGoogleMapsLink
+    getProviderAutocomplete,
+    preRegisterProvider,
+    checkDuplicateProvider,
+    getProviderCommercialDetails,
+    commercialValidationProvider,
+    saveProviderDetail,
+    deleteProviderDetail,
+    resolveGoogleMapsLink,
+    getProviderFrequencyAnalysis
 };

@@ -17,16 +17,19 @@ const {
 } = require('../database/config');
 const { registerKardexOnlyEffect, applyStockDelta } = require('./inventory-posting.service');
 const { getStockKardexIrregularities } = require('./stock-availability.service');
+const integrity = require('./stock-kardex-integrity.service');
+const { recordInventoryRejection } = require('./inventory-rejection-audit.service');
 const {
   STOCK_RECONCILIATION_STATUSES: STATUSES,
   STOCK_RECONCILIATION_STRATEGIES: STRATEGIES,
 } = require('../constants/stock-reconciliation');
 const { getEpsilon, investigationErrors, buildPreview, assertStatusTransition } = require('./stock-reconciliation-policy.service');
-const { decimalSubtract, decimalToNumber } = require('../helpers/number-formatter');
+const { exactAdd, exactSubtract, exactCompare } = require('../helpers/number-formatter');
 
 const serviceError = (message, statusCode = 422, details) => Object.assign(new Error(message), { statusCode, details });
-const normalizeNumber = (value) => decimalToNumber(value || 0);
-const directionFor = (difference) => Number(difference) > 0 ? 'STOCK_MAYOR_QUE_KARDEX' : 'KARDEX_MAYOR_QUE_STOCK';
+const normalizeNumber = (value) => exactAdd(value ?? 0, 0);
+const normalizeFingerprintNumber = (value) => normalizeNumber(value).replace(/(\.\d*?[1-9])0+$|\.0+$/, '$1');
+const directionFor = (difference) => exactCompare(difference, 0) > 0 ? 'STOCK_MAYOR_QUE_KARDEX' : 'KARDEX_MAYOR_QUE_STOCK';
 const normalizeFingerprintTimestamp = (value) => {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
@@ -36,7 +39,7 @@ const fingerprintFor = ({ id_product, id_sucursal, id_storage, physical_stock, k
   .createHash('sha256')
   .update([
     Number(id_product), Number(id_sucursal), Number(id_storage),
-    normalizeNumber(physical_stock), normalizeNumber(kardex_balance),
+    normalizeFingerprintNumber(physical_stock), normalizeFingerprintNumber(kardex_balance),
     normalizeFingerprintTimestamp(stock_updated_at), kardex_last_id ? String(kardex_last_id) : '',
   ].join('|'))
   .digest('hex');
@@ -78,7 +81,7 @@ const getCurrentSnapshot = async ({ productId, sucursalId, storageId, transactio
     physical_stock: normalizeNumber(stock.stock), kardex_balance: normalizeNumber(currentKardex?.saldo),
     stock_updated_at: stock.updatedAt?.toISOString?.() || String(stock.updatedAt || ''), kardex_last_id: currentKardex?.id || null,
   };
-  snapshot.physical_kardex_difference = decimalSubtract(snapshot.physical_stock, snapshot.kardex_balance);
+  snapshot.physical_kardex_difference = exactSubtract(snapshot.physical_stock, snapshot.kardex_balance);
   snapshot.fingerprint = fingerprintFor(snapshot);
   return { stock, snapshot };
 };
@@ -344,10 +347,10 @@ const resolveCase = async ({ caseId, actorUserId, authorizedUserId, idempotencyK
       }
       await applyStockDelta({
         productId: record.id_product, sucursalId: record.id_sucursal, storageId: record.id_storage,
-        delta: decimalSubtract(preview.stock_after, stock.stock), transaction,
+        delta: exactSubtract(preview.stock_after, stock.stock), transaction,
       });
     } else if (record.selected_strategy === STRATEGIES.REGISTER_MISSING_KARDEX) {
-      if (preview.movement.quantity <= getEpsilon()) throw serviceError('No existe una diferencia que requiera movimiento Kardex.', 409);
+      if (exactCompare(preview.movement.quantity, 0) <= 0) throw serviceError('No existe una diferencia que requiera movimiento Kardex.', 409);
       movement = await kardexMovements.create({
         type: preview.movement.type, date: new Date(),
         details: `REGULARIZACIÓN STOCK-KARDEX CASO #${record.id}: ${record.cause}`,
@@ -358,11 +361,13 @@ const resolveCase = async ({ caseId, actorUserId, authorizedUserId, idempotencyK
     } else if (record.selected_strategy === STRATEGIES.ADJUST_STOCK_BY_COUNT) {
       await applyStockDelta({
         productId: record.id_product, sucursalId: record.id_sucursal, storageId: record.id_storage,
-        delta: decimalSubtract(preview.stock_after, stock.stock), transaction,
+        delta: exactSubtract(preview.stock_after, stock.stock), transaction,
       });
     }
     const { snapshot: after } = await getCurrentSnapshot({ productId: record.id_product, sucursalId: record.id_sucursal, storageId: record.id_storage, transaction });
-    const resolved = Math.abs(after.physical_kardex_difference) <= getEpsilon();
+    const resolved = exactCompare(after.physical_kardex_difference, 0) === 0;
+    if (!resolved) throw Object.assign(serviceError('La regularización conserva una diferencia residual y fue revertida.', 409), { code: 'STOCK_KARDEX_PARITY_VIOLATION' });
+    await integrity.verifyLocationsIntegrity({ locations: [{ productId: record.id_product, sucursalId: record.id_sucursal, storageId: record.id_storage }], transaction });
     const nextStatus = resolved ? STATUSES.RESOLVED : STATUSES.INVESTIGATING;
     assertStatusTransition(record.status, nextStatus);
     const action = await StockReconciliationAction.create({
@@ -405,6 +410,8 @@ const resolveCases = async ({ cases, actorUserId }) => {
       const result = await resolveCase({ caseId: item.case_id, actorUserId, authorizedUserId: item.authorized_user_id, idempotencyKey: item.idempotency_key });
       results.push({ case_id: item.case_id, ok: true, result });
     } catch (error) {
+      try { error = await recordInventoryRejection(error, { id: actorUserId }); }
+      catch (_) { error = Object.assign(new Error('No se pudo guardar la auditoría del rechazo.'), { statusCode: 503 }); }
       results.push({ case_id: item.case_id, ok: false, error: error.message, statusCode: error.statusCode || 500 });
     }
   }

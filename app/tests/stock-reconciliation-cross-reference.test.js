@@ -61,7 +61,8 @@ test('3.3 referencias cruzadas entre recepción y caso Stock-Kardex no fusionan 
   t.mock.method(db.StockReconciliationCase, 'findByPk', async () => stockCase);
   t.mock.method(db.Stock, 'findOne', async () => ({ stock: 15, updatedAt: stockUpdatedAt, status: true, async save() { return this; } }));
   let queryCount = 0;
-  t.mock.method(db.sequelize, 'query', async () => {
+  t.mock.method(db.sequelize, 'query', async (sql) => {
+    if (sql.includes('physical_kardex_balance')) return [{ kardex_balance: 15, physical_kardex_balance: 15, duplicate_effects: 0, held_quantity: 0 }];
     queryCount += 1;
     if (queryCount === 1) return [{ id: 80, saldo: 10, date: stockUpdatedAt }];
     return [{ id: 99, saldo: 15, date: new Date() }];

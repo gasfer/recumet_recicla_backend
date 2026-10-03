@@ -15,6 +15,14 @@ module.exports = (sequelize, DataTypes) => {
     id_category: DataTypes.INTEGER,
     id_product: DataTypes.INTEGER,
     frequency: DataTypes.STRING,
+    frequency_mode: {
+      type: DataTypes.STRING,
+      defaultValue: 'automatic'
+    },
+    average_days: DataTypes.DECIMAL,
+    total_deliveries: DataTypes.INTEGER,
+    last_delivery_date: DataTypes.DATE,
+    next_estimated_date: DataTypes.DATE,
     service_mode: DataTypes.STRING,
     status: DataTypes.BOOLEAN,
   }, { sequelize, modelName: 'ProviderMaterial', tableName: 'provider_materials' });

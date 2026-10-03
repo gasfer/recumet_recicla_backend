@@ -45,24 +45,24 @@ const mockProjectionData = (t, { transferRow, baseByProduct, stockByProduct, kar
 
 test('clasifica cantidades exactas, excedentes, faltantes y recepción indeterminada', () => {
   assert.deepEqual(service.expectedDifference({ quantity: 10, quantity_received: 10 }), {
-    type: 'EXACTO', sent: 10, received: 10, baseExpected: 10, differenceExpected: 0,
+    type: 'EXACTO', sent: '10.0000', received: '10.0000', baseExpected: '10.0000', differenceExpected: '0.0000',
   });
   assert.deepEqual(service.expectedDifference({ quantity: 10, quantity_received: 12.25 }), {
-    type: 'EXCEDENTE', sent: 10, received: 12.25, baseExpected: 10, differenceExpected: 2.25,
+    type: 'EXCEDENTE', sent: '10.0000', received: '12.2500', baseExpected: '10.0000', differenceExpected: '2.2500',
   });
   assert.deepEqual(service.expectedDifference({ quantity: 10, quantity_received: 7.5 }), {
-    type: 'FALTANTE', sent: 10, received: 7.5, baseExpected: 7.5, differenceExpected: 2.5,
+    type: 'FALTANTE', sent: '10.0000', received: '7.5000', baseExpected: '7.5000', differenceExpected: '2.5000',
   });
   assert.equal(service.expectedDifference({ quantity: 10, quantity_received: null }).type, 'INDETERMINADO');
 });
 
 test('asigna una cobertura consolidada de faltante sin contarla dos veces', () => {
   assert.deepEqual(service.allocateCoveredQuantity([
-    { id: 1, difference_expected: 3 },
-    { id: 2, difference_expected: 4 },
-  ], 5), [
-    { id: 1, covered: 3, pending: 0 },
-    { id: 2, covered: 2, pending: 2 },
+    { id: 1, difference_expected: '3.0000' },
+    { id: 2, difference_expected: '4.0000' },
+  ], '5.0000'), [
+    { id: 1, covered: '3.0000', pending: '0.0000' },
+    { id: 2, covered: '2.0000', pending: '2.0000' },
   ]);
 });
 
@@ -77,7 +77,7 @@ test('ofrece registrar sólo el Kardex omitido para un excedente atribuible', as
   const projection = await service.getProjection(44);
   assert.equal(projection.items[0].reconciliation_status, 'EXCEDENTE_PENDIENTE_KARDEX');
   assert.equal(projection.items[0].allowed_action.code, 'REGISTRAR_EXCEDENTE_OMITIDO');
-  assert.equal(projection.items[0].allowed_action.quantity, 10);
+  assert.equal(projection.items[0].allowed_action.quantity, '10.0000');
 });
 
 test('marca excedente como completo cuando el movimiento ya está vinculado', async (t) => {
@@ -110,7 +110,7 @@ test('ofrece un único registro consolidado para varios faltantes', async (t) =>
   });
   const projection = await service.getProjection(44);
   assert.equal(projection.items[0].allowed_action.code, 'REGISTRAR_FALTANTE_OMITIDO');
-  assert.equal(projection.items[0].allowed_action.quantity, 7);
+  assert.equal(projection.items[0].allowed_action.quantity, '7.0000');
   assert.equal(projection.items[0].allowed_action.requires_merma_product, true);
   assert.equal(projection.items[1].allowed_action, null);
   assert.match(projection.items[1].message, /consolidada/);
@@ -226,7 +226,7 @@ test('completa un excedente con Kardex solamente y el reintento es idempotente',
   const result = concurrent.find(({ status }) => status === 'fulfilled').value;
   assert.equal(result.idempotent, false);
   assert.equal(movements.length, 1);
-  assert.equal(movements[0].quantity, 10);
+  assert.equal(movements[0].quantity, '10.0000');
   assert.equal(completions.length, 1);
   assert.equal(result.projection.items[0].reconciliation_status, 'COMPLETO');
 
@@ -255,6 +255,7 @@ test('completa varios faltantes en Stock y Kardex del producto MERMAS en una tra
   t.mock.method(db.Stock, 'findOne', async ({ where }) => ({
     id_product: Number(where.id_product),
     stock: stocks.get(Number(where.id_product)) || 0,
+    setDataValue(key, value) { this[key] = Number(value); },
     async save() { stocks.set(Number(this.id_product), Number(this.stock)); },
   }));
   t.mock.method(db.Product, 'findAll', async () => [product(10), product(11), merma]);
@@ -301,7 +302,7 @@ test('completa varios faltantes en Stock y Kardex del producto MERMAS en una tra
   t.mock.method(db.History, 'create', async (values) => values);
 
   const preview = await service.previewCompletion({ transferId: 44, detailId: 1, mermaProductId: 22 });
-  assert.equal(preview.action.quantity, 7);
+  assert.equal(preview.action.quantity, '7.0000');
   assert.equal(preview.allocations.length, 2);
   const result = await service.completeDifference({
     transferId: 44,

@@ -21,7 +21,8 @@ const {
 const { ACCOUNTING_STATUSES, TOLERANCE_DECISIONS } = require('../constants/transfer-reception-accounting');
 const { applyExplicitEffect } = require('./inventory-posting.service');
 
-const EPSILON = 0.0001;
+const EPSILON = 0;
+const { exactAdd, exactSubtract, exactCompare, exactMin, exactMax, inventoryQuantity } = require('../helpers/number-formatter');
 const automaticError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
 
 const reconciliationLocations = ({ command, operationType }) => {
@@ -60,7 +61,7 @@ const loadContext = async ({ noteId, detailId, transaction, lock = false }) => {
     transaction, ...(lock ? { lock: { level: transaction.LOCK.UPDATE, of: TransferReviewNoteDetail } } : {}),
   });
   if (!detail) throw automaticError('Detalle de conciliación no encontrado.', 404);
-  const pending = Math.max(0, Number(detail.quantity_difference) - Number(detail.quantity_resolved || 0));
+  const pending = exactMax(0, exactSubtract(detail.quantity_difference, detail.quantity_resolved || 0));
   const registrationActions = await TransferReviewResolutionAction.findAll({
     where: {
       id_transfer_review_note_detail: detail.id,
@@ -69,19 +70,19 @@ const loadContext = async ({ noteId, detailId, transaction, lock = false }) => {
     }, transaction,
     include: [{ association: 'movementLinks', required: false, include: [{ association: 'kardexMovement', required: false }] }],
   });
-  const registeredQuantity = registrationActions.reduce((total, action) => total + Number(action.quantity || 0), 0);
+  const registeredQuantity = registrationActions.reduce((total, action) => exactAdd(total, action.quantity || 0), 0);
   const activeAutomatic = registrationActions.find((action) => action.operation_mode === 'CREATED_AUTOMATICALLY'
     && ['PENDING_RECEPTION', 'REVERSAL_PENDING'].includes(action.operation_status));
-  const unresolvedRegisteredQuantity = Math.max(0, registeredQuantity - Number(detail.quantity_resolved || 0));
+  const unresolvedRegisteredQuantity = exactMax(0, exactSubtract(registeredQuantity, detail.quantity_resolved || 0));
   return { note, detail, pending, activeAutomatic, registrationActions, registeredQuantity, unresolvedRegisteredQuantity };
 };
 
 const buildNormalReceipt = (context) => {
   const { detail } = context;
   const transferDetail = detail?.transferDetail;
-  const sent = Number(detail?.quantity_sent ?? transferDetail?.quantity ?? 0);
-  const received = Number(detail?.quantity_received ?? transferDetail?.quantity_received ?? 0);
-  const normalQuantity = Math.min(sent, received);
+  const sent = exactAdd(detail?.quantity_sent ?? transferDetail?.quantity ?? 0, 0);
+  const received = exactAdd(detail?.quantity_received ?? transferDetail?.quantity_received ?? 0, 0);
+  const normalQuantity = exactMin(sent, received);
   const diffPct = transferDetail?.receipt_difference_percentage !== null && transferDetail?.receipt_difference_percentage !== undefined
     ? Number(transferDetail.receipt_difference_percentage)
     : null;
@@ -125,7 +126,7 @@ const buildBlockedDocument = (context) => {
     id_product: productId,
     product_cod: product?.cod || null,
     product_name: product?.name || null,
-    quantity_blocked: Number(pending || 0),
+    quantity_blocked: exactAdd(pending || 0, 0),
     status: 'BLOQUEADO_EN_REVISION',
     disposition: 'EN_REVISION',
   };
@@ -279,8 +280,8 @@ const loadVerificationInventory = async (context) => {
       type: QueryTypes.SELECT,
     }),
   ]);
-  const beforeStock = Number(stock?.stock || 0);
-  const beforeKardex = Number(kardexRows[0]?.saldo || 0);
+  const beforeStock = exactAdd(stock?.stock || 0, 0);
+  const beforeKardex = exactAdd(kardexRows[0]?.saldo || 0, 0);
   if (context.registrationActions.length > 0) {
     return {
       before_stock: beforeStock,
@@ -352,7 +353,7 @@ const preview = async ({ noteId, detailId }) => {
       solutions: [],
     };
   }
-  if (context.pending <= EPSILON) {
+  if (exactCompare(context.pending, EPSILON) <= 0) {
     return {
       status: 'ALREADY_RECONCILED',
       message: 'Ya se registró esta conciliación.',
@@ -381,19 +382,19 @@ const settleDetail = async ({ context, quantity, actorUserId, transaction }) => 
   const hold = await TransferReviewInventoryHold.findOne({
     where: { id_transfer_review_note_detail: context.detail.id, disposition: 'EN_REVISION' }, transaction, lock: transaction.LOCK.UPDATE,
   });
-  if (!hold || Number(hold.quantity) + EPSILON < quantity) throw automaticError('La retención disponible no coincide con el remanente.', 409);
-  const left = Number(hold.quantity) - quantity;
-  if (left <= EPSILON) await hold.destroy({ transaction }); else { hold.quantity = left; await hold.save({ transaction }); }
+  if (!hold || exactCompare(hold.quantity, quantity) < 0) throw automaticError('La retención disponible no coincide con el remanente.', 409);
+  const left = exactSubtract(hold.quantity, quantity);
+  if (exactCompare(left, EPSILON) <= 0) await hold.destroy({ transaction }); else { hold.quantity = left; await hold.save({ transaction }); }
   const released = await TransferReviewInventoryHold.findOne({ where: { id_transfer_review_note_detail: context.detail.id, disposition: 'LIBERADO_POR_AJUSTE' }, transaction, lock: transaction.LOCK.UPDATE });
-  if (released) { released.quantity = Number(released.quantity) + quantity; await released.save({ transaction }); }
+  if (released) { released.quantity = exactAdd(released.quantity, quantity); await released.save({ transaction }); }
   else await TransferReviewInventoryHold.create({
     id_transfer_review_note_detail: context.detail.id, id_product: hold.id_product,
     id_sucursal: hold.id_sucursal, id_storage: hold.id_storage,
     id_created_user: actorUserId, quantity, disposition: 'LIBERADO_POR_AJUSTE',
   }, { transaction });
-  context.detail.quantity_resolved = Number(context.detail.quantity_resolved || 0) + quantity;
-  const pendingAfter = Math.max(0, Number(context.detail.quantity_difference) - Number(context.detail.quantity_resolved));
-  if (pendingAfter <= EPSILON) {
+  context.detail.quantity_resolved = exactAdd(context.detail.quantity_resolved || 0, quantity);
+  const pendingAfter = exactMax(0, exactSubtract(context.detail.quantity_difference, context.detail.quantity_resolved));
+  if (exactCompare(pendingAfter, EPSILON) <= 0) {
     context.detail.quantity_resolved = context.detail.quantity_difference;
     context.detail.reconciliation_status = 'COMPLETADO'; context.detail.resolved_at = new Date(); context.detail.id_resolved_user = actorUserId;
   } else context.detail.reconciliation_status = 'PARCIAL';
@@ -419,7 +420,7 @@ const confirmInTransaction = async ({
   const context = await loadContext({ noteId, detailId, transaction, lock: true });
   const verification = buildAutomaticVerification({ context, actions: context.registrationActions, inventory: null });
   if (verification.is_blocked) throw automaticError(verification.message, 409);
-  if (context.pending <= EPSILON) throw automaticError('Ya se registró esta conciliación.', 409);
+  if (exactCompare(context.pending, EPSILON) <= 0) throw automaticError('Ya se registró esta conciliación.', 409);
   const currentVersion = Number(context.detail.updatedAt?.getTime?.() || 1);
   if (detailVersion !== undefined && detailVersion !== null && (!Number.isFinite(detailVersion) || detailVersion !== currentVersion)) {
     throw automaticError('La conciliación cambió después de la previsualización. Actualice los datos antes de confirmar.', 409);
@@ -427,8 +428,8 @@ const confirmInTransaction = async ({
   if (String(justification || '').trim().length < 10) throw automaticError('Escriba una justificación operativa de al menos 10 caracteres.');
   const { references: suppliedReferences } = validateReasonAndReferences({ noteType: context.note.type, reasonCode, documentReferences });
   const authorizer = await validateAuthorizer({ authorizerUserId, sucursalId: context.note.id_sucursal, transaction });
-  const requested = Number(quantity || context.pending);
-  if (!Number.isFinite(requested) || requested <= EPSILON || requested - context.pending > EPSILON) throw automaticError('Cantidad inválida para el remanente actual.');
+  const requested = quantity == null ? exactAdd(context.pending, 0) : inventoryQuantity(quantity);
+  if (exactCompare(requested, 0) <= 0 || exactCompare(requested, context.pending) > 0) throw automaticError('Cantidad inválida para el remanente actual.');
   const solution = buildSolutions(context, reasonCode).find(({ code }) => code === solutionCode);
   if (!solution) throw automaticError('La solución seleccionada no corresponde al motivo comprobado.');
   const command = {
@@ -473,14 +474,15 @@ const confirmInTransaction = async ({
     id_transfer_review_resolution_action: action.id, id_kardex_movement: movement.id, movement_role: 'ORIGINAL',
   }, { transaction });
   const pendingReception = operation.pendingReception === true;
-  const integrity = await stockKardexIntegrity.verifyLocationsIntegrity({
-    locations: reconciliationLocations({ command, operationType: solution.operation_type }),
-    transaction,
-  });
   const settled = pendingReception
     ? { pendingAfter: context.pending, syncedNote: context.note }
     : await settleDetail({ context, quantity: requested, actorUserId, transaction });
   const { pendingAfter, syncedNote } = settled;
+  const integrity = await stockKardexIntegrity.verifyLocationsIntegrity({
+    locations: reconciliationLocations({ command, operationType: solution.operation_type }),
+    transaction,
+  });
+
   const event = await workflow.createEvent(context.note.id, actorUserId, 'CONCILIACION_AUTOMATICA', operation.type === 'CONFIRMATION'
     ? 'Diferencia confirmada sin movimiento adicional de inventario.'
     : `Operación ${operation.type} #${operation.document.cod} creada automáticamente.`, {
@@ -496,7 +498,7 @@ const confirmInTransaction = async ({
     message: operation.type === 'CONFIRMATION'
       ? 'La diferencia fue confirmada sin crear otro movimiento de inventario.'
       : `Se creó ${operation.type} #${operation.document.cod} sin registros manuales.`,
-    type: 'TRANSFER_REVIEW_AUTOMATED', level: pendingAfter <= EPSILON ? 'INFO' : 'WARNING', eventKey: `automatic-resolution:${event.id}`,
+    type: 'TRANSFER_REVIEW_AUTOMATED', level: exactCompare(pendingAfter, EPSILON) <= 0 ? 'INFO' : 'WARNING', eventKey: `automatic-resolution:${event.id}`,
   }, transaction, actorUserId);
   const normalReceipt = buildNormalReceipt(context);
   const blockedDocument = buildBlockedDocument(context);
@@ -544,8 +546,8 @@ const completePendingTransfer = async ({ transferId, actorUserId, transaction })
   });
   if (!action) return null;
   const context = await loadContext({ noteId: action.id_transfer_review_note, detailId: action.id_transfer_review_note_detail, transaction, lock: true });
-  const settled = await settleDetail({ context, quantity: Number(action.quantity), actorUserId, transaction });
   action.operation_status = 'ACTIVE'; await action.save({ transaction });
+  const settled = await settleDetail({ context, quantity: action.quantity, actorUserId, transaction });
   await workflow.createEvent(context.note.id, actorUserId, 'TRASLADO_CORRECTIVO_RECIBIDO', 'El traslado automático fue recibido y completó la conciliación.', {
     action_id: action.id, operation_id: transferId, pending_after: settled.pendingAfter,
   }, transaction);

@@ -13,6 +13,11 @@ const {
 const { resolveCase, resolveCases, fingerprintFor } = require('../services/stock-reconciliation.service');
 
 function createResolutionFixture(t, overrides = {}) {
+  t.mock.method(require('../services/stock-kardex-integrity.service'), 'verifyLocationsIntegrity', async ({ locations, transaction }) => {
+    assert.deepEqual(locations, [{ productId: 10, sucursalId: 1, storageId: 2 }]);
+    assert.ok(transaction);
+    return [{ consistent: true }];
+  });
   const stockUpdatedAt = new Date('2026-09-05T10:00:00.000Z');
   const snapshotData = {
     id_product: 10,
@@ -25,7 +30,7 @@ function createResolutionFixture(t, overrides = {}) {
   };
   const currentFingerprint = fingerprintFor(snapshotData);
 
-  const stockRecord = {
+  const stockRecord = { setDataValue(key, value) { this[key] = Number(value); },
     id_product: 10,
     id_sucursal: 1,
     id_storage: 2,
@@ -144,11 +149,11 @@ test('6.1 REGISTRAR_KARDEX_OMITIDO crea movimiento Kardex compensatorio y cierra
 
   assert.equal(res.repeated, false);
   assert.equal(f.kardexCreated.length, 1);
-  assert.equal(f.kardexCreated[0].quantity, 2);
+  assert.equal(f.kardexCreated[0].quantity, '2.0000');
   assert.equal(f.kardexCreated[0].type, 'INPUT');
   assert.equal(f.caseRecord.status, STATUSES.RESOLVED);
   assert.equal(f.eventsCreated[0].event_type, 'RESUELTA');
-  assert.equal(f.actionsCreated[0].difference_after, 0);
+  assert.equal(f.actionsCreated[0].difference_after, '0.0000');
 });
 
 test('6.2 AJUSTAR_STOCK_POR_CONTEO modifica Stock físico según conteo verificado y cierra el caso', async (t) => {
@@ -173,7 +178,7 @@ test('6.2 AJUSTAR_STOCK_POR_CONTEO modifica Stock físico según conteo verifica
   assert.equal(f.stockRecord.stock, 10);
   assert.equal(f.caseRecord.status, STATUSES.RESOLVED);
   assert.equal(f.eventsCreated[0].event_type, 'RESUELTA');
-  assert.equal(f.actionsCreated[0].difference_after, 0);
+  assert.equal(f.actionsCreated[0].difference_after, '0.0000');
 });
 
 test('AKFP ajusta Stock y Kardex al tercer conteo físico y deja nota trazable', async (t) => {
@@ -200,7 +205,7 @@ test('AKFP ajusta Stock y Kardex al tercer conteo físico y deja nota trazable',
   assert.equal(f.stockRecord.stock, 9);
   assert.equal(f.kardexCreated.length, 1);
   assert.equal(f.kardexCreated[0].type, 'OUTPUT');
-  assert.equal(f.kardexCreated[0].quantity, 1);
+  assert.equal(Number(f.kardexCreated[0].quantity), 1);
   assert.equal(f.kardexCreated[0].registry_number, 'AKFP-5');
   assert.equal(f.actionsCreated[0].registry_number, 'AKFP-5');
   assert.equal(f.actionsCreated[0].id_count_responsible_user, 7);
@@ -242,7 +247,7 @@ test('AKFP revierte Stock, Kardex, nota, acción y auditoría cuando falla tarde
   assert.equal(f.historiesCreated.length, 0);
 });
 
-test('6.4 caso con diferencia residual permanece abierto en INVESTIGATING', async (t) => {
+test('6.4 una diferencia residual rechaza la regularización', async (t) => {
   const f = createResolutionFixture(t, {
     strategy: STRATEGIES.REGISTER_MISSING_KARDEX,
     physical_stock: 12,
@@ -258,15 +263,15 @@ test('6.4 caso con diferencia residual permanece abierto en INVESTIGATING', asyn
     return [{ id: 99, saldo: 11, date: new Date() }];
   });
 
-  await resolveCase({
+  await assert.rejects(resolveCase({
     caseId: 5,
     actorUserId: 2,
     authorizedUserId: 1,
     idempotencyKey: 'IDEMP-6-4',
-  });
+  }), /diferencia residual/);
 
-  assert.equal(f.caseRecord.status, STATUSES.INVESTIGATING);
-  assert.equal(f.eventsCreated[0].event_type, 'DIFERENCIA_RESIDUAL');
+  assert.equal(f.caseRecord.status, STATUSES.READY);
+  assert.equal(f.eventsCreated.length, 0);
 });
 
 test('6.5 procesamiento por lote de casos procesa cada caso de forma independiente', async (t) => {
@@ -309,7 +314,7 @@ test('6.5 procesamiento por lote de casos procesa cada caso de forma independien
 
   const batchResults = await resolveCases({ cases: items, actorUserId: 2 });
   assert.equal(batchResults.length, 2);
-  assert.equal(batchResults[0].ok, true);
+  assert.equal(batchResults[0].ok, false);
   assert.equal(batchResults[1].ok, false);
 });
 

@@ -1,7 +1,13 @@
 const { Provider, ProviderBranch, ProviderContact, ProviderBankAccount, ProviderMaterial, Product, Bank, sequelize } = require('../database/config');
 const { Op } = require('sequelize');
 
-const COMMERCIAL_FIELDS = ['full_names', 'number_document', 'cellphone', 'id_sector', 'id_category', 'id_sucursal', 'commercial_name', 'entity_type', 'origin_channel', 'relationship_status', 'negotiation_condition', 'commercial_observations', 'requires_certificate', 'requires_traceability_report', 'service_mode', 'general_observations', 'frequency'];
+const COMMERCIAL_FIELDS = [
+  'full_names', 'number_document', 'cellphone', 'id_sector', 'id_category', 'id_sucursal',
+  'commercial_name', 'entity_type', 'origin_channel', 'relationship_status', 'negotiation_condition',
+  'commercial_observations', 'requires_certificate', 'requires_traceability_report', 'service_mode',
+  'general_observations', 'frequency', 'id_commercial_user', 'department', 'zone',
+  'certificate_file_name', 'traceability_file_name', 'frequency_mode'
+];
 const PROFILE_FIELDS = [...new Set([...COMMERCIAL_FIELDS, 'direction', 'mayorista', 'name_contact', 'companyContacts', 'workAreaOrPositionOrUnit', 'cellphone_contact', 'id_type_provider', 'status'])];
 
 const DETAIL_MODELS = {
@@ -241,6 +247,8 @@ class ProviderService {
       account_number: data.account_number,
       account_type: data.account_type || account?.account_type || 'OTRA',
       currency: data.currency || account?.currency || 'BOB',
+      qr_file_name: this.blankToNull(data.qr_file_name) || account?.qr_file_name,
+      qr_original_name: this.blankToNull(data.qr_original_name) || account?.qr_original_name,
       is_main: true,
       status: true,
     };

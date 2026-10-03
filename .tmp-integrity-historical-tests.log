@@ -1,0 +1,253 @@
+TAP version 13
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Error: No tiene permiso para consultar esta recepción. Comuníquese con soporte para solicitar la habilitación.
+#     at permissionDeniedError (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\helpers\\permission-denied.js:30:3)
+#     at findAuthorizedTransfer (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\controllers\\transfer_review_notes.controller.js:92:11)
+#     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+#     at async previewHistoricalDifferenceCompletion (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\controllers\\transfer_review_notes.controller.js:210:5)
+#     at async TestContext.<anonymous> (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\historical-transfer-difference-access.test.js:30:3)
+#     at async Test.run (node:internal/test_runner/test:797:9)
+#     at async Test.processPendingSubtests (node:internal/test_runner/test:526:7) {
+#   statusCode: 403
+# }
+# Subtest: rechaza la previsualización de una sucursal no autorizada antes de consultar la conciliación
+ok 1 - rechaza la previsualización de una sucursal no autorizada antes de consultar la conciliación
+  ---
+  duration_ms: 5.6084
+  ...
+# Subtest: la confirmación propaga huella, motivo, producto MERMAS e idempotencia
+ok 2 - la confirmación propaga huella, motivo, producto MERMAS e idempotencia
+  ---
+  duration_ms: 1.2778
+  ...
+# Subtest: la migración crea trazabilidad idempotente y permite revertirla
+ok 3 - la migración crea trazabilidad idempotente y permite revertirla
+  ---
+  duration_ms: 3.2239
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: clasifica cantidades exactas, excedentes, faltantes y recepción indeterminada
+not ok 4 - clasifica cantidades exactas, excedentes, faltantes y recepción indeterminada
+  ---
+  duration_ms: 7.3929
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\historical-transfer-difference.test.js:46:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+      {
+    +   baseExpected: '10.0000',
+    +   differenceExpected: '0.0000',
+    +   received: '10.0000',
+    +   sent: '10.0000',
+    -   baseExpected: 10,
+    -   differenceExpected: 0,
+    -   received: 10,
+    -   sent: 10,
+        type: 'EXACTO'
+      }
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    type: 'EXACTO'
+    sent: 10
+    received: 10
+    baseExpected: 10
+    differenceExpected: 0
+  actual:
+    type: 'EXACTO'
+    sent: '10.0000'
+    received: '10.0000'
+    baseExpected: '10.0000'
+    differenceExpected: '0.0000'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\historical-transfer-difference.test.js:47:10)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:526:18)
+    node:internal/test_runner/harness:255:12
+    node:internal/process/task_queues:140:7
+    AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    AsyncResource.runMicrotask (node:internal/process/task_queues:137:8)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+  ...
+# Subtest: asigna una cobertura consolidada de faltante sin contarla dos veces
+not ok 5 - asigna una cobertura consolidada de faltante sin contarla dos veces
+  ---
+  duration_ms: 0.9344
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\historical-transfer-difference.test.js:59:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+      [
+        {
+    +     covered: '3.0000',
+    -     covered: 3,
+          id: 1,
+    +     pending: '0.0000'
+    -     pending: 0
+        },
+        {
+    +     covered: '2.0000',
+    -     covered: 2,
+          id: 2,
+    +     pending: '2.0000'
+    -     pending: 2
+        }
+      ]
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0:
+      id: 1
+      covered: 3
+      pending: 0
+    1:
+      id: 2
+      covered: 2
+      pending: 2
+  actual:
+    0:
+      id: 1
+      covered: '3.0000'
+      pending: '0.0000'
+    1:
+      id: 2
+      covered: '2.0000'
+      pending: '2.0000'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\historical-transfer-difference.test.js:60:10)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:526:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: ofrece registrar sólo el Kardex omitido para un excedente atribuible
+not ok 6 - ofrece registrar sólo el Kardex omitido para un excedente atribuible
+  ---
+  duration_ms: 8.518
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\historical-transfer-difference.test.js:69:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    '10.0000' !== 10
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 10
+  actual: '10.0000'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\historical-transfer-difference.test.js:80:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: marca excedente como completo cuando el movimiento ya está vinculado
+ok 7 - marca excedente como completo cuando el movimiento ya está vinculado
+  ---
+  duration_ms: 1.8449
+  ...
+# Subtest: ofrece un único registro consolidado para varios faltantes
+not ok 8 - ofrece un único registro consolidado para varios faltantes
+  ---
+  duration_ms: 2.1445
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\historical-transfer-difference.test.js:103:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    '7.0000' !== 7
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 7
+  actual: '7.0000'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\historical-transfer-difference.test.js:113:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: bloquea boletas sin recibido y excedentes que no explican el desfase actual
+ok 9 - bloquea boletas sin recibido y excedentes que no explican el desfase actual
+  ---
+  duration_ms: 1.4581
+  ...
+# Subtest: bloquea movimientos excedentes ambiguos
+ok 10 - bloquea movimientos excedentes ambiguos
+  ---
+  duration_ms: 1.3051
+  ...
+# Subtest: completa un excedente con Kardex solamente y el reintento es idempotente
+not ok 11 - completa un excedente con Kardex solamente y el reintento es idempotente
+  ---
+  duration_ms: 12.0374
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\historical-transfer-difference.test.js:151:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    '10.0000' !== 10
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 10
+  actual: '10.0000'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\historical-transfer-difference.test.js:229:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: completa varios faltantes en Stock y Kardex del producto MERMAS en una transacción
+not ok 12 - completa varios faltantes en Stock y Kardex del producto MERMAS en una transacción
+  ---
+  duration_ms: 3.6291
+  location: 'D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\historical-transfer-difference.test.js:245:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    '7.0000' !== 7
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 7
+  actual: '7.0000'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (D:\RECUMET_RECICLA_OFICIAL\RECICLA_2026\recumet_recicla_backend\app\tests\historical-transfer-difference.test.js:305:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+  ...
+# Subtest: un fallo tardío revierte movimiento, nota y completado histórico
+ok 13 - un fallo tardío revierte movimiento, nota y completado histórico
+  ---
+  duration_ms: 3.1449
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 7
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1167.9022

@@ -36,7 +36,7 @@ test('detecta únicamente diferencias Stock–Kardex y conserva los traslados tr
   const irregularities = await getStockKardexIrregularities({ idSucursal: 1, idStorage: 1 });
 
   assert.equal(irregularities.length, 1);
-  assert.equal(irregularities[0].physical_kardex_difference, 10.8);
+  assert.equal(irregularities[0].physical_kardex_difference, '10.8000');
   assert.equal(irregularities[0].difference_direction, 'STOCK_GREATER_THAN_KARDEX');
   assert.equal(irregularities[0].traceable_transfers[0].transfer_cod, 'TRAS00313');
   assert.equal(irregularities[0].cause, undefined);
@@ -57,8 +57,8 @@ test('identifica cuando el Kardex es mayor que el stock físico', async (t) => {
   const [irregularity] = await getStockKardexIrregularities({ idSucursal: 1, idStorage: 1 });
 
   assert.equal(irregularity.difference_direction, 'KARDEX_GREATER_THAN_STOCK');
-  assert.equal(irregularity.physical_stock, 90);
-  assert.equal(irregularity.kardex_balance, 100);
+  assert.equal(irregularity.physical_stock, '90.0000');
+  assert.equal(irregularity.kardex_balance, '100.0000');
   assert.deepEqual(irregularity.traceable_transfers, []);
   assert.equal(queryNumber, 2);
 });

@@ -56,7 +56,7 @@ test('acepta una clasificacion activa del mismo producto y con salida a merma su
 
   assert.equal(result.documentType, 'NOTA_CLASIFICACION_MERMA');
   assert.equal(result.documentId, 70);
-  assert.equal(result.documentQuantity, 8);
+  assert.equal(result.documentQuantity, '8.0000');
 });
 
 test('bloquea un traslado complementario que todavía no fue recibido', async (t) => {

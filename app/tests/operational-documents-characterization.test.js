@@ -25,14 +25,14 @@ function fixture(t) {
         stock.id_product === Number(replacements.productId)
         && stock.id_sucursal === Number(replacements.sucursalId)
         && stock.id_storage === Number(replacements.storageId)
-      ))?.stock || 0 }]
+      ))?.stock || 0, physical_kardex_balance: stocks.find((stock) => stock.id_product === Number(replacements.productId))?.stock || 0, duplicate_effects: 0 }]
       : [{
-      kardex_balance: typeof kardexState.projectedBalance === 'function'
+      physical_kardex_balance: typeof kardexState.projectedBalance === 'function' ? kardexState.projectedBalance() : kardexState.projectedBalance, duplicate_effects: 0, kardex_balance: typeof kardexState.projectedBalance === 'function'
         ? kardexState.projectedBalance()
         : kardexState.projectedBalance,
       }]
   ));
-  const record = (data) => ({ ...data, save: async (options) => {
+  const record = (data) => ({ ...data, setDataValue(key, value) { this[key] = Number(value); }, save: async (options) => {
     assert.equal(options.transaction, transaction);
   } });
   const stocks = [record({ id_product: 1, id_sucursal: 2, id_storage: 3, stock: 20,
@@ -52,7 +52,7 @@ function fixture(t) {
       throw new Error('The ordinary module must not duplicate the document-derived Kardex entry');
     }
     assert.equal(options.transaction, transaction);
-    kardexWrites.push(data);
+    kardexWrites.push({ ...data, quantity: Number(data.quantity) });
     return { id: 101, ...data };
   });
   t.mock.method(notifications, 'notifyAdmins', async (_data, tx) => {
@@ -143,7 +143,7 @@ test('anular traslado pendiente restaura stock y conserva salida y reposición e
   assert.match(f.kardexWrites[0].details, /REPOSICIÓN DE SALIDA/);
 });
 
-test('anular traslado conserva sin empeorar una diferencia histórica previa de Stock–Kardex', async (t) => {
+test('anular traslado rechaza una diferencia histórica previa de Stock–Kardex', async (t) => {
   const f = fixture(t);
   f.kardexState.allowExplicitMovement = true;
   f.kardexState.projectedBalance = () => f.stocks[0].stock - 1595.7;
@@ -154,11 +154,8 @@ test('anular traslado conserva sin empeorar una diferencia histórica previa de 
     return document;
   });
   await transfers.deleteTransfer({ userAuth: f.actor, params: { id_transfer: 334 } }, f.res);
-  assert.equal(f.res.code, 201);
-  assert.equal(document.status, 'ANULADO');
-  assert.equal(f.stocks[0].stock, 30);
-  assert.equal(f.movements.mock.callCount(), 1);
-  assert.equal(f.writes.at(-1), 'commit');
+  assert.equal(f.res.code, 409);
+  assert.equal(f.writes.at(-1), 'rollback');
 });
 
 test('crear clasificación aplica salida e ingreso y conserva los correlativos ordinarios', async (t) => {

@@ -103,7 +103,7 @@ test('la disponibilidad descuenta retenciones activas aun despues del cierre doc
     stock: '100.0000',
   });
 
-  assert.deepEqual(availability, { physical_stock: 100, stock_in_review: 10, available_stock: 90 });
+  assert.deepEqual(availability, { physical_stock: '100.0000', stock_in_review: '10.0000', available_stock: '90.0000' });
   assert.match(queryText, /transfer_review_inventory_holds/);
   assert.match(queryText, /disposition <> 'LIBERADO_POR_AJUSTE'/);
   assert.doesNotMatch(queryText, /reconciliation_status/);

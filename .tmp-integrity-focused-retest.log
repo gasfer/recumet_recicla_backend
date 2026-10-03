@@ -1,0 +1,1130 @@
+TAP version 13
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): START TRANSACTION;
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (efb7c6de-7481-487b-9651-bd542f7591a2): ROLLBACK;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): START TRANSACTION;
+# Subtest: integridad decimal con migraciones reales, rollback y concurrencia PostgreSQL
+    # Subtest: desfase 0,0004 visible a precisión 0/2/4; tolerancia anterior lo ocultaba
+    ok 1 - desfase 0,0004 visible a precisión 0/2/4; tolerancia anterior lo ocultaba
+      ---
+      duration_ms: 128.8264
+      ...
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."idempotency_key" = 'test-base' LIMIT 1;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."source_type" = 'TEST' AND "kardexMovements"."source_id" = '1' AND "kardexMovements"."source_detail_id" = '1' AND "kardexMovements"."effect_type" = 'BASE' LIMIT 1;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): INSERT INTO "kardex_movements" ("id","type","date","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."idempotency_key" = 'test-other-key' LIMIT 1;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."source_type" = 'TEST' AND "kardexMovements"."source_id" = '1' AND "kardexMovements"."source_detail_id" = '1' AND "kardexMovements"."effect_type" = 'BASE' LIMIT 1;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): INSERT INTO "kardex_movements" ("id","type","date","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT pg_advisory_xact_lock(hashtextextended('stock:910002:910001:910001', 0))
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910002 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): INSERT INTO "kardex_movements" ("id","type","date","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910002 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910002 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (ccc68d6d-1c8f-417c-8930-a6f1590d4da8): ROLLBACK;
+# Executing (default): SELECT count(*) AS "count" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" IN (910001, 910002) AND "Stock"."id_sucursal" = 910001;
+# Executing (default): SELECT count(*) AS "count" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."id_product" IN (910001, 910002) AND "kardexMovements"."id_sucursal" = 910001;
+# Executing (320eab27-d70c-4324-8ff7-d8f3b89f44f1): START TRANSACTION;
+    # Subtest: efectos emparejados, precisión histórica, reclasificación y fallo tardío
+    ok 2 - efectos emparejados, precisión histórica, reclasificación y fallo tardío
+      ---
+      duration_ms: 95.6535
+      ...
+# Executing (320eab27-d70c-4324-8ff7-d8f3b89f44f1): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (320eab27-d70c-4324-8ff7-d8f3b89f44f1): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (320eab27-d70c-4324-8ff7-d8f3b89f44f1): ROLLBACK;
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): START TRANSACTION;
+    # Subtest: duplicados compensados no pasan por igualdad de saldo
+    ok 3 - duplicados compensados no pasan por igualdad de saldo
+      ---
+      duration_ms: 15.5927
+      ...
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): INSERT INTO "transfers" ("id","cod","date_send","date_received","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_received","status","registry_number","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING "id","cod","date_send","date_received","observations_send","observations_received","total","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_send","id_user_received","status","type_registry","registry_number","id_scales","createdAt","updatedAt";
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): INSERT INTO "details_transfers" ("id","quantity","quantity_received","accounting_status","cost","id_transfer","id_product","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "id","quantity","quantity_received","accounting_status","tolerance_decision","receipt_difference_percentage","accounting_applied_at","cost","total","id_transfer","id_product","status","observation","createdAt","updatedAt";
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."idempotency_key" = 'TRANSFER_RECEPTION:30:23:SURPLUS' LIMIT 1;
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."source_type" = 'TRANSFER_RECEPTION' AND "kardexMovements"."source_id" = '30' AND "kardexMovements"."source_detail_id" = '23' AND "kardexMovements"."effect_type" = 'SURPLUS' LIMIT 1;
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): INSERT INTO "kardex_movements" ("id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910002 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910002 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (f38e2273-1b60-4a0e-b4f6-a2f7b79891ad): ROLLBACK;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): START TRANSACTION;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): INSERT INTO "transfers" ("id","cod","date_send","date_received","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_received","status","registry_number","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING "id","cod","date_send","date_received","observations_send","observations_received","total","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_send","id_user_received","status","type_registry","registry_number","id_scales","createdAt","updatedAt";
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): INSERT INTO "details_transfers" ("id","quantity","quantity_received","accounting_status","cost","id_transfer","id_product","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "id","quantity","quantity_received","accounting_status","tolerance_decision","receipt_difference_percentage","accounting_applied_at","cost","total","id_transfer","id_product","status","observation","createdAt","updatedAt";
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT pg_advisory_xact_lock(hashtextextended('stock:910002:910001:910001', 0))
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910002 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."idempotency_key" = 'TRANSFER_RECEPTION:31:24:SHORTAGE' LIMIT 1;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."source_type" = 'TRANSFER_RECEPTION' AND "kardexMovements"."source_id" = '31' AND "kardexMovements"."source_detail_id" = '24' AND "kardexMovements"."effect_type" = 'SHORTAGE' LIMIT 1;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): INSERT INTO "kardex_movements" ("id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910002 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910002 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (9fa3d9de-6116-498d-bcf9-bfaf5e438f06): ROLLBACK;
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): START TRANSACTION;
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): INSERT INTO "transfers" ("id","cod","date_send","date_received","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_received","status","registry_number","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING "id","cod","date_send","date_received","observations_send","observations_received","total","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_send","id_user_received","status","type_registry","registry_number","id_scales","createdAt","updatedAt";
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): INSERT INTO "details_transfers" ("id","quantity","quantity_received","accounting_status","cost","id_transfer","id_product","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "id","quantity","quantity_received","accounting_status","tolerance_decision","receipt_difference_percentage","accounting_applied_at","cost","total","id_transfer","id_product","status","observation","createdAt","updatedAt";
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910002 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910002 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (d7f7fbcd-6474-4fdf-a090-3a3321b5d26c): ROLLBACK;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): START TRANSACTION;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): INSERT INTO "transfers" ("id","cod","date_send","date_received","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_received","status","registry_number","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING "id","cod","date_send","date_received","observations_send","observations_received","total","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_send","id_user_received","status","type_registry","registry_number","id_scales","createdAt","updatedAt";
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): INSERT INTO "details_transfers" ("id","quantity","quantity_received","accounting_status","cost","id_transfer","id_product","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "id","quantity","quantity_received","accounting_status","tolerance_decision","receipt_difference_percentage","accounting_applied_at","cost","total","id_transfer","id_product","status","observation","createdAt","updatedAt";
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."idempotency_key" = 'TRANSFER_RECEPTION:33:26:SURPLUS' LIMIT 1;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."source_type" = 'TRANSFER_RECEPTION' AND "kardexMovements"."source_id" = '33' AND "kardexMovements"."source_detail_id" = '26' AND "kardexMovements"."effect_type" = 'SURPLUS' LIMIT 1;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): INSERT INTO "kardex_movements" ("id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910002 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910002 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910002 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (16ba0b03-a5b8-42f7-8fa6-959c0443388c): ROLLBACK;
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): START TRANSACTION;
+    # Subtest: recepción 100/110, 100/90 y exacta conserva las tres representaciones
+    ok 4 - recepción 100/110, 100/90 y exacta conserva las tres representaciones
+      ---
+      duration_ms: 142.5519
+      ...
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): INSERT INTO "kardex_movements" ("id","type","date","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): INSERT INTO "transfers" ("id","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3) RETURNING "id","cod","date_send","date_received","observations_send","observations_received","total","id_sucursal_send","id_storage_send","id_sucursal_received","id_storage_received","id_user_send","id_user_received","status","type_registry","registry_number","id_scales","createdAt","updatedAt";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): INSERT INTO "transfer_review_notes" ("id","registry_number","type","date","id_transfer","id_kardex_movement","id_product","id_user","id_sucursal","id_storage","reconciliation_status","management_status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING "id","registry_number","type","date","observations","id_transfer","id_kardex_movement","id_product","id_user","id_sucursal","id_storage","reconciliation_status","id_assigned_user","assigned_at","resolved_at","id_resolved_user","reopened_at","id_reopened_user","management_status","management_reason","reverted_at","id_reverted_user","deleted_at","id_deleted_user","createdAt","updatedAt";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): INSERT INTO "transfer_review_note_details" ("id","quantity_sent","quantity_received","quantity_difference","id_transfer_review_note","id_product","reconciliation_status","quantity_resolved","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "id","quantity_sent","quantity_received","quantity_difference","id_transfer_review_note","id_detail_transfer","id_product","reconciliation_status","cause","quantity_resolved","resolved_at","id_resolved_user","createdAt","updatedAt";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): INSERT INTO "transfer_review_resolution_actions" ("id","idempotency_key","strategy","quantity","id_transfer_review_note","id_transfer_review_note_detail","id_user","management_status","operation_mode","operation_status","detail_version","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING "id","idempotency_key","strategy","quantity","observations","approved_at","id_transfer_review_note","id_transfer_review_note_detail","id_user","id_approved_user","management_status","operation_mode","operation_type","operation_id","operation_status","detail_version","reversal_reason","reversed_at","id_reversed_user","createdAt","updatedAt";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): SELECT "TransferReviewNote"."id", "TransferReviewNote"."registry_number", "TransferReviewNote"."type", "TransferReviewNote"."date", "TransferReviewNote"."observations", "TransferReviewNote"."id_transfer", "TransferReviewNote"."id_kardex_movement", "TransferReviewNote"."id_product", "TransferReviewNote"."id_user", "TransferReviewNote"."id_sucursal", "TransferReviewNote"."id_storage", "TransferReviewNote"."reconciliation_status", "TransferReviewNote"."id_assigned_user", "TransferReviewNote"."assigned_at", "TransferReviewNote"."resolved_at", "TransferReviewNote"."id_resolved_user", "TransferReviewNote"."reopened_at", "TransferReviewNote"."id_reopened_user", "TransferReviewNote"."management_status", "TransferReviewNote"."management_reason", "TransferReviewNote"."reverted_at", "TransferReviewNote"."id_reverted_user", "TransferReviewNote"."deleted_at", "TransferReviewNote"."id_deleted_user", "TransferReviewNote"."createdAt", "TransferReviewNote"."updatedAt", "details"."id" AS "details.id", "details"."quantity_sent" AS "details.quantity_sent", "details"."quantity_received" AS "details.quantity_received", "details"."quantity_difference" AS "details.quantity_difference", "details"."id_transfer_review_note" AS "details.id_transfer_review_note", "details"."id_detail_transfer" AS "details.id_detail_transfer", "details"."id_product" AS "details.id_product", "details"."reconciliation_status" AS "details.reconciliation_status", "details"."cause" AS "details.cause", "details"."quantity_resolved" AS "details.quantity_resolved", "details"."resolved_at" AS "details.resolved_at", "details"."id_resolved_user" AS "details.id_resolved_user", "details"."createdAt" AS "details.createdAt", "details"."updatedAt" AS "details.updatedAt", "details->inventoryHolds"."id" AS "details.inventoryHolds.id", "details->inventoryHolds"."quantity" AS "details.inventoryHolds.quantity", "details->inventoryHolds"."disposition" AS "details.inventoryHolds.disposition", "details->inventoryHolds"."id_transfer_review_note_detail" AS "details.inventoryHolds.id_transfer_review_note_detail", "details->inventoryHolds"."id_product" AS "details.inventoryHolds.id_product", "details->inventoryHolds"."id_sucursal" AS "details.inventoryHolds.id_sucursal", "details->inventoryHolds"."id_storage" AS "details.inventoryHolds.id_storage", "details->inventoryHolds"."id_created_user" AS "details.inventoryHolds.id_created_user", "details->inventoryHolds"."createdAt" AS "details.inventoryHolds.createdAt", "details->inventoryHolds"."updatedAt" AS "details.inventoryHolds.updatedAt", "details->resolutionActions"."id" AS "details.resolutionActions.id", "details->resolutionActions"."idempotency_key" AS "details.resolutionActions.idempotency_key", "details->resolutionActions"."strategy" AS "details.resolutionActions.strategy", "details->resolutionActions"."quantity" AS "details.resolutionActions.quantity", "details->resolutionActions"."observations" AS "details.resolutionActions.observations", "details->resolutionActions"."approved_at" AS "details.resolutionActions.approved_at", "details->resolutionActions"."id_transfer_review_note" AS "details.resolutionActions.id_transfer_review_note", "details->resolutionActions"."id_transfer_review_note_detail" AS "details.resolutionActions.id_transfer_review_note_detail", "details->resolutionActions"."id_user" AS "details.resolutionActions.id_user", "details->resolutionActions"."id_approved_user" AS "details.resolutionActions.id_approved_user", "details->resolutionActions"."management_status" AS "details.resolutionActions.management_status", "details->resolutionActions"."operation_mode" AS "details.resolutionActions.operation_mode", "details->resolutionActions"."operation_type" AS "details.resolutionActions.operation_type", "details->resolutionActions"."operation_id" AS "details.resolutionActions.operation_id", "details->resolutionActions"."operation_status" AS "details.resolutionActions.operation_status", "details->resolutionActions"."detail_version" AS "details.resolutionActions.detail_version", "details->resolutionActions"."reversal_reason" AS "details.resolutionActions.reversal_reason", "details->resolutionActions"."reversed_at" AS "details.resolutionActions.reversed_at", "details->resolutionActions"."id_reversed_user" AS "details.resolutionActions.id_reversed_user", "details->resolutionActions"."createdAt" AS "details.resolutionActions.createdAt", "details->resolutionActions"."updatedAt" AS "details.resolutionActions.updatedAt", "details->resolutionActions->movementLinks"."id" AS "details.resolutionActions.movementLinks.id", "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" AS "details.resolutionActions.movementLinks.id_transfer_review_resolution_action", "details->resolutionActions->movementLinks"."id_kardex_movement" AS "details.resolutionActions.movementLinks.id_kardex_movement", "details->resolutionActions->movementLinks"."movement_role" AS "details.resolutionActions.movementLinks.movement_role", "details->resolutionActions->movementLinks"."id_compensates_movement" AS "details.resolutionActions.movementLinks.id_compensates_movement", "details->resolutionActions->movementLinks"."createdAt" AS "details.resolutionActions.movementLinks.createdAt", "details->resolutionActions->movementLinks"."updatedAt" AS "details.resolutionActions.movementLinks.updatedAt", "details->resolutionActions->movementLinks->kardexMovement"."id" AS "details.resolutionActions.movementLinks.kardexMovement.id", "details->resolutionActions->movementLinks->kardexMovement"."type" AS "details.resolutionActions.movementLinks.kardexMovement.type", "details->resolutionActions->movementLinks->kardexMovement"."date" AS "details.resolutionActions.movementLinks.kardexMovement.date", "details->resolutionActions->movementLinks->kardexMovement"."details" AS "details.resolutionActions.movementLinks.kardexMovement.details", "details->resolutionActions->movementLinks->kardexMovement"."quantity" AS "details.resolutionActions.movementLinks.kardexMovement.quantity", "details->resolutionActions->movementLinks->kardexMovement"."cost" AS "details.resolutionActions.movementLinks.kardexMovement.cost", "details->resolutionActions->movementLinks->kardexMovement"."price" AS "details.resolutionActions.movementLinks.kardexMovement.price", "details->resolutionActions->movementLinks->kardexMovement"."total" AS "details.resolutionActions.movementLinks.kardexMovement.total", "details->resolutionActions->movementLinks->kardexMovement"."id_product" AS "details.resolutionActions.movementLinks.kardexMovement.id_product", "details->resolutionActions->movementLinks->kardexMovement"."id_user" AS "details.resolutionActions.movementLinks.kardexMovement.id_user", "details->resolutionActions->movementLinks->kardexMovement"."id_sucursal" AS "details.resolutionActions.movementLinks.kardexMovement.id_sucursal", "details->resolutionActions->movementLinks->kardexMovement"."id_storage" AS "details.resolutionActions.movementLinks.kardexMovement.id_storage", "details->resolutionActions->movementLinks->kardexMovement"."status" AS "details.resolutionActions.movementLinks.kardexMovement.status", "details->resolutionActions->movementLinks->kardexMovement"."registry_number" AS "details.resolutionActions.movementLinks.kardexMovement.registry_number", "details->resolutionActions->movementLinks->kardexMovement"."source_type" AS "details.resolutionActions.movementLinks.kardexMovement.source_type", "details->resolutionActions->movementLinks->kardexMovement"."source_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_id", "details->resolutionActions->movementLinks->kardexMovement"."source_detail_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_detail_id", "details->resolutionActions->movementLinks->kardexMovement"."effect_type" AS "details.resolutionActions.movementLinks.kardexMovement.effect_type", "details->resolutionActions->movementLinks->kardexMovement"."idempotency_key" AS "details.resolutionActions.movementLinks.kardexMovement.idempotency_key", "details->resolutionActions->movementLinks->kardexMovement"."createdAt" AS "details.resolutionActions.movementLinks.kardexMovement.createdAt", "details->resolutionActions->movementLinks->kardexMovement"."updatedAt" AS "details.resolutionActions.movementLinks.kardexMovement.updatedAt" FROM "transfer_review_notes" AS "TransferReviewNote" LEFT OUTER JOIN "transfer_review_note_details" AS "details" ON "TransferReviewNote"."id" = "details"."id_transfer_review_note" LEFT OUTER JOIN "transfer_review_inventory_holds" AS "details->inventoryHolds" ON "details"."id" = "details->inventoryHolds"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_resolution_actions" AS "details->resolutionActions" ON "details"."id" = "details->resolutionActions"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_action_movements" AS "details->resolutionActions->movementLinks" ON "details->resolutionActions"."id" = "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" LEFT OUTER JOIN "kardex_movements" AS "details->resolutionActions->movementLinks->kardexMovement" ON "details->resolutionActions->movementLinks"."id_kardex_movement" = "details->resolutionActions->movementLinks->kardexMovement"."id" WHERE "TransferReviewNote"."id" = 9 FOR UPDATE OF "TransferReviewNote";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): UPDATE "transfer_review_resolution_actions" SET "operation_status"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): INSERT INTO "transfer_review_inventory_holds" ("id","quantity","disposition","id_transfer_review_note_detail","id_product","id_sucursal","id_storage","id_created_user","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "id","quantity","disposition","id_transfer_review_note_detail","id_product","id_sucursal","id_storage","id_created_user","createdAt","updatedAt";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): SELECT "TransferReviewNote"."id", "TransferReviewNote"."registry_number", "TransferReviewNote"."type", "TransferReviewNote"."date", "TransferReviewNote"."observations", "TransferReviewNote"."id_transfer", "TransferReviewNote"."id_kardex_movement", "TransferReviewNote"."id_product", "TransferReviewNote"."id_user", "TransferReviewNote"."id_sucursal", "TransferReviewNote"."id_storage", "TransferReviewNote"."reconciliation_status", "TransferReviewNote"."id_assigned_user", "TransferReviewNote"."assigned_at", "TransferReviewNote"."resolved_at", "TransferReviewNote"."id_resolved_user", "TransferReviewNote"."reopened_at", "TransferReviewNote"."id_reopened_user", "TransferReviewNote"."management_status", "TransferReviewNote"."management_reason", "TransferReviewNote"."reverted_at", "TransferReviewNote"."id_reverted_user", "TransferReviewNote"."deleted_at", "TransferReviewNote"."id_deleted_user", "TransferReviewNote"."createdAt", "TransferReviewNote"."updatedAt", "details"."id" AS "details.id", "details"."quantity_sent" AS "details.quantity_sent", "details"."quantity_received" AS "details.quantity_received", "details"."quantity_difference" AS "details.quantity_difference", "details"."id_transfer_review_note" AS "details.id_transfer_review_note", "details"."id_detail_transfer" AS "details.id_detail_transfer", "details"."id_product" AS "details.id_product", "details"."reconciliation_status" AS "details.reconciliation_status", "details"."cause" AS "details.cause", "details"."quantity_resolved" AS "details.quantity_resolved", "details"."resolved_at" AS "details.resolved_at", "details"."id_resolved_user" AS "details.id_resolved_user", "details"."createdAt" AS "details.createdAt", "details"."updatedAt" AS "details.updatedAt", "details->inventoryHolds"."id" AS "details.inventoryHolds.id", "details->inventoryHolds"."quantity" AS "details.inventoryHolds.quantity", "details->inventoryHolds"."disposition" AS "details.inventoryHolds.disposition", "details->inventoryHolds"."id_transfer_review_note_detail" AS "details.inventoryHolds.id_transfer_review_note_detail", "details->inventoryHolds"."id_product" AS "details.inventoryHolds.id_product", "details->inventoryHolds"."id_sucursal" AS "details.inventoryHolds.id_sucursal", "details->inventoryHolds"."id_storage" AS "details.inventoryHolds.id_storage", "details->inventoryHolds"."id_created_user" AS "details.inventoryHolds.id_created_user", "details->inventoryHolds"."createdAt" AS "details.inventoryHolds.createdAt", "details->inventoryHolds"."updatedAt" AS "details.inventoryHolds.updatedAt", "details->resolutionActions"."id" AS "details.resolutionActions.id", "details->resolutionActions"."idempotency_key" AS "details.resolutionActions.idempotency_key", "details->resolutionActions"."strategy" AS "details.resolutionActions.strategy", "details->resolutionActions"."quantity" AS "details.resolutionActions.quantity", "details->resolutionActions"."observations" AS "details.resolutionActions.observations", "details->resolutionActions"."approved_at" AS "details.resolutionActions.approved_at", "details->resolutionActions"."id_transfer_review_note" AS "details.resolutionActions.id_transfer_review_note", "details->resolutionActions"."id_transfer_review_note_detail" AS "details.resolutionActions.id_transfer_review_note_detail", "details->resolutionActions"."id_user" AS "details.resolutionActions.id_user", "details->resolutionActions"."id_approved_user" AS "details.resolutionActions.id_approved_user", "details->resolutionActions"."management_status" AS "details.resolutionActions.management_status", "details->resolutionActions"."operation_mode" AS "details.resolutionActions.operation_mode", "details->resolutionActions"."operation_type" AS "details.resolutionActions.operation_type", "details->resolutionActions"."operation_id" AS "details.resolutionActions.operation_id", "details->resolutionActions"."operation_status" AS "details.resolutionActions.operation_status", "details->resolutionActions"."detail_version" AS "details.resolutionActions.detail_version", "details->resolutionActions"."reversal_reason" AS "details.resolutionActions.reversal_reason", "details->resolutionActions"."reversed_at" AS "details.resolutionActions.reversed_at", "details->resolutionActions"."id_reversed_user" AS "details.resolutionActions.id_reversed_user", "details->resolutionActions"."createdAt" AS "details.resolutionActions.createdAt", "details->resolutionActions"."updatedAt" AS "details.resolutionActions.updatedAt", "details->resolutionActions->movementLinks"."id" AS "details.resolutionActions.movementLinks.id", "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" AS "details.resolutionActions.movementLinks.id_transfer_review_resolution_action", "details->resolutionActions->movementLinks"."id_kardex_movement" AS "details.resolutionActions.movementLinks.id_kardex_movement", "details->resolutionActions->movementLinks"."movement_role" AS "details.resolutionActions.movementLinks.movement_role", "details->resolutionActions->movementLinks"."id_compensates_movement" AS "details.resolutionActions.movementLinks.id_compensates_movement", "details->resolutionActions->movementLinks"."createdAt" AS "details.resolutionActions.movementLinks.createdAt", "details->resolutionActions->movementLinks"."updatedAt" AS "details.resolutionActions.movementLinks.updatedAt", "details->resolutionActions->movementLinks->kardexMovement"."id" AS "details.resolutionActions.movementLinks.kardexMovement.id", "details->resolutionActions->movementLinks->kardexMovement"."type" AS "details.resolutionActions.movementLinks.kardexMovement.type", "details->resolutionActions->movementLinks->kardexMovement"."date" AS "details.resolutionActions.movementLinks.kardexMovement.date", "details->resolutionActions->movementLinks->kardexMovement"."details" AS "details.resolutionActions.movementLinks.kardexMovement.details", "details->resolutionActions->movementLinks->kardexMovement"."quantity" AS "details.resolutionActions.movementLinks.kardexMovement.quantity", "details->resolutionActions->movementLinks->kardexMovement"."cost" AS "details.resolutionActions.movementLinks.kardexMovement.cost", "details->resolutionActions->movementLinks->kardexMovement"."price" AS "details.resolutionActions.movementLinks.kardexMovement.price", "details->resolutionActions->movementLinks->kardexMovement"."total" AS "details.resolutionActions.movementLinks.kardexMovement.total", "details->resolutionActions->movementLinks->kardexMovement"."id_product" AS "details.resolutionActions.movementLinks.kardexMovement.id_product", "details->resolutionActions->movementLinks->kardexMovement"."id_user" AS "details.resolutionActions.movementLinks.kardexMovement.id_user", "details->resolutionActions->movementLinks->kardexMovement"."id_sucursal" AS "details.resolutionActions.movementLinks.kardexMovement.id_sucursal", "details->resolutionActions->movementLinks->kardexMovement"."id_storage" AS "details.resolutionActions.movementLinks.kardexMovement.id_storage", "details->resolutionActions->movementLinks->kardexMovement"."status" AS "details.resolutionActions.movementLinks.kardexMovement.status", "details->resolutionActions->movementLinks->kardexMovement"."registry_number" AS "details.resolutionActions.movementLinks.kardexMovement.registry_number", "details->resolutionActions->movementLinks->kardexMovement"."source_type" AS "details.resolutionActions.movementLinks.kardexMovement.source_type", "details->resolutionActions->movementLinks->kardexMovement"."source_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_id", "details->resolutionActions->movementLinks->kardexMovement"."source_detail_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_detail_id", "details->resolutionActions->movementLinks->kardexMovement"."effect_type" AS "details.resolutionActions.movementLinks.kardexMovement.effect_type", "details->resolutionActions->movementLinks->kardexMovement"."idempotency_key" AS "details.resolutionActions.movementLinks.kardexMovement.idempotency_key", "details->resolutionActions->movementLinks->kardexMovement"."createdAt" AS "details.resolutionActions.movementLinks.kardexMovement.createdAt", "details->resolutionActions->movementLinks->kardexMovement"."updatedAt" AS "details.resolutionActions.movementLinks.kardexMovement.updatedAt" FROM "transfer_review_notes" AS "TransferReviewNote" LEFT OUTER JOIN "transfer_review_note_details" AS "details" ON "TransferReviewNote"."id" = "details"."id_transfer_review_note" LEFT OUTER JOIN "transfer_review_inventory_holds" AS "details->inventoryHolds" ON "details"."id" = "details->inventoryHolds"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_resolution_actions" AS "details->resolutionActions" ON "details"."id" = "details->resolutionActions"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_action_movements" AS "details->resolutionActions->movementLinks" ON "details->resolutionActions"."id" = "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" LEFT OUTER JOIN "kardex_movements" AS "details->resolutionActions->movementLinks->kardexMovement" ON "details->resolutionActions->movementLinks"."id_kardex_movement" = "details->resolutionActions->movementLinks->kardexMovement"."id" WHERE "TransferReviewNote"."id" = 9 FOR UPDATE OF "TransferReviewNote";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): UPDATE "transfer_review_inventory_holds" SET "disposition"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): SELECT "TransferReviewNote"."id", "TransferReviewNote"."registry_number", "TransferReviewNote"."type", "TransferReviewNote"."date", "TransferReviewNote"."observations", "TransferReviewNote"."id_transfer", "TransferReviewNote"."id_kardex_movement", "TransferReviewNote"."id_product", "TransferReviewNote"."id_user", "TransferReviewNote"."id_sucursal", "TransferReviewNote"."id_storage", "TransferReviewNote"."reconciliation_status", "TransferReviewNote"."id_assigned_user", "TransferReviewNote"."assigned_at", "TransferReviewNote"."resolved_at", "TransferReviewNote"."id_resolved_user", "TransferReviewNote"."reopened_at", "TransferReviewNote"."id_reopened_user", "TransferReviewNote"."management_status", "TransferReviewNote"."management_reason", "TransferReviewNote"."reverted_at", "TransferReviewNote"."id_reverted_user", "TransferReviewNote"."deleted_at", "TransferReviewNote"."id_deleted_user", "TransferReviewNote"."createdAt", "TransferReviewNote"."updatedAt", "details"."id" AS "details.id", "details"."quantity_sent" AS "details.quantity_sent", "details"."quantity_received" AS "details.quantity_received", "details"."quantity_difference" AS "details.quantity_difference", "details"."id_transfer_review_note" AS "details.id_transfer_review_note", "details"."id_detail_transfer" AS "details.id_detail_transfer", "details"."id_product" AS "details.id_product", "details"."reconciliation_status" AS "details.reconciliation_status", "details"."cause" AS "details.cause", "details"."quantity_resolved" AS "details.quantity_resolved", "details"."resolved_at" AS "details.resolved_at", "details"."id_resolved_user" AS "details.id_resolved_user", "details"."createdAt" AS "details.createdAt", "details"."updatedAt" AS "details.updatedAt", "details->inventoryHolds"."id" AS "details.inventoryHolds.id", "details->inventoryHolds"."quantity" AS "details.inventoryHolds.quantity", "details->inventoryHolds"."disposition" AS "details.inventoryHolds.disposition", "details->inventoryHolds"."id_transfer_review_note_detail" AS "details.inventoryHolds.id_transfer_review_note_detail", "details->inventoryHolds"."id_product" AS "details.inventoryHolds.id_product", "details->inventoryHolds"."id_sucursal" AS "details.inventoryHolds.id_sucursal", "details->inventoryHolds"."id_storage" AS "details.inventoryHolds.id_storage", "details->inventoryHolds"."id_created_user" AS "details.inventoryHolds.id_created_user", "details->inventoryHolds"."createdAt" AS "details.inventoryHolds.createdAt", "details->inventoryHolds"."updatedAt" AS "details.inventoryHolds.updatedAt", "details->resolutionActions"."id" AS "details.resolutionActions.id", "details->resolutionActions"."idempotency_key" AS "details.resolutionActions.idempotency_key", "details->resolutionActions"."strategy" AS "details.resolutionActions.strategy", "details->resolutionActions"."quantity" AS "details.resolutionActions.quantity", "details->resolutionActions"."observations" AS "details.resolutionActions.observations", "details->resolutionActions"."approved_at" AS "details.resolutionActions.approved_at", "details->resolutionActions"."id_transfer_review_note" AS "details.resolutionActions.id_transfer_review_note", "details->resolutionActions"."id_transfer_review_note_detail" AS "details.resolutionActions.id_transfer_review_note_detail", "details->resolutionActions"."id_user" AS "details.resolutionActions.id_user", "details->resolutionActions"."id_approved_user" AS "details.resolutionActions.id_approved_user", "details->resolutionActions"."management_status" AS "details.resolutionActions.management_status", "details->resolutionActions"."operation_mode" AS "details.resolutionActions.operation_mode", "details->resolutionActions"."operation_type" AS "details.resolutionActions.operation_type", "details->resolutionActions"."operation_id" AS "details.resolutionActions.operation_id", "details->resolutionActions"."operation_status" AS "details.resolutionActions.operation_status", "details->resolutionActions"."detail_version" AS "details.resolutionActions.detail_version", "details->resolutionActions"."reversal_reason" AS "details.resolutionActions.reversal_reason", "details->resolutionActions"."reversed_at" AS "details.resolutionActions.reversed_at", "details->resolutionActions"."id_reversed_user" AS "details.resolutionActions.id_reversed_user", "details->resolutionActions"."createdAt" AS "details.resolutionActions.createdAt", "details->resolutionActions"."updatedAt" AS "details.resolutionActions.updatedAt", "details->resolutionActions->movementLinks"."id" AS "details.resolutionActions.movementLinks.id", "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" AS "details.resolutionActions.movementLinks.id_transfer_review_resolution_action", "details->resolutionActions->movementLinks"."id_kardex_movement" AS "details.resolutionActions.movementLinks.id_kardex_movement", "details->resolutionActions->movementLinks"."movement_role" AS "details.resolutionActions.movementLinks.movement_role", "details->resolutionActions->movementLinks"."id_compensates_movement" AS "details.resolutionActions.movementLinks.id_compensates_movement", "details->resolutionActions->movementLinks"."createdAt" AS "details.resolutionActions.movementLinks.createdAt", "details->resolutionActions->movementLinks"."updatedAt" AS "details.resolutionActions.movementLinks.updatedAt", "details->resolutionActions->movementLinks->kardexMovement"."id" AS "details.resolutionActions.movementLinks.kardexMovement.id", "details->resolutionActions->movementLinks->kardexMovement"."type" AS "details.resolutionActions.movementLinks.kardexMovement.type", "details->resolutionActions->movementLinks->kardexMovement"."date" AS "details.resolutionActions.movementLinks.kardexMovement.date", "details->resolutionActions->movementLinks->kardexMovement"."details" AS "details.resolutionActions.movementLinks.kardexMovement.details", "details->resolutionActions->movementLinks->kardexMovement"."quantity" AS "details.resolutionActions.movementLinks.kardexMovement.quantity", "details->resolutionActions->movementLinks->kardexMovement"."cost" AS "details.resolutionActions.movementLinks.kardexMovement.cost", "details->resolutionActions->movementLinks->kardexMovement"."price" AS "details.resolutionActions.movementLinks.kardexMovement.price", "details->resolutionActions->movementLinks->kardexMovement"."total" AS "details.resolutionActions.movementLinks.kardexMovement.total", "details->resolutionActions->movementLinks->kardexMovement"."id_product" AS "details.resolutionActions.movementLinks.kardexMovement.id_product", "details->resolutionActions->movementLinks->kardexMovement"."id_user" AS "details.resolutionActions.movementLinks.kardexMovement.id_user", "details->resolutionActions->movementLinks->kardexMovement"."id_sucursal" AS "details.resolutionActions.movementLinks.kardexMovement.id_sucursal", "details->resolutionActions->movementLinks->kardexMovement"."id_storage" AS "details.resolutionActions.movementLinks.kardexMovement.id_storage", "details->resolutionActions->movementLinks->kardexMovement"."status" AS "details.resolutionActions.movementLinks.kardexMovement.status", "details->resolutionActions->movementLinks->kardexMovement"."registry_number" AS "details.resolutionActions.movementLinks.kardexMovement.registry_number", "details->resolutionActions->movementLinks->kardexMovement"."source_type" AS "details.resolutionActions.movementLinks.kardexMovement.source_type", "details->resolutionActions->movementLinks->kardexMovement"."source_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_id", "details->resolutionActions->movementLinks->kardexMovement"."source_detail_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_detail_id", "details->resolutionActions->movementLinks->kardexMovement"."effect_type" AS "details.resolutionActions.movementLinks.kardexMovement.effect_type", "details->resolutionActions->movementLinks->kardexMovement"."idempotency_key" AS "details.resolutionActions.movementLinks.kardexMovement.idempotency_key", "details->resolutionActions->movementLinks->kardexMovement"."createdAt" AS "details.resolutionActions.movementLinks.kardexMovement.createdAt", "details->resolutionActions->movementLinks->kardexMovement"."updatedAt" AS "details.resolutionActions.movementLinks.kardexMovement.updatedAt" FROM "transfer_review_notes" AS "TransferReviewNote" LEFT OUTER JOIN "transfer_review_note_details" AS "details" ON "TransferReviewNote"."id" = "details"."id_transfer_review_note" LEFT OUTER JOIN "transfer_review_inventory_holds" AS "details->inventoryHolds" ON "details"."id" = "details->inventoryHolds"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_resolution_actions" AS "details->resolutionActions" ON "details"."id" = "details->resolutionActions"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_action_movements" AS "details->resolutionActions->movementLinks" ON "details->resolutionActions"."id" = "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" LEFT OUTER JOIN "kardex_movements" AS "details->resolutionActions->movementLinks->kardexMovement" ON "details->resolutionActions->movementLinks"."id_kardex_movement" = "details->resolutionActions->movementLinks->kardexMovement"."id" WHERE "TransferReviewNote"."id" = 9 FOR UPDATE OF "TransferReviewNote";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): UPDATE "transfer_review_resolution_actions" SET "quantity"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): SELECT "TransferReviewNote"."id", "TransferReviewNote"."registry_number", "TransferReviewNote"."type", "TransferReviewNote"."date", "TransferReviewNote"."observations", "TransferReviewNote"."id_transfer", "TransferReviewNote"."id_kardex_movement", "TransferReviewNote"."id_product", "TransferReviewNote"."id_user", "TransferReviewNote"."id_sucursal", "TransferReviewNote"."id_storage", "TransferReviewNote"."reconciliation_status", "TransferReviewNote"."id_assigned_user", "TransferReviewNote"."assigned_at", "TransferReviewNote"."resolved_at", "TransferReviewNote"."id_resolved_user", "TransferReviewNote"."reopened_at", "TransferReviewNote"."id_reopened_user", "TransferReviewNote"."management_status", "TransferReviewNote"."management_reason", "TransferReviewNote"."reverted_at", "TransferReviewNote"."id_reverted_user", "TransferReviewNote"."deleted_at", "TransferReviewNote"."id_deleted_user", "TransferReviewNote"."createdAt", "TransferReviewNote"."updatedAt", "details"."id" AS "details.id", "details"."quantity_sent" AS "details.quantity_sent", "details"."quantity_received" AS "details.quantity_received", "details"."quantity_difference" AS "details.quantity_difference", "details"."id_transfer_review_note" AS "details.id_transfer_review_note", "details"."id_detail_transfer" AS "details.id_detail_transfer", "details"."id_product" AS "details.id_product", "details"."reconciliation_status" AS "details.reconciliation_status", "details"."cause" AS "details.cause", "details"."quantity_resolved" AS "details.quantity_resolved", "details"."resolved_at" AS "details.resolved_at", "details"."id_resolved_user" AS "details.id_resolved_user", "details"."createdAt" AS "details.createdAt", "details"."updatedAt" AS "details.updatedAt", "details->inventoryHolds"."id" AS "details.inventoryHolds.id", "details->inventoryHolds"."quantity" AS "details.inventoryHolds.quantity", "details->inventoryHolds"."disposition" AS "details.inventoryHolds.disposition", "details->inventoryHolds"."id_transfer_review_note_detail" AS "details.inventoryHolds.id_transfer_review_note_detail", "details->inventoryHolds"."id_product" AS "details.inventoryHolds.id_product", "details->inventoryHolds"."id_sucursal" AS "details.inventoryHolds.id_sucursal", "details->inventoryHolds"."id_storage" AS "details.inventoryHolds.id_storage", "details->inventoryHolds"."id_created_user" AS "details.inventoryHolds.id_created_user", "details->inventoryHolds"."createdAt" AS "details.inventoryHolds.createdAt", "details->inventoryHolds"."updatedAt" AS "details.inventoryHolds.updatedAt", "details->resolutionActions"."id" AS "details.resolutionActions.id", "details->resolutionActions"."idempotency_key" AS "details.resolutionActions.idempotency_key", "details->resolutionActions"."strategy" AS "details.resolutionActions.strategy", "details->resolutionActions"."quantity" AS "details.resolutionActions.quantity", "details->resolutionActions"."observations" AS "details.resolutionActions.observations", "details->resolutionActions"."approved_at" AS "details.resolutionActions.approved_at", "details->resolutionActions"."id_transfer_review_note" AS "details.resolutionActions.id_transfer_review_note", "details->resolutionActions"."id_transfer_review_note_detail" AS "details.resolutionActions.id_transfer_review_note_detail", "details->resolutionActions"."id_user" AS "details.resolutionActions.id_user", "details->resolutionActions"."id_approved_user" AS "details.resolutionActions.id_approved_user", "details->resolutionActions"."management_status" AS "details.resolutionActions.management_status", "details->resolutionActions"."operation_mode" AS "details.resolutionActions.operation_mode", "details->resolutionActions"."operation_type" AS "details.resolutionActions.operation_type", "details->resolutionActions"."operation_id" AS "details.resolutionActions.operation_id", "details->resolutionActions"."operation_status" AS "details.resolutionActions.operation_status", "details->resolutionActions"."detail_version" AS "details.resolutionActions.detail_version", "details->resolutionActions"."reversal_reason" AS "details.resolutionActions.reversal_reason", "details->resolutionActions"."reversed_at" AS "details.resolutionActions.reversed_at", "details->resolutionActions"."id_reversed_user" AS "details.resolutionActions.id_reversed_user", "details->resolutionActions"."createdAt" AS "details.resolutionActions.createdAt", "details->resolutionActions"."updatedAt" AS "details.resolutionActions.updatedAt", "details->resolutionActions->movementLinks"."id" AS "details.resolutionActions.movementLinks.id", "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" AS "details.resolutionActions.movementLinks.id_transfer_review_resolution_action", "details->resolutionActions->movementLinks"."id_kardex_movement" AS "details.resolutionActions.movementLinks.id_kardex_movement", "details->resolutionActions->movementLinks"."movement_role" AS "details.resolutionActions.movementLinks.movement_role", "details->resolutionActions->movementLinks"."id_compensates_movement" AS "details.resolutionActions.movementLinks.id_compensates_movement", "details->resolutionActions->movementLinks"."createdAt" AS "details.resolutionActions.movementLinks.createdAt", "details->resolutionActions->movementLinks"."updatedAt" AS "details.resolutionActions.movementLinks.updatedAt", "details->resolutionActions->movementLinks->kardexMovement"."id" AS "details.resolutionActions.movementLinks.kardexMovement.id", "details->resolutionActions->movementLinks->kardexMovement"."type" AS "details.resolutionActions.movementLinks.kardexMovement.type", "details->resolutionActions->movementLinks->kardexMovement"."date" AS "details.resolutionActions.movementLinks.kardexMovement.date", "details->resolutionActions->movementLinks->kardexMovement"."details" AS "details.resolutionActions.movementLinks.kardexMovement.details", "details->resolutionActions->movementLinks->kardexMovement"."quantity" AS "details.resolutionActions.movementLinks.kardexMovement.quantity", "details->resolutionActions->movementLinks->kardexMovement"."cost" AS "details.resolutionActions.movementLinks.kardexMovement.cost", "details->resolutionActions->movementLinks->kardexMovement"."price" AS "details.resolutionActions.movementLinks.kardexMovement.price", "details->resolutionActions->movementLinks->kardexMovement"."total" AS "details.resolutionActions.movementLinks.kardexMovement.total", "details->resolutionActions->movementLinks->kardexMovement"."id_product" AS "details.resolutionActions.movementLinks.kardexMovement.id_product", "details->resolutionActions->movementLinks->kardexMovement"."id_user" AS "details.resolutionActions.movementLinks.kardexMovement.id_user", "details->resolutionActions->movementLinks->kardexMovement"."id_sucursal" AS "details.resolutionActions.movementLinks.kardexMovement.id_sucursal", "details->resolutionActions->movementLinks->kardexMovement"."id_storage" AS "details.resolutionActions.movementLinks.kardexMovement.id_storage", "details->resolutionActions->movementLinks->kardexMovement"."status" AS "details.resolutionActions.movementLinks.kardexMovement.status", "details->resolutionActions->movementLinks->kardexMovement"."registry_number" AS "details.resolutionActions.movementLinks.kardexMovement.registry_number", "details->resolutionActions->movementLinks->kardexMovement"."source_type" AS "details.resolutionActions.movementLinks.kardexMovement.source_type", "details->resolutionActions->movementLinks->kardexMovement"."source_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_id", "details->resolutionActions->movementLinks->kardexMovement"."source_detail_id" AS "details.resolutionActions.movementLinks.kardexMovement.source_detail_id", "details->resolutionActions->movementLinks->kardexMovement"."effect_type" AS "details.resolutionActions.movementLinks.kardexMovement.effect_type", "details->resolutionActions->movementLinks->kardexMovement"."idempotency_key" AS "details.resolutionActions.movementLinks.kardexMovement.idempotency_key", "details->resolutionActions->movementLinks->kardexMovement"."createdAt" AS "details.resolutionActions.movementLinks.kardexMovement.createdAt", "details->resolutionActions->movementLinks->kardexMovement"."updatedAt" AS "details.resolutionActions.movementLinks.kardexMovement.updatedAt" FROM "transfer_review_notes" AS "TransferReviewNote" LEFT OUTER JOIN "transfer_review_note_details" AS "details" ON "TransferReviewNote"."id" = "details"."id_transfer_review_note" LEFT OUTER JOIN "transfer_review_inventory_holds" AS "details->inventoryHolds" ON "details"."id" = "details->inventoryHolds"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_resolution_actions" AS "details->resolutionActions" ON "details"."id" = "details->resolutionActions"."id_transfer_review_note_detail" LEFT OUTER JOIN "transfer_review_action_movements" AS "details->resolutionActions->movementLinks" ON "details->resolutionActions"."id" = "details->resolutionActions->movementLinks"."id_transfer_review_resolution_action" LEFT OUTER JOIN "kardex_movements" AS "details->resolutionActions->movementLinks->kardexMovement" ON "details->resolutionActions->movementLinks"."id_kardex_movement" = "details->resolutionActions->movementLinks->kardexMovement"."id" WHERE "TransferReviewNote"."id" = 9 FOR UPDATE OF "TransferReviewNote";
+# Executing (d7fc8371-126d-4489-8f7b-12db05148ec7): ROLLBACK;
+# Executing (ec4cacc1-383e-44bc-89d6-b01e6da7f082): START TRANSACTION;
+    # Subtest: cierre real bloquea retención, guía pendiente y acciones incompletas
+    ok 5 - cierre real bloquea retención, guía pendiente y acciones incompletas
+      ---
+      duration_ms: 65.3499
+      ...
+# Executing (ec4cacc1-383e-44bc-89d6-b01e6da7f082): ROLLBACK;
+# Executing (732f5a06-e9a7-4e9e-a42b-fb8cbeed79ca): START TRANSACTION;
+# Executing (732f5a06-e9a7-4e9e-a42b-fb8cbeed79ca): ROLLBACK;
+# Executing (default): SELECT "id", "name", "nit", "razon_social", "activity", "email", "cellphone", "logo", "address", "decimals", "status", "createdAt", "updatedAt" FROM "companies" AS "Company" WHERE "Company"."id" = 910001;
+# Executing (default): INSERT INTO "histories" ("id","id_user","description","type","module","query","action","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING "id","id_user","id_sucursal","description","type","module","query","action","id_reference","status","createdAt","updatedAt";
+# Executing (default): SELECT "id", "id_user", "id_sucursal", "description", "type", "module", "query", "action", "id_reference", "status", "createdAt", "updatedAt" FROM "histories" AS "History" WHERE "History"."id_user" = 910001 AND "History"."type" = 'INTEGRITY_REJECTED' LIMIT 1;
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): START TRANSACTION;
+    # Subtest: restricción decimal y auditoría durable después de rollback
+    ok 6 - restricción decimal y auditoría durable después de rollback
+      ---
+      duration_ms: 15.1851
+      ...
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): INSERT INTO "stocks" ("id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8) RETURNING "id","stock_min","stock","id_product","id_sucursal","id_storage","status","createdAt","updatedAt";
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."idempotency_key" = 'concurrent-1' LIMIT 1;
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."source_type" = 'TEST' AND "kardexMovements"."source_id" = 'concurrent' AND "kardexMovements"."source_detail_id" = '1' AND "kardexMovements"."effect_type" = 'INPUT' LIMIT 1;
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): UPDATE "stocks" SET "stock"=$1,"updatedAt"=$2 WHERE "id" = $3
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): INSERT INTO "kardex_movements" ("id","type","date","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt") VALUES (DEFAULT,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING "id","type","date","details","quantity","cost","price","total","id_product","id_user","id_sucursal","id_storage","status","registry_number","source_type","source_id","source_detail_id","effect_type","idempotency_key","createdAt","updatedAt";
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (633c91d4-c50d-4e29-91d9-c71d8b93e5f6): COMMIT;
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): START TRANSACTION;
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): SELECT pg_advisory_xact_lock(hashtextextended('stock:910001:910001:910001', 0))
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1 FOR UPDATE;
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."idempotency_key" = 'concurrent-2' LIMIT 1;
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): SELECT "id", "type", "date", "details", "quantity", "cost", "price", "total", "id_product", "id_user", "id_sucursal", "id_storage", "status", "registry_number", "source_type", "source_id", "source_detail_id", "effect_type", "idempotency_key", "createdAt", "updatedAt" FROM "kardex_movements" AS "kardexMovements" WHERE "kardexMovements"."source_type" = 'TEST' AND "kardexMovements"."source_id" = 'concurrent' AND "kardexMovements"."source_detail_id" = '1' AND "kardexMovements"."effect_type" = 'INPUT' LIMIT 1;
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+# Executing (4d8bf165-4974-42dd-b0b3-aa08d8bcd096): COMMIT;
+# Executing (default): SELECT "id", "stock_min", "stock", "id_product", "id_sucursal", "id_storage", "status", "createdAt", "updatedAt" FROM "stocks" AS "Stock" WHERE "Stock"."id_product" = 910001 AND "Stock"."id_sucursal" = 910001 AND "Stock"."id_storage" = 910001 AND "Stock"."status" = true LIMIT 1;
+# Executing (default): WITH detail AS (
+#       SELECT quantity_input, quantity_output
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#     ), physical AS (
+#       SELECT id_product, id_sucursal, id_storage,
+#         COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS quantity_saldo
+#       FROM view_kardex_detalle
+#       WHERE id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#       GROUP BY id_product, id_sucursal, id_storage
+#     ), duplicates AS (
+#       SELECT source_type, source_id, source_detail_id, effect_type
+#       FROM kardex_movements
+#       WHERE status = true AND source_type IS NOT NULL AND source_id IS NOT NULL
+#         AND source_detail_id IS NOT NULL AND effect_type IS NOT NULL
+#         AND (source_type,source_id,source_detail_id,effect_type) IN (
+#           SELECT source_type,source_id,source_detail_id,effect_type FROM kardex_movements
+#           WHERE status = true AND id_product = 910001 AND id_sucursal = 910001 AND id_storage = 910001
+#         )
+#       GROUP BY source_type, source_id, source_detail_id, effect_type HAVING COUNT(*) > 1
+#     )
+#     SELECT (SELECT COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) FROM detail) AS kardex_balance,
+#       COALESCE((SELECT quantity_saldo FROM physical), 0) AS physical_kardex_balance,
+#       (SELECT COUNT(*)::integer FROM duplicates) AS duplicate_effects,
+#       (SELECT COALESCE(SUM(quantity),0) FROM transfer_review_inventory_holds
+#         WHERE id_product=910001 AND id_sucursal=910001 AND id_storage=910001
+#           AND disposition <> 'LIBERADO_POR_AJUSTE') AS held_quantity
+    # Subtest: concurrencia sobre fila inexistente y reintento preservan un único efecto
+    ok 7 - concurrencia sobre fila inexistente y reintento preservan un único efecto
+      ---
+      duration_ms: 46.2712
+      ...
+    1..7
+ok 1 - integridad decimal con migraciones reales, rollback y concurrencia PostgreSQL
+  ---
+  duration_ms: 2231.3382
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: dos operaciones concurrentes conservan política propia durante actualización 4→2
+ok 2 - dos operaciones concurrentes conservan política propia durante actualización 4→2
+  ---
+  duration_ms: 38.6817
+  ...
+# Subtest: paridad detecta 0,0001 y duplicados compensados sin redondear por precisión activa
+ok 3 - paridad detecta 0,0001 y duplicados compensados sin redondear por precisión activa
+  ---
+  duration_ms: 5.1511
+  ...
+# Subtest: empresa operativa se resuelve sin id fijo y rechaza selección ambigua
+ok 4 - empresa operativa se resuelve sin id fijo y rechaza selección ambigua
+  ---
+  duration_ms: 1.1446
+  ...
+# Subtest: actualización decimal valida rango y audita dentro de la transacción
+ok 5 - actualización decimal valida rango y audita dentro de la transacción
+  ---
+  duration_ms: 212.5357
+  ...
+# Subtest: cierre rechaza guía pendiente aunque remanente y retención sean cero
+ok 6 - cierre rechaza guía pendiente aunque remanente y retención sean cero
+  ---
+  duration_ms: 2.2558
+  ...
+# Subtest: auditoría es independiente del rollback y respuesta filtra sucursales
+ok 7 - auditoría es independiente del rollback y respuesta filtra sucursales
+  ---
+  duration_ms: 2.0063
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: 8.2 pruebas integrales de flujo completo Stock-Kardex: detección, investigación, preview, resolución y auditoría
+ok 8 - 8.2 pruebas integrales de flujo completo Stock-Kardex: detección, investigación, preview, resolución y auditoría
+  ---
+  duration_ms: 29.6375
+  ...
+# Subtest: una regularización exige conteo, causa, responsable y evidencia
+ok 9 - una regularización exige conteo, causa, responsable y evidencia
+  ---
+  duration_ms: 2.7653
+  ...
+# Subtest: un conteo vacío no se interpreta como cero
+ok 10 - un conteo vacío no se interpreta como cero
+  ---
+  duration_ms: 0.5798
+  ...
+# Subtest: registrar Kardex omitido sólo cambia Kardex y muestra el efecto
+ok 11 - registrar Kardex omitido sólo cambia Kardex y muestra el efecto
+  ---
+  duration_ms: 2.7745
+  ...
+# Subtest: ajustar Stock requiere que el conteo confirme Kardex
+ok 12 - ajustar Stock requiere que el conteo confirme Kardex
+  ---
+  duration_ms: 2.139
+  ...
+# Subtest: muestra el resultado final del caso 3196 / 2617.25 con conteo 2617.25
+ok 13 - muestra el resultado final del caso 3196 / 2617.25 con conteo 2617.25
+  ---
+  duration_ms: 0.6004
+  ...
+# Subtest: el ajuste físico lleva ambos libros al conteo, incluso cuando es un tercer saldo
+ok 14 - el ajuste físico lleva ambos libros al conteo, incluso cuando es un tercer saldo
+  ---
+  duration_ms: 0.5972
+  ...
+# Subtest: el ciclo de vida acepta avances sustentados y rechaza saltos inválidos
+ok 15 - el ciclo de vida acepta avances sustentados y rechaza saltos inválidos
+  ---
+  duration_ms: 0.5792
+  ...
+# Subtest: la política deriva acciones compatibles para ambas direcciones de diferencia
+ok 16 - la política deriva acciones compatibles para ambas direcciones de diferencia
+  ---
+  duration_ms: 0.8018
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: 6.1 REGISTRAR_KARDEX_OMITIDO crea movimiento Kardex compensatorio y cierra a diferencia cero
+ok 17 - 6.1 REGISTRAR_KARDEX_OMITIDO crea movimiento Kardex compensatorio y cierra a diferencia cero
+  ---
+  duration_ms: 33.4225
+  ...
+# Subtest: 6.2 AJUSTAR_STOCK_POR_CONTEO modifica Stock físico según conteo verificado y cierra el caso
+ok 18 - 6.2 AJUSTAR_STOCK_POR_CONTEO modifica Stock físico según conteo verificado y cierra el caso
+  ---
+  duration_ms: 3.5076
+  ...
+# Subtest: AKFP ajusta Stock y Kardex al tercer conteo físico y deja nota trazable
+ok 19 - AKFP ajusta Stock y Kardex al tercer conteo físico y deja nota trazable
+  ---
+  duration_ms: 4.4397
+  ...
+# Subtest: AKFP revierte Stock, Kardex, nota, acción y auditoría cuando falla tarde
+ok 20 - AKFP revierte Stock, Kardex, nota, acción y auditoría cuando falla tarde
+  ---
+  duration_ms: 4.2383
+  ...
+# Subtest: 6.4 una diferencia residual rechaza la regularización
+ok 21 - 6.4 una diferencia residual rechaza la regularización
+  ---
+  duration_ms: 2.7214
+  ...
+# Subtest: 6.5 procesamiento por lote de casos procesa cada caso de forma independiente
+ok 22 - 6.5 procesamiento por lote de casos procesa cada caso de forma independiente
+  ---
+  duration_ms: 4.2952
+  ...
+# Subtest: un reintento con la misma clave devuelve la acción AKFP sin nuevo efecto
+ok 23 - un reintento con la misma clave devuelve la acción AKFP sin nuevo efecto
+  ---
+  duration_ms: 0.545
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: acepta los límites inclusivos de -1% y +1%
+ok 24 - acepta los límites inclusivos de -1% y +1%
+  ---
+  duration_ms: 4.2408
+  ...
+# Subtest: requiere conciliación fuera del límite
+ok 25 - requiere conciliación fuera del límite
+  ---
+  duration_ms: 0.5399
+  ...
+# Subtest: no evalúa automáticamente una cantidad enviada igual a cero
+ok 26 - no evalúa automáticamente una cantidad enviada igual a cero
+  ---
+  duration_ms: 0.3391
+  ...
+# Subtest: applyBlockedShortageReceipt contabiliza recepción normal y bloquea diferencia en producto temporal
+ok 27 - applyBlockedShortageReceipt contabiliza recepción normal y bloquea diferencia en producto temporal
+  ---
+  duration_ms: 16.5026
+  ...
+# Subtest: applyBlockedShortageReceipt rechaza operación si producto de diferencias no está disponible
+ok 28 - applyBlockedShortageReceipt rechaza operación si producto de diferencias no está disponible
+  ---
+  duration_ms: 2.8536
+  ...
+# Subtest: applyBlockedExcessReceipt contabiliza stock físico y movimiento de excedente
+ok 29 - applyBlockedExcessReceipt contabiliza stock físico y movimiento de excedente
+  ---
+  duration_ms: 2.0276
+  ...
+# Subtest: impide que la retención de un excedente se libere dos veces
+ok 30 - impide que la retención de un excedente se libere dos veces
+  ---
+  duration_ms: 31.8771
+  ...
+# Subtest: evaluación y manejo de ítem con cero enviado en recepción
+ok 31 - evaluación y manejo de ítem con cero enviado en recepción
+  ---
+  duration_ms: 0.3637
+  ...
+# Subtest: boleta mixta: todos los pesos físicos se contabilizan y sólo la decisión queda pendiente de revisión
+ok 32 - boleta mixta: todos los pesos físicos se contabilizan y sólo la decisión queda pendiente de revisión
+  ---
+  duration_ms: 1.0868
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Error: No tiene permiso para consultar revisiones de esta sucursal. Comuníquese con soporte para solicitar la habilitación.
+#     at permissionDeniedError (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\helpers\\permission-denied.js:30:3)
+#     at findAuthorizedNote (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\controllers\\transfer_review_notes.controller.js:81:11)
+#     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+#     at async documentaryCloseReviewDetail (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\controllers\\transfer_review_notes.controller.js:416:5)
+#     at async TestContext.<anonymous> (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\transfer-review-documentary-access.test.js:51:3)
+#     at async Test.run (node:internal/test_runner/test:797:9)
+#     at async Test.processPendingSubtests (node:internal/test_runner/test:526:7) {
+#   statusCode: 403
+# }
+# Subtest: el permiso operativo concilia, pero no habilita el endpoint correctivo administrativo
+ok 33 - el permiso operativo concilia, pero no habilita el endpoint correctivo administrativo
+  ---
+  duration_ms: 2.2123
+  ...
+# Subtest: rechaza la conciliacion antes del servicio cuando la boleta pertenece a otra sucursal
+ok 34 - rechaza la conciliacion antes del servicio cuando la boleta pertenece a otra sucursal
+  ---
+  duration_ms: 3.7863
+  ...
+# Subtest: genera la clave idempotente cuando el cliente o un intermediario no la envia
+ok 35 - genera la clave idempotente cuando el cliente o un intermediario no la envia
+  ---
+  duration_ms: 0.9343
+  ...
+# Subtest: la disponibilidad descuenta retenciones activas aun despues del cierre documental
+ok 36 - la disponibilidad descuenta retenciones activas aun despues del cierre documental
+  ---
+  duration_ms: 1.7127
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: concilia el caso operativo DIFERENCIA_BALANZAS sin adjuntos ni inventario
+ok 37 - concilia el caso operativo DIFERENCIA_BALANZAS sin adjuntos ni inventario
+  ---
+  duration_ms: 43.6811
+  ...
+# Subtest: concilia el caso operativo MATERIAL_INCORRECTO sin adjuntos ni inventario
+ok 38 - concilia el caso operativo MATERIAL_INCORRECTO sin adjuntos ni inventario
+  ---
+  duration_ms: 4.5574
+  ...
+# Subtest: concilia el caso operativo DISCREPANCIA_FISICO_SISTEMA sin adjuntos ni inventario
+ok 39 - concilia el caso operativo DISCREPANCIA_FISICO_SISTEMA sin adjuntos ni inventario
+  ---
+  duration_ms: 6.4816
+  ...
+# Subtest: concilia el caso operativo ERROR_PESO_REGISTRADO sin adjuntos ni inventario
+ok 40 - concilia el caso operativo ERROR_PESO_REGISTRADO sin adjuntos ni inventario
+  ---
+  duration_ms: 6.0832
+  ...
+# Subtest: concilia el caso operativo PERDIDA_TRANSITO sin adjuntos ni inventario
+ok 41 - concilia el caso operativo PERDIDA_TRANSITO sin adjuntos ni inventario
+  ---
+  duration_ms: 4.1079
+  ...
+# Subtest: concilia el caso operativo ERROR_DIGITACION sin adjuntos ni inventario
+ok 42 - concilia el caso operativo ERROR_DIGITACION sin adjuntos ni inventario
+  ---
+  duration_ms: 3.9428
+  ...
+# Subtest: cierra EXCEDENTE_PARA_REVISION completo sin escribir stock ni Kardex
+ok 43 - cierra EXCEDENTE_PARA_REVISION completo sin escribir stock ni Kardex
+  ---
+  duration_ms: 1.9118
+  ...
+# Subtest: cierra FALTANTE_PARA_REVISION completo sin escribir stock ni Kardex
+ok 44 - cierra FALTANTE_PARA_REVISION completo sin escribir stock ni Kardex
+  ---
+  duration_ms: 1.427
+  ...
+# Subtest: libera la parte regularizada y conserva retenido sólo el remanente
+ok 45 - libera la parte regularizada y conserva retenido sólo el remanente
+  ---
+  duration_ms: 1.9945
+  ...
+# Subtest: asigna al actor y cierra automaticamente el ultimo pendiente
+ok 46 - asigna al actor y cierra automaticamente el ultimo pendiente
+  ---
+  duration_ms: 1.961
+  ...
+# Subtest: rechaza motivos incompatibles, referencias insuficientes y evidencia faltante
+ok 47 - rechaza motivos incompatibles, referencias insuficientes y evidencia faltante
+  ---
+  duration_ms: 2.9317
+  ...
+# Subtest: registra la evidencia requerida en la misma conciliacion
+ok 48 - registra la evidencia requerida en la misma conciliacion
+  ---
+  duration_ms: 2.5304
+  ...
+# Subtest: registra caso operativo con referencias, ejecutor y autorizador sin adjuntos
+ok 49 - registra caso operativo con referencias, ejecutor y autorizador sin adjuntos
+  ---
+  duration_ms: 2.4107
+  ...
+# Subtest: rechaza referencias incompletas y perdida en transito para un excedente
+ok 50 - rechaza referencias incompletas y perdida en transito para un excedente
+  ---
+  duration_ms: 2.0804
+  ...
+# Subtest: un reintento idempotente no vuelve a tocar detalle, retenciones ni eventos
+ok 51 - un reintento idempotente no vuelve a tocar detalle, retenciones ni eventos
+  ---
+  duration_ms: 0.5648
+  ...
+# Subtest: dos confirmaciones simultaneas se serializan sin duplicar acciones ni eventos
+ok 52 - dos confirmaciones simultaneas se serializan sin duplicar acciones ni eventos
+  ---
+  duration_ms: 1.5218
+  ...
+# Subtest: un fallo tardio revierte asignacion, conciliacion, retenciones y eventos
+ok 53 - un fallo tardio revierte asignacion, conciliacion, retenciones y eventos
+  ---
+  duration_ms: 2.4961
+  ...
+# Subtest: no libera la retención ni cierra cuando la operación existente deja Stock y Kardex descuadrados
+ok 54 - no libera la retención ni cierra cuando la operación existente deja Stock y Kardex descuadrados
+  ---
+  duration_ms: 1.064
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: la resolución de faltante verifica producto de diferencia y producto recibido
+ok 55 - la resolución de faltante verifica producto de diferencia y producto recibido
+  ---
+  duration_ms: 3.9513
+  ...
+# Subtest: la resolución manual verifica ambas ubicaciones aunque no altere inventario
+ok 56 - la resolución manual verifica ambas ubicaciones aunque no altere inventario
+  ---
+  duration_ms: 0.3633
+  ...
+# Subtest: preserva el peso físico recibido y permite excedentes por producto
+ok 57 - preserva el peso físico recibido y permite excedentes por producto
+  ---
+  duration_ms: 5.5708
+  ...
+# Subtest: rechaza cantidades negativas, no numéricas o con más de dos decimales
+ok 58 - rechaza cantidades negativas, no numéricas o con más de dos decimales
+  ---
+  duration_ms: 0.8733
+  ...
+# Subtest: rechaza detalles ajenos y duplicados
+ok 59 - rechaza detalles ajenos y duplicados
+  ---
+  duration_ms: 0.6566
+  ...
+# Subtest: descompone un excedente en recepción base y diferencia consecutiva
+ok 60 - descompone un excedente en recepción base y diferencia consecutiva
+  ---
+  duration_ms: 0.5581
+  ...
+# Subtest: concilia varios ítems con excedente, faltante y recepción exacta
+ok 61 - concilia varios ítems con excedente, faltante y recepción exacta
+  ---
+  duration_ms: 0.7029
+  ...
+# Subtest: resume la boleta recibida con excedente, faltante y pesos totales
+ok 62 - resume la boleta recibida con excedente, faltante y pesos totales
+  ---
+  duration_ms: 2.482
+  ...
+# Subtest: recepción con excedente actualiza stock, Kardex y una nota independiente
+ok 63 - recepción con excedente actualiza stock, Kardex y una nota independiente
+  ---
+  duration_ms: 730.8998
+  ...
+# Subtest: recepción sin diferencia no crea movimientos ni notas de revisión
+ok 64 - recepción sin diferencia no crea movimientos ni notas de revisión
+  ---
+  duration_ms: 28.1121
+  ...
+# Subtest: recepción con faltante registra la diferencia consolidada en el producto MERMAS seleccionado
+ok 65 - recepción con faltante registra la diferencia consolidada en el producto MERMAS seleccionado
+  ---
+  duration_ms: 58.2952
+  ...
+# Subtest: recepción con varios faltantes crea un único movimiento y nota consolidada
+ok 66 - recepción con varios faltantes crea un único movimiento y nota consolidada
+  ---
+  duration_ms: 12.9947
+  ...
+# Subtest: recepción con varios excedentes crea un movimiento y nota por producto
+ok 67 - recepción con varios excedentes crea un movimiento y nota por producto
+  ---
+  duration_ms: 41.8173
+  ...
+# Subtest: faltante sin producto MERMAS válido revierte la recepción sin movimientos parciales
+ok 68 - faltante sin producto MERMAS válido revierte la recepción sin movimientos parciales
+  ---
+  duration_ms: 7.4794
+  ...
+1..68
+# tests 75
+# suites 0
+# pass 75
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2424.5373

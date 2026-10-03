@@ -52,20 +52,20 @@ test('1.2 caracterización de consulta y diagnóstico Stock-Kardex: Stock > Kard
   // Caso 1: Stock > Kardex con candidato confirmado
   const item1 = diagnostic.find(d => d.id_product === 101);
   assert.equal(item1.direction, 'STOCK_MAYOR_QUE_KARDEX');
-  assert.equal(item1.magnitude, 10);
+  assert.equal(item1.magnitude, '10.0000');
   assert.equal(item1.has_confirmed_relation, true);
   assert.equal(item1.candidate_document_count, 1);
 
   // Caso 2: Kardex > Stock (falta stock físico o kardex inflado)
   const item2 = diagnostic.find(d => d.id_product === 102);
   assert.equal(item2.direction, 'KARDEX_MAYOR_QUE_STOCK');
-  assert.equal(item2.magnitude, 5);
+  assert.equal(item2.magnitude, '5.0000');
   assert.equal(item2.has_confirmed_relation, false);
 
   // Caso 3: Causa desconocida sin candidatos vinculados
   const item3 = diagnostic.find(d => d.id_product === 103);
   assert.equal(item3.direction, 'STOCK_MAYOR_QUE_KARDEX');
-  assert.equal(item3.magnitude, 15);
+  assert.equal(item3.magnitude, '15.0000');
   assert.equal(item3.candidate_document_count, 0);
 
   // Irregularidades normalizadas

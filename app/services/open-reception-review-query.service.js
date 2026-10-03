@@ -4,6 +4,7 @@ const { isAcceptedToleranceDecision } = require('../constants/transfer-reception
 
 const { Op } = require('sequelize');
 const { REVIEW_STATUSES } = require('../constants/transfer-review');
+const { exactSubtract, exactMax } = require('../helpers/number-formatter');
 
 const buildOpenReviewWhere = (extra = {}) => ({
   [Op.or]: [
@@ -38,10 +39,7 @@ const mapOpenReviewNote = (note) => {
     pending_items: details.filter((detail) => detail.reconciliation_status !== REVIEW_STATUSES.COMPLETED).length,
     details: details.map((detail) => ({
       ...detail,
-      quantity_remaining: Math.max(
-        0,
-        Number(detail.quantity_difference || 0) - Number(detail.quantity_resolved || 0),
-      ),
+      quantity_remaining: exactMax(0, exactSubtract(detail.quantity_difference || 0, detail.quantity_resolved || 0)),
     })),
   };
 };

@@ -3,6 +3,7 @@
 const { Stock } = require('../database/config');
 const { hasAvailableStock } = require('./stock-availability.service');
 const { applyExplicitEffect } = require('./inventory-posting.service');
+const { exactAdd, exactCompare } = require('../helpers/number-formatter');
 
 const operationError = (message, statusCode = 422) => Object.assign(new Error(message), { statusCode });
 
@@ -21,7 +22,7 @@ const applyOperationEffect = async ({ direction, productId, sucursalId, storageI
   if (direction === 'OUTPUT') {
     const stock = await lockStock({ productId, sucursalId, storageId, transaction });
     const availability = await hasAvailableStock(stock, quantity, transaction);
-    if (Number(availability.available_stock) + Number(heldAllowance || 0) + 0.0001 < Number(quantity)) {
+    if (exactCompare(exactAdd(availability.available_stock, heldAllowance || 0), quantity) < 0) {
       throw operationError(`Stock insuficiente para ${stock.product.cod} - ${stock.product.name}. Disponible: ${availability.available_stock}.`, 409);
     }
   }

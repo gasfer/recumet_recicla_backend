@@ -1,0 +1,356 @@
+TAP version 13
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: dos operaciones concurrentes conservan política propia durante actualización 4→2
+ok 1 - dos operaciones concurrentes conservan política propia durante actualización 4→2
+  ---
+  duration_ms: 5.0523
+  ...
+# Subtest: paridad detecta 0,0001 y duplicados compensados sin redondear por precisión activa
+ok 2 - paridad detecta 0,0001 y duplicados compensados sin redondear por precisión activa
+  ---
+  duration_ms: 4.7474
+  ...
+# Subtest: empresa operativa se resuelve sin id fijo y rechaza selección ambigua
+ok 3 - empresa operativa se resuelve sin id fijo y rechaza selección ambigua
+  ---
+  duration_ms: 1.2539
+  ...
+# Subtest: actualización decimal valida rango y audita dentro de la transacción
+ok 4 - actualización decimal valida rango y audita dentro de la transacción
+  ---
+  duration_ms: 171.788
+  ...
+# Subtest: cierre rechaza guía pendiente aunque remanente y retención sean cero
+ok 5 - cierre rechaza guía pendiente aunque remanente y retención sean cero
+  ---
+  duration_ms: 1.7099
+  ...
+# Subtest: auditoría es independiente del rollback y respuesta filtra sucursales
+ok 6 - auditoría es independiente del rollback y respuesta filtra sucursales
+  ---
+  duration_ms: 1.1258
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: 8.2 pruebas integrales de flujo completo Stock-Kardex: detección, investigación, preview, resolución y auditoría
+ok 7 - 8.2 pruebas integrales de flujo completo Stock-Kardex: detección, investigación, preview, resolución y auditoría
+  ---
+  duration_ms: 24.9753
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: 6.1 REGISTRAR_KARDEX_OMITIDO crea movimiento Kardex compensatorio y cierra a diferencia cero
+ok 8 - 6.1 REGISTRAR_KARDEX_OMITIDO crea movimiento Kardex compensatorio y cierra a diferencia cero
+  ---
+  duration_ms: 13.6263
+  ...
+# Subtest: 6.2 AJUSTAR_STOCK_POR_CONTEO modifica Stock físico según conteo verificado y cierra el caso
+ok 9 - 6.2 AJUSTAR_STOCK_POR_CONTEO modifica Stock físico según conteo verificado y cierra el caso
+  ---
+  duration_ms: 2.3897
+  ...
+# Subtest: AKFP ajusta Stock y Kardex al tercer conteo físico y deja nota trazable
+ok 10 - AKFP ajusta Stock y Kardex al tercer conteo físico y deja nota trazable
+  ---
+  duration_ms: 3.1718
+  ...
+# Subtest: AKFP revierte Stock, Kardex, nota, acción y auditoría cuando falla tarde
+ok 11 - AKFP revierte Stock, Kardex, nota, acción y auditoría cuando falla tarde
+  ---
+  duration_ms: 3.8262
+  ...
+# Subtest: 6.4 una diferencia residual rechaza la regularización
+ok 12 - 6.4 una diferencia residual rechaza la regularización
+  ---
+  duration_ms: 1.6784
+  ...
+# Subtest: 6.5 procesamiento por lote de casos procesa cada caso de forma independiente
+ok 13 - 6.5 procesamiento por lote de casos procesa cada caso de forma independiente
+  ---
+  duration_ms: 3.2988
+  ...
+# Subtest: un reintento con la misma clave devuelve la acción AKFP sin nuevo efecto
+ok 14 - un reintento con la misma clave devuelve la acción AKFP sin nuevo efecto
+  ---
+  duration_ms: 3.5042
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: acepta los límites inclusivos de -1% y +1%
+ok 15 - acepta los límites inclusivos de -1% y +1%
+  ---
+  duration_ms: 3.9393
+  ...
+# Subtest: requiere conciliación fuera del límite
+ok 16 - requiere conciliación fuera del límite
+  ---
+  duration_ms: 0.5318
+  ...
+# Subtest: no evalúa automáticamente una cantidad enviada igual a cero
+ok 17 - no evalúa automáticamente una cantidad enviada igual a cero
+  ---
+  duration_ms: 0.2987
+  ...
+# Subtest: applyBlockedShortageReceipt contabiliza recepción normal y bloquea diferencia en producto temporal
+ok 18 - applyBlockedShortageReceipt contabiliza recepción normal y bloquea diferencia en producto temporal
+  ---
+  duration_ms: 7.3335
+  ...
+# Subtest: applyBlockedShortageReceipt rechaza operación si producto de diferencias no está disponible
+ok 19 - applyBlockedShortageReceipt rechaza operación si producto de diferencias no está disponible
+  ---
+  duration_ms: 1.1235
+  ...
+# Subtest: applyBlockedExcessReceipt contabiliza stock físico y movimiento de excedente
+ok 20 - applyBlockedExcessReceipt contabiliza stock físico y movimiento de excedente
+  ---
+  duration_ms: 1.3555
+  ...
+# Subtest: impide que la retención de un excedente se libere dos veces
+ok 21 - impide que la retención de un excedente se libere dos veces
+  ---
+  duration_ms: 24.0826
+  ...
+# Subtest: evaluación y manejo de ítem con cero enviado en recepción
+ok 22 - evaluación y manejo de ítem con cero enviado en recepción
+  ---
+  duration_ms: 0.3587
+  ...
+# Subtest: boleta mixta: todos los pesos físicos se contabilizan y sólo la decisión queda pendiente de revisión
+ok 23 - boleta mixta: todos los pesos físicos se contabilizan y sólo la decisión queda pendiente de revisión
+  ---
+  duration_ms: 0.8832
+  ...
+# Subtest: permite una diferencia sin registro vigente y conserva la previsualización de solo lectura
+ok 24 - permite una diferencia sin registro vigente y conserva la previsualización de solo lectura
+  ---
+  duration_ms: 4.0127
+  ...
+# Subtest: bloquea un registro activo parcial aunque todavía exista remanente
+ok 25 - bloquea un registro activo parcial aunque todavía exista remanente
+  ---
+  duration_ms: 0.4354
+  ...
+# Subtest: bloquea un registro activo que cubre toda la diferencia
+ok 26 - bloquea un registro activo que cubre toda la diferencia
+  ---
+  duration_ms: 0.4086
+  ...
+# Subtest: bloquea evidencia histórica ambigua y permite registros únicamente reversados
+ok 27 - bloquea evidencia histórica ambigua y permite registros únicamente reversados
+  ---
+  duration_ms: 1.5996
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Error: No tiene permiso para consultar revisiones de esta sucursal. Comuníquese con soporte para solicitar la habilitación.
+#     at permissionDeniedError (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\helpers\\permission-denied.js:30:3)
+#     at findAuthorizedNote (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\controllers\\transfer_review_notes.controller.js:81:11)
+#     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+#     at async documentaryCloseReviewDetail (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\controllers\\transfer_review_notes.controller.js:416:5)
+#     at async TestContext.<anonymous> (D:\\RECUMET_RECICLA_OFICIAL\\RECICLA_2026\\recumet_recicla_backend\\app\\tests\\transfer-review-documentary-access.test.js:51:3)
+#     at async Test.run (node:internal/test_runner/test:797:9)
+#     at async Test.processPendingSubtests (node:internal/test_runner/test:526:7) {
+#   statusCode: 403
+# }
+# Subtest: el permiso operativo concilia, pero no habilita el endpoint correctivo administrativo
+ok 28 - el permiso operativo concilia, pero no habilita el endpoint correctivo administrativo
+  ---
+  duration_ms: 2.6453
+  ...
+# Subtest: rechaza la conciliacion antes del servicio cuando la boleta pertenece a otra sucursal
+ok 29 - rechaza la conciliacion antes del servicio cuando la boleta pertenece a otra sucursal
+  ---
+  duration_ms: 3.4844
+  ...
+# Subtest: genera la clave idempotente cuando el cliente o un intermediario no la envia
+ok 30 - genera la clave idempotente cuando el cliente o un intermediario no la envia
+  ---
+  duration_ms: 0.9262
+  ...
+# Subtest: la disponibilidad descuenta retenciones activas aun despues del cierre documental
+ok 31 - la disponibilidad descuenta retenciones activas aun despues del cierre documental
+  ---
+  duration_ms: 1.675
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: concilia el caso operativo DIFERENCIA_BALANZAS sin adjuntos ni inventario
+ok 32 - concilia el caso operativo DIFERENCIA_BALANZAS sin adjuntos ni inventario
+  ---
+  duration_ms: 43.7376
+  ...
+# Subtest: concilia el caso operativo MATERIAL_INCORRECTO sin adjuntos ni inventario
+ok 33 - concilia el caso operativo MATERIAL_INCORRECTO sin adjuntos ni inventario
+  ---
+  duration_ms: 2.2735
+  ...
+# Subtest: concilia el caso operativo DISCREPANCIA_FISICO_SISTEMA sin adjuntos ni inventario
+ok 34 - concilia el caso operativo DISCREPANCIA_FISICO_SISTEMA sin adjuntos ni inventario
+  ---
+  duration_ms: 1.8968
+  ...
+# Subtest: concilia el caso operativo ERROR_PESO_REGISTRADO sin adjuntos ni inventario
+ok 35 - concilia el caso operativo ERROR_PESO_REGISTRADO sin adjuntos ni inventario
+  ---
+  duration_ms: 1.8982
+  ...
+# Subtest: concilia el caso operativo PERDIDA_TRANSITO sin adjuntos ni inventario
+ok 36 - concilia el caso operativo PERDIDA_TRANSITO sin adjuntos ni inventario
+  ---
+  duration_ms: 1.7978
+  ...
+# Subtest: concilia el caso operativo ERROR_DIGITACION sin adjuntos ni inventario
+ok 37 - concilia el caso operativo ERROR_DIGITACION sin adjuntos ni inventario
+  ---
+  duration_ms: 1.8324
+  ...
+# Subtest: cierra EXCEDENTE_PARA_REVISION completo sin escribir stock ni Kardex
+ok 38 - cierra EXCEDENTE_PARA_REVISION completo sin escribir stock ni Kardex
+  ---
+  duration_ms: 1.2305
+  ...
+# Subtest: cierra FALTANTE_PARA_REVISION completo sin escribir stock ni Kardex
+ok 39 - cierra FALTANTE_PARA_REVISION completo sin escribir stock ni Kardex
+  ---
+  duration_ms: 0.814
+  ...
+# Subtest: libera la parte regularizada y conserva retenido sólo el remanente
+ok 40 - libera la parte regularizada y conserva retenido sólo el remanente
+  ---
+  duration_ms: 1.765
+  ...
+# Subtest: asigna al actor y cierra automaticamente el ultimo pendiente
+ok 41 - asigna al actor y cierra automaticamente el ultimo pendiente
+  ---
+  duration_ms: 2.5301
+  ...
+# Subtest: rechaza motivos incompatibles, referencias insuficientes y evidencia faltante
+ok 42 - rechaza motivos incompatibles, referencias insuficientes y evidencia faltante
+  ---
+  duration_ms: 2.8677
+  ...
+# Subtest: registra la evidencia requerida en la misma conciliacion
+ok 43 - registra la evidencia requerida en la misma conciliacion
+  ---
+  duration_ms: 2.1837
+  ...
+# Subtest: registra caso operativo con referencias, ejecutor y autorizador sin adjuntos
+ok 44 - registra caso operativo con referencias, ejecutor y autorizador sin adjuntos
+  ---
+  duration_ms: 1.7148
+  ...
+# Subtest: rechaza referencias incompletas y perdida en transito para un excedente
+ok 45 - rechaza referencias incompletas y perdida en transito para un excedente
+  ---
+  duration_ms: 1.0959
+  ...
+# Subtest: un reintento idempotente no vuelve a tocar detalle, retenciones ni eventos
+ok 46 - un reintento idempotente no vuelve a tocar detalle, retenciones ni eventos
+  ---
+  duration_ms: 0.3645
+  ...
+# Subtest: dos confirmaciones simultaneas se serializan sin duplicar acciones ni eventos
+ok 47 - dos confirmaciones simultaneas se serializan sin duplicar acciones ni eventos
+  ---
+  duration_ms: 1.3342
+  ...
+# Subtest: un fallo tardio revierte asignacion, conciliacion, retenciones y eventos
+ok 48 - un fallo tardio revierte asignacion, conciliacion, retenciones y eventos
+  ---
+  duration_ms: 1.3168
+  ...
+# Subtest: no libera la retención ni cierra cuando la operación existente deja Stock y Kardex descuadrados
+ok 49 - no libera la retención ni cierra cuando la operación existente deja Stock y Kardex descuadrados
+  ---
+  duration_ms: 1.1964
+  ...
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Not overriding built-in method from model attribute: update
+# Subtest: la resolución de faltante verifica producto de diferencia y producto recibido
+ok 50 - la resolución de faltante verifica producto de diferencia y producto recibido
+  ---
+  duration_ms: 2.8118
+  ...
+# Subtest: la resolución manual verifica ambas ubicaciones aunque no altere inventario
+ok 51 - la resolución manual verifica ambas ubicaciones aunque no altere inventario
+  ---
+  duration_ms: 0.3949
+  ...
+# Subtest: preserva el peso físico recibido y permite excedentes por producto
+ok 52 - preserva el peso físico recibido y permite excedentes por producto
+  ---
+  duration_ms: 5.2591
+  ...
+# Subtest: rechaza cantidades negativas, no numéricas o con más de dos decimales
+ok 53 - rechaza cantidades negativas, no numéricas o con más de dos decimales
+  ---
+  duration_ms: 0.8869
+  ...
+# Subtest: rechaza detalles ajenos y duplicados
+ok 54 - rechaza detalles ajenos y duplicados
+  ---
+  duration_ms: 0.605
+  ...
+# Subtest: descompone un excedente en recepción base y diferencia consecutiva
+ok 55 - descompone un excedente en recepción base y diferencia consecutiva
+  ---
+  duration_ms: 0.5688
+  ...
+# Subtest: concilia varios ítems con excedente, faltante y recepción exacta
+ok 56 - concilia varios ítems con excedente, faltante y recepción exacta
+  ---
+  duration_ms: 0.6702
+  ...
+# Subtest: resume la boleta recibida con excedente, faltante y pesos totales
+ok 57 - resume la boleta recibida con excedente, faltante y pesos totales
+  ---
+  duration_ms: 2.5405
+  ...
+# Subtest: recepción con excedente actualiza stock, Kardex y una nota independiente
+ok 58 - recepción con excedente actualiza stock, Kardex y una nota independiente
+  ---
+  duration_ms: 661.6161
+  ...
+# Subtest: recepción sin diferencia no crea movimientos ni notas de revisión
+ok 59 - recepción sin diferencia no crea movimientos ni notas de revisión
+  ---
+  duration_ms: 8.1402
+  ...
+# Subtest: recepción con faltante registra la diferencia consolidada en el producto MERMAS seleccionado
+ok 60 - recepción con faltante registra la diferencia consolidada en el producto MERMAS seleccionado
+  ---
+  duration_ms: 35.6869
+  ...
+# Subtest: recepción con varios faltantes crea un único movimiento y nota consolidada
+ok 61 - recepción con varios faltantes crea un único movimiento y nota consolidada
+  ---
+  duration_ms: 12.0899
+  ...
+# Subtest: recepción con varios excedentes crea un movimiento y nota por producto
+ok 62 - recepción con varios excedentes crea un movimiento y nota por producto
+  ---
+  duration_ms: 27.1966
+  ...
+# Subtest: faltante sin producto MERMAS válido revierte la recepción sin movimientos parciales
+ok 63 - faltante sin producto MERMAS válido revierte la recepción sin movimientos parciales
+  ---
+  duration_ms: 10.6606
+  ...
+1..63
+# tests 63
+# suites 0
+# pass 63
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1781.0959

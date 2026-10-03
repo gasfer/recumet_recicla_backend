@@ -1,5 +1,6 @@
 'use strict';
 
+const { exactCompare } = require('../helpers/number-formatter');
 const { Op } = require('sequelize');
 const { Transfers, TransferReviewNote, TransferReviewNoteDetail, TransferReviewInventoryHold, TransferReviewResolutionAction } = require('../database/config');
 
@@ -20,7 +21,7 @@ const getReceptionCancellationAvailability = (notes = []) => {
   const openNotes = activeNotes.filter(({ reconciliation_status, resolved_at }) => reconciliation_status !== COMPLETED || !resolved_at);
   const openDetails = details.filter((detail) => (
     detail.reconciliation_status !== COMPLETED
-    || Number(detail.quantity_resolved || 0) + 0.0001 < Number(detail.quantity_difference || 0)
+    || exactCompare(detail.quantity_resolved || 0, detail.quantity_difference || 0) !== 0
   ));
   const holds = details.flatMap((detail) => detail.inventoryHolds || [])
     .filter(({ disposition }) => disposition !== 'LIBERADO_POR_AJUSTE');
@@ -61,7 +62,7 @@ const getCancellationEligibility = async ({ transferId, transaction }) => {
   }) : [];
   const openDetails = details.filter((detail) => (
     detail.reconciliation_status !== COMPLETED
-    || Number(detail.quantity_resolved || 0) + 0.0001 < Number(detail.quantity_difference || 0)
+    || exactCompare(detail.quantity_resolved || 0, detail.quantity_difference || 0) !== 0
   ));
   const detailIds = details.map(({ id }) => id);
   const holds = detailIds.length ? await TransferReviewInventoryHold.findAll({

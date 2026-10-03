@@ -2,7 +2,7 @@
 
 const { QueryTypes } = require('sequelize');
 const { sequelize, Stock } = require('../database/config');
-const { decimalSubtract, decimalTolerance } = require('../helpers/number-formatter');
+const { exactAdd, exactSubtract, exactCompare, exactAbs } = require('../helpers/number-formatter');
 
 const availabilityKey = (productId, sucursalId, storageId) => `${productId}:${sucursalId}:${storageId}`;
 
@@ -38,7 +38,7 @@ const getReviewQuantities = async ({ productIds = [], idSucursal, idStorage, tra
 
   return new Map(rows.map((row) => [
     availabilityKey(row.id_product, row.id_sucursal, row.id_storage),
-    Number(row.quantity_in_review),
+    exactAdd(row.quantity_in_review, 0),
   ]));
 };
 
@@ -47,7 +47,7 @@ const getReviewQuantitiesByProduct = async ({ productIds = [], idSucursal, idSto
   const totals = new Map();
   for (const [key, quantity] of byLocation.entries()) {
     const productId = Number(key.split(':')[0]);
-    totals.set(productId, (totals.get(productId) || 0) + Number(quantity));
+    totals.set(productId, exactAdd(totals.get(productId) || '0.0000', quantity));
   }
   return totals;
 };
@@ -60,11 +60,11 @@ const attachAvailabilityToKardexRows = async (rows = [], context = {}) => {
     transaction: context.transaction,
   });
   for (const row of rows) {
-    const physicalStock = Number(row.dataValues.quantity_saldo || 0);
-    const stockInReview = quantities.get(Number(row.id_product)) || 0;
+    const physicalStock = exactAdd(row.dataValues.quantity_saldo || 0, 0);
+    const stockInReview = quantities.get(Number(row.id_product)) || '0.0000';
     row.dataValues.physical_stock = physicalStock;
     row.dataValues.stock_in_review = stockInReview;
-    row.dataValues.available_stock = Math.max(0, physicalStock - stockInReview);
+    row.dataValues.available_stock = exactCompare(physicalStock, stockInReview) < 0 ? '0.0000' : exactSubtract(physicalStock, stockInReview);
   }
   return rows;
 };
@@ -77,12 +77,12 @@ const getStockAvailability = async (stock, transaction) => {
     idStorage: stock.id_storage,
     transaction,
   });
-  const physicalStock = Number(stock.stock);
-  const stockInReview = quantities.get(availabilityKey(stock.id_product, stock.id_sucursal, stock.id_storage)) || 0;
+  const physicalStock = exactAdd(stock.stock, 0);
+  const stockInReview = quantities.get(availabilityKey(stock.id_product, stock.id_sucursal, stock.id_storage)) || '0.0000';
   return {
     physical_stock: physicalStock,
     stock_in_review: stockInReview,
-    available_stock: Math.max(0, physicalStock - stockInReview),
+    available_stock: exactCompare(physicalStock, stockInReview) < 0 ? '0.0000' : exactSubtract(physicalStock, stockInReview),
   };
 };
 
@@ -92,18 +92,18 @@ const attachAvailabilityToStocks = async (stocks = [], transaction) => {
     transaction,
   });
   for (const stock of stocks) {
-    const physicalStock = Number(stock.stock);
-    const stockInReview = quantities.get(availabilityKey(stock.id_product, stock.id_sucursal, stock.id_storage)) || 0;
+    const physicalStock = exactAdd(stock.stock, 0);
+    const stockInReview = quantities.get(availabilityKey(stock.id_product, stock.id_sucursal, stock.id_storage)) || '0.0000';
     stock.dataValues.physical_stock = physicalStock;
     stock.dataValues.stock_in_review = stockInReview;
-    stock.dataValues.available_stock = Math.max(0, physicalStock - stockInReview);
+    stock.dataValues.available_stock = exactCompare(physicalStock, stockInReview) < 0 ? '0.0000' : exactSubtract(physicalStock, stockInReview);
   }
   return stocks;
 };
 
 const hasAvailableStock = async (stock, requestedQuantity, transaction) => {
   const availability = await getStockAvailability(stock, transaction);
-  return { ...availability, sufficient: availability.available_stock >= Number(requestedQuantity) };
+  return { ...availability, sufficient: exactCompare(availability.available_stock, requestedQuantity) >= 0 };
 };
 
 const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) => {
@@ -203,7 +203,7 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
     WHERE dt.id_product IN (:productIds)
       AND tr.status IN ('PENDING', 'RECEIVED')
       AND dt.quantity_received IS NOT NULL
-      AND ABS(dt.quantity - dt.quantity_received) > 0.0001
+      AND ABS(dt.quantity - dt.quantity_received) > 0
       ${idSucursal ? 'AND tr.id_sucursal_received = :idSucursal' : ''}
       ${idStorage ? 'AND tr.id_storage_received = :idStorage' : ''}
     ORDER BY tr.date_send DESC
@@ -225,8 +225,8 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
   // 4. Adjuntar trazabilidad y metadatos diagnósticos extendidos a cada fila (§5.1)
   const now = new Date();
   return rows.map(row => {
-    const difference = Number(row.physical_kardex_difference);
-    const absDifference = Math.abs(difference);
+    const difference = exactAdd(row.physical_kardex_difference, 0);
+    const absDifference = exactAbs(difference);
     const candidates = traceMap[availabilityKey(row.id_product, row.id_sucursal, row.id_storage)] || [];
 
     // Calcular antigüedad desde la última actualización de Stock
@@ -234,7 +234,7 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
     const ageInDays = stockUpdatedAt ? Math.floor((now - stockUpdatedAt) / 86_400_000) : null;
 
     // Dirección explícita sin inferir cuál saldo es correcto (§5.1, Scenario: Dirección)
-    const direction = difference > 0 ? 'STOCK_MAYOR_QUE_KARDEX' : 'KARDEX_MAYOR_QUE_STOCK';
+    const direction = exactCompare(difference, 0) > 0 ? 'STOCK_MAYOR_QUE_KARDEX' : 'KARDEX_MAYOR_QUE_STOCK';
 
     // Cada candidato preserva su relation_confidence: 'CANDIDATA' | 'CONFIRMADA'
     // Una relación CANDIDATA no autoriza corrección por sí sola (spec §5.1).
@@ -257,27 +257,27 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
 };
 
 const normalizeStockKardexIrregularity = (row) => {
-  const physicalStock = Number(row.physical_stock);
-  const kardexBalance = Number(row.kardex_balance);
-  const difference = Number(row.physical_kardex_difference);
+  const physicalStock = exactAdd(row.physical_stock, 0);
+  const kardexBalance = exactAdd(row.kardex_balance, 0);
+  const difference = exactAdd(row.physical_kardex_difference, 0);
   return {
     ...row,
     id_product: Number(row.id_product),
     id_sucursal: Number(row.id_sucursal),
     id_storage: Number(row.id_storage),
     physical_stock: physicalStock,
-    stock_in_review: Number(row.stock_in_review),
-    available_stock: Number(row.available_stock),
+    stock_in_review: exactAdd(row.stock_in_review, 0),
+    available_stock: exactAdd(row.available_stock, 0),
     kardex_balance: kardexBalance,
     physical_kardex_difference: difference,
-    difference_direction: difference > 0 ? 'STOCK_GREATER_THAN_KARDEX' : 'KARDEX_GREATER_THAN_STOCK',
+    difference_direction: exactCompare(difference, 0) > 0 ? 'STOCK_GREATER_THAN_KARDEX' : 'KARDEX_GREATER_THAN_STOCK',
   };
 };
 
 const getStockKardexIrregularities = async (filters = {}) => {
   const diagnostic = await getStockDiagnostic(filters);
   return diagnostic
-    .filter((row) => Math.abs(Number(row.physical_kardex_difference)) > 0.0001)
+    .filter((row) => exactCompare(row.physical_kardex_difference, 0) !== 0)
     .map(normalizeStockKardexIrregularity);
 };
 
@@ -312,10 +312,10 @@ const getRetainedWithoutAdjustmentReport = async ({ idSucursal, idStorage, limit
 
 const getReviewStockKardexDifferences = async ({ noteId, transaction }) => sequelize.query(`
   WITH latest AS (
-    SELECT DISTINCT ON (id_product, id_sucursal, id_storage)
-      id_product, id_sucursal, id_storage, saldo
+    SELECT id_product, id_sucursal, id_storage,
+      COALESCE(SUM(quantity_input),0) - COALESCE(SUM(quantity_output),0) AS saldo
     FROM view_kardex_detalle
-    ORDER BY id_product, id_sucursal, id_storage, date DESC, id DESC
+    GROUP BY id_product, id_sucursal, id_storage
   ), affected AS (
     SELECT n.id_product, n.id_sucursal, n.id_storage
     FROM transfer_review_notes n
@@ -350,7 +350,7 @@ const getReviewStockKardexDifferences = async ({ noteId, transaction }) => seque
   LEFT JOIN latest l ON l.id_product = s.id_product
     AND l.id_sucursal = s.id_sucursal
     AND l.id_storage = s.id_storage
-  WHERE ABS(s.stock - COALESCE(l.saldo, 0)) > 0.0001
+  WHERE s.stock <> COALESCE(l.saldo, 0)
   ORDER BY p.cod
 `, {
   replacements: { noteId },
@@ -358,40 +358,7 @@ const getReviewStockKardexDifferences = async ({ noteId, transaction }) => seque
   transaction,
 });
 
-const assertStockKardexIntegrity = async ({ productId, sucursalId, storageId, transaction, tolerance = decimalTolerance() } = {}) => {
-  const stock = await Stock.findOne({
-    where: { id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true },
-    transaction,
-  });
-
-  const physicalStock = stock ? Number(stock.stock) : 0;
-
-  const [currentKardex] = await sequelize.query(`
-    SELECT
-      COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS saldo
-    FROM view_kardex_detalle
-    WHERE id_product = :productId AND id_sucursal = :sucursalId AND id_storage = :storageId
-      AND date <= CURRENT_TIMESTAMP
-  `, {
-    replacements: { productId, sucursalId, storageId },
-    type: QueryTypes.SELECT,
-    transaction,
-  });
-
-  const kardexBalance = Number(currentKardex?.saldo || 0);
-  const difference = decimalSubtract(physicalStock, kardexBalance);
-  const consistent = Math.abs(difference) <= tolerance;
-
-  return {
-    consistent,
-    productId,
-    sucursalId,
-    storageId,
-    physicalStock,
-    kardexBalance,
-    difference,
-  };
-};
+const assertStockKardexIntegrity = (options) => require('./stock-kardex-integrity.service').getStockKardexIntegrity(options);
 
 module.exports = {
   availabilityKey,

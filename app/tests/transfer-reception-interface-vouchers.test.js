@@ -148,29 +148,29 @@ test('4.2 getTransferTraceability refleja medición física, recepción normal, 
 
   // Verificación de ítem dentro de tolerancia (aceptado)
   const item1 = trace.detailsTransfers.find((d) => d.id === 201);
-  assert.equal(item1.quantity_sent, 100);
-  assert.equal(item1.quantity_physical_received, 100.5);
-  assert.equal(item1.quantity_normal_received, 100.5);
-  assert.equal(item1.quantity_blocked_difference, 0);
+  assert.equal(item1.quantity_sent, '100.0000');
+  assert.equal(item1.quantity_physical_received, '100.5000');
+  assert.equal(item1.quantity_normal_received, '100.5000');
+  assert.equal(item1.quantity_blocked_difference, '0.0000');
   assert.equal(item1.receipt_difference_percentage, 0.5);
   assert.equal(item1.release_status, 'ACEPTADO');
   assert.equal(item1.blocked_document, null);
 
   // Verificación de excedente fuera de tolerancia resuelto (liberado)
   const item2 = trace.detailsTransfers.find((d) => d.id === 202);
-  assert.equal(item2.quantity_sent, 100);
-  assert.equal(item2.quantity_physical_received, 115);
-  assert.equal(item2.quantity_normal_received, 100);
-  assert.equal(item2.quantity_blocked_difference, 15);
+  assert.equal(item2.quantity_sent, '100.0000');
+  assert.equal(item2.quantity_physical_received, '115.0000');
+  assert.equal(item2.quantity_normal_received, '100.0000');
+  assert.equal(item2.quantity_blocked_difference, '15.0000');
   assert.equal(item2.release_status, 'LIBERADO');
   assert.equal(item2.blocked_document.registry_number, 'NTR-000501');
 
   // Verificación de faltante fuera de tolerancia pendiente (bloqueado)
   const item3 = trace.detailsTransfers.find((d) => d.id === 203);
-  assert.equal(item3.quantity_sent, 100);
-  assert.equal(item3.quantity_physical_received, 90);
-  assert.equal(item3.quantity_normal_received, 90);
-  assert.equal(item3.quantity_blocked_difference, 10);
+  assert.equal(item3.quantity_sent, '100.0000');
+  assert.equal(item3.quantity_physical_received, '90.0000');
+  assert.equal(item3.quantity_normal_received, '90.0000');
+  assert.equal(item3.quantity_blocked_difference, '10.0000');
   assert.equal(item3.release_status, 'BLOQUEADO');
   assert.equal(item3.blocked_document.registry_number, 'NTR-000502');
 });

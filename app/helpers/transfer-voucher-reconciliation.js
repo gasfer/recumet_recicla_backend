@@ -1,6 +1,8 @@
-const { decimalAdd, decimalToNumber } = require('./number-formatter');
+const { exactAdd } = require('./number-formatter');
 
-const roundQuantity = (value) => decimalToNumber(value || 0);
+// A reprint reads persisted quantities; the current input policy must not
+// reinterpret an older receipt.
+const roundQuantity = (value) => Number(exactAdd(value || 0, 0));
 
 const productLabel = (product) => product
   ? `${product.cod || ''} - ${product.name || ''}`.trim()
@@ -8,7 +10,7 @@ const productLabel = (product) => product
 
 const buildTransferVoucherReconciliation = (reviewNotes = []) => {
   const rows = [];
-  const totals = { excess: 0, shortage: 0 };
+  const totals = { excess: '0.0000', shortage: '0.0000' };
 
   for (const note of reviewNotes) {
     const isExcess = note.type === 'EXCEDENTE_PARA_REVISION';
@@ -34,7 +36,7 @@ const buildTransferVoucherReconciliation = (reviewNotes = []) => {
         movementReferences,
       });
 
-      totals[isExcess ? 'excess' : 'shortage'] = decimalAdd(totals[isExcess ? 'excess' : 'shortage'], difference);
+      totals[isExcess ? 'excess' : 'shortage'] = exactAdd(totals[isExcess ? 'excess' : 'shortage'], difference);
     }
   }
 

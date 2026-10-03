@@ -33,10 +33,10 @@ test('la previsualización usa saldos vigentes y rechaza una huella desactualiza
   t.mock.method(db.sequelize, 'query', async () => [{ id: 80, saldo: 10, date: stockUpdatedAt }]);
 
   const preview = await previewCase(record.id);
-  assert.equal(preview.stock_before, 12);
-  assert.equal(preview.kardex_before, 10);
-  assert.equal(preview.kardex_after, 12);
-  assert.equal(preview.difference_after, 0);
+  assert.equal(preview.stock_before, '12.0000');
+  assert.equal(preview.kardex_before, '10.0000');
+  assert.equal(preview.kardex_after, '12.0000');
+  assert.equal(preview.difference_after, '0.0000');
 
   record.fingerprint = fingerprintFor({ ...currentSnapshot, physical_stock: 11 });
   await assert.rejects(() => previewCase(record.id), (error) => (

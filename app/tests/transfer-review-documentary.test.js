@@ -47,7 +47,7 @@ const createFixture = (t, {
     reviewNote: note,
     save: async () => detail,
   };
-  note.details = [detail];
+  note.details = [detail]; detail.resolutionActions = actions;
   const holds = [{
     id: 61,
     quantity: difference,
@@ -254,9 +254,9 @@ test('libera la parte regularizada y conserva retenido sólo el remanente', asyn
     actorUserId: 9,
   });
 
-  assert.equal(result.pending_quantity, 18.5);
+  assert.equal(result.pending_quantity, '18.5000');
   assert.equal(result.closed_automatically, false);
-  assert.equal(fixture.detail.quantity_resolved, 12);
+  assert.equal(Number(fixture.detail.quantity_resolved), 12);
   assert.equal(fixture.detail.reconciliation_status, 'EN_REVISION');
   assert.equal(activeHoldTotal(fixture.holds), 18.5);
   assert.equal(Number(fixture.holds.find(({ disposition }) => disposition === 'EN_REVISION').quantity), 18.5);

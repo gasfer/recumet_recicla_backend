@@ -56,13 +56,13 @@ test('continuar y vincular una regularización registran auditoría sin crear mo
     evidences: [{ evidence_type: 'DOCUMENTO', reference: 'AJ-100', description: 'Ajuste firmado' }],
   });
 
-  const preview = buildPreview({ strategy: STRATEGIES.LINK_EXISTING, stock: 12, kardex: 10, physicalCount: 12 });
   assert.equal(record.status, 'LISTA_PARA_REGULARIZAR');
   assert.equal(decisions.length, 2);
   assert.equal(evidences.length, 1);
   assert.equal(decisions[1].source_reference_code, 'AJ-100');
   assert.equal(events[1].event_type, 'LISTA_PARA_REGULARIZAR');
+  const preview = buildPreview({ strategy: STRATEGIES.LINK_EXISTING, stock: 12, kardex: 10, physicalCount: 12 });
   assert.equal(preview.movement, null);
-  assert.equal(preview.difference_after, 2);
+  assert.equal(preview.difference_after, '2.0000');
   assert.equal(inventoryWrites, 0);
 });

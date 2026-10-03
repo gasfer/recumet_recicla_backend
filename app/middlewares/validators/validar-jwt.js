@@ -2,7 +2,8 @@ const { response } = require('express');
 const jwt = require('jsonwebtoken');
 const { User } = require('../../database/config');
 const { verifyAssignShift } = require('../../helpers/verify-assign-user');
-const { loadDecimals } = require('../../helpers/decimals-value');
+const { resolveOperationalCompany } = require('../../helpers/decimals-value');
+const { withDecimalPolicy } = require('../../helpers/decimal-operation-context');
 
 const validarJWT = async (req, res = response, next) => {
     try {
@@ -52,13 +53,14 @@ const validarJWT = async (req, res = response, next) => {
             : [field_sort, order];
         req.query.orderNew = orderNew;
         req.userAuth = user;
-        await loadDecimals();
-        next();
+        const company = await resolveOperationalCompany();
+        req.decimalPolicy = { companyId: company.id, places: Number(company.decimals), inventory: /\/(transfers|transfer-review-notes|kardex|stocks|stock-reconciliation)(\/|\?|$)/.test(req.originalUrl || '') };
+        withDecimalPolicy(req.decimalPolicy, next);
     } catch (error) {
         console.log(error);
-        return res.status(401).json({
+        return res.status(error.statusCode || 401).json({
             ok: false,
-            errors: [{ msg: `Opps..! Al parecer ya venció tu sesión` }],
+            errors: [{ msg: error.statusCode ? error.message : `Opps..! Al parecer ya venció tu sesión` }],
         });
     }
 }

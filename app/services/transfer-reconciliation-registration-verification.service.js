@@ -1,9 +1,10 @@
 'use strict';
 
-const EPSILON = 0.0001;
+const { exactCompare, exactAdd, exactSubtract, exactMax } = require('../helpers/number-formatter');
+const EPSILON = 0;
 
-const number = (value) => Number(value || 0);
-const approximatelyLess = (left, right) => number(left) + EPSILON < number(right);
+const quantityString = (value) => exactAdd(value || 0, 0);
+const approximatelyLess = (left, right) => exactCompare(left, right) < 0;
 
 const productView = (product) => product ? {
   id: Number(product.id),
@@ -20,7 +21,7 @@ const locationView = ({ sucursalId, storageId, sucursal, storage }) => ({
 
 const movementView = (movement) => ({
   id: Number(movement.id),
-  quantity: number(movement.quantity),
+  quantity: quantityString(movement.quantity),
   type: movement.type || null,
   registry_number: movement.registry_number || null,
   details: movement.details || null,
@@ -32,7 +33,7 @@ const actionView = (action) => ({
   operation_type: action.operation_type || null,
   operation_id: action.operation_id ?? null,
   operation_status: action.operation_status || null,
-  quantity: number(action.quantity),
+  quantity: quantityString(action.quantity),
   movements: (action.movementLinks || [])
     .map(({ kardexMovement }) => kardexMovement)
     .filter(Boolean)
@@ -41,7 +42,7 @@ const actionView = (action) => ({
 
 const statusFor = ({ expectedQuantity, registeredQuantity, hasActiveRecord, ambiguous }) => {
   if (ambiguous) return 'EVIDENCIA_AMBIGUA';
-  if (!hasActiveRecord && number(registeredQuantity) <= EPSILON) return 'SIN_REGISTRO_ACTIVO';
+  if (!hasActiveRecord && exactCompare(registeredQuantity, EPSILON) <= 0) return 'SIN_REGISTRO_ACTIVO';
   return approximatelyLess(registeredQuantity, expectedQuantity) ? 'REGISTRO_PARCIAL' : 'REGISTRO_EXISTENTE';
 };
 
@@ -54,15 +55,15 @@ const messageFor = (status) => ({
 
 const inventoryProjection = ({ stock, kardex, quantity, differenceType }) => {
   if (stock === null || stock === undefined || kardex === null || kardex === undefined) return null;
-  const beforeStock = number(stock);
-  const beforeKardex = number(kardex);
-  const registeredQuantity = number(quantity);
+  const beforeStock = exactAdd(stock, 0);
+  const beforeKardex = exactAdd(kardex, 0);
+  const registeredQuantity = exactAdd(quantity, 0);
   const shortage = differenceType === 'FALTANTE' || differenceType === 'FALTANTE_PARA_REVISION';
   return {
     before_stock: beforeStock,
     before_kardex: beforeKardex,
-    after_stock: shortage ? beforeStock + registeredQuantity : beforeStock,
-    after_kardex: beforeKardex + registeredQuantity,
+    after_stock: shortage ? exactAdd(beforeStock, registeredQuantity) : beforeStock,
+    after_kardex: exactAdd(beforeKardex, registeredQuantity),
   };
 };
 
@@ -71,14 +72,17 @@ const buildVerification = ({
   registeredQuantity, pendingQuantity, noteNumber, actions = [], movements = [],
   ambiguous = false, inventory = null, noteWillBeAssigned = false,
 }) => {
-  const quantityRegistered = number(registeredQuantity);
-  const quantityExpected = number(expectedQuantity);
+  const quantityRegistered = exactAdd(registeredQuantity || 0, 0);
+  const quantityExpected = exactAdd(expectedQuantity || 0, 0);
   const status = statusFor({
     expectedQuantity: quantityExpected,
     registeredQuantity: quantityRegistered,
     hasActiveRecord: actions.length > 0 || movements.length > 0,
     ambiguous,
   });
+  const inventoryView = inventory ? Object.fromEntries(Object.entries(inventory).map(([key, value]) => (
+    value === null || value === undefined ? [key, value] : [key, quantityString(value)]
+  ))) : null;
   return {
     status,
     is_blocked: status !== 'SIN_REGISTRO_ACTIVO',
@@ -92,21 +96,21 @@ const buildVerification = ({
       detail_id: Number(detail.id),
       type: differenceType,
       product: productView(detail.product),
-      quantity_expected: quantityExpected,
+      quantity_expected: quantityString(quantityExpected),
     },
     registration: {
       note_number: noteNumber || null,
       note_assigned_on_confirmation: !noteNumber && noteWillBeAssigned,
       product: productView(registeredProduct),
       location,
-      quantity_registered: quantityRegistered,
-      quantity_pending: Math.max(0, pendingQuantity === null || pendingQuantity === undefined
-        ? quantityExpected - quantityRegistered
-        : number(pendingQuantity)),
+      quantity_registered: quantityString(quantityRegistered),
+      quantity_pending: quantityString(exactMax(0, pendingQuantity === null || pendingQuantity === undefined
+        ? exactSubtract(quantityExpected, quantityRegistered)
+        : pendingQuantity)),
       actions: actions.map(actionView),
       movements: movements.map(movementView),
     },
-    inventory,
+    inventory: inventoryView,
   };
 };
 

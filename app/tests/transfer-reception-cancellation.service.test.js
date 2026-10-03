@@ -9,7 +9,7 @@ const { ValuedKardexService } = require('../services/valued-kardex.service');
 const integrityService = require('../services/stock-kardex-integrity.service');
 const cancellationService = require('../services/transfer-cancellation.service');
 
-const row = (values) => ({ ...values, async save() { this.saved = true; } });
+const row = (values) => ({ setDataValue(key, value) { this[key] = Number(value); }, ...values, async save() { this.saved = true; } });
 
 test('anula la recepción, revierte conciliaciones y devuelve el traslado a PENDING', async (t) => {
   const transaction = { LOCK: { UPDATE: 'UPDATE' } };
@@ -134,6 +134,7 @@ test('un desfase Stock–Kardex aborta antes de crear auditoría', async (t) => 
 test('conserva la entrada original y registra salidas compensatorias sin duplicar Stock', async (t) => {
   const transaction = { LOCK: { UPDATE: 'UPDATE' } };
   const stock = row({ stock: 15 });
+  t.mock.method(db.sequelize, 'query', async () => []);
   const createdMovements = [];
   const originalExplicit = {
     id: 91,

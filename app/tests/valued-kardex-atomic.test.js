@@ -92,7 +92,7 @@ test('la reversión copia el costo histórico y enlaza el movimiento original', 
     originalEntry: original, sourceType: 'REVERSAL', sourceId: 'cancel-44', id_user: 7, transaction: {},
   });
   assert.equal(reversal.original_entry_id, 44);
-  assert.equal(created.quantity_output, 4);
+  assert.equal(created.quantity_output, '4.0000');
   assert.equal(created.applied_unit_cost, 15);
   assert.equal(created.output_value, 60);
 });
@@ -113,7 +113,7 @@ test('la reversión de una salida registra una entrada al costo histórico, no a
     },
     sourceType: 'REVERSAL', sourceId: 'cancel-45', id_user: 7, transaction: {},
   });
-  assert.equal(created.quantity_input, 2);
+  assert.equal(created.quantity_input, '2.0000');
   assert.equal(created.applied_unit_cost, 18);
   assert.equal(created.input_value, 36);
   assert.equal(created.original_entry_id, 45);

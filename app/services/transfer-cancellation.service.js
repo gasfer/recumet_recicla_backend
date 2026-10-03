@@ -6,6 +6,7 @@ const integrityService = require('./stock-kardex-integrity.service');
 const eligibilityService = require('./transfer-cancellation-eligibility.service');
 const receptionCancellation = require('./transfer-reception-cancellation.service');
 const { ValuedKardexService } = require('./valued-kardex.service');
+const { exactAdd } = require('../helpers/number-formatter');
 
 const valuedKardex = new ValuedKardexService();
 
@@ -35,7 +36,7 @@ const cancelPendingTransfer = async ({ transferId, actorUserId, transaction }) =
   for (const detail of transfer.detailsTransfers) {
     const result = await applyExplicitEffect({
       productId: detail.id_product, sucursalId: transfer.id_sucursal_send, storageId: transfer.id_storage_send,
-      quantity: Number(detail.quantity), direction: 'INPUT', actorUserId, date: new Date(), cost: Number(detail.cost || 0),
+      quantity: exactAdd(detail.quantity, 0), direction: 'INPUT', actorUserId, date: new Date(), cost: Number(detail.cost || 0),
       details: `BAJA TRASLADO #${transfer.cod} · REPOSICIÓN DE SALIDA`, registryNumber: transfer.registry_number,
       sourceType: 'TRANSFER_CANCELLATION', sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'RESTORE_ORIGIN',
       idempotencyKey: `TRANSFER_CANCELLATION:${transfer.id}:${detail.id}:RESTORE_ORIGIN`, transaction,

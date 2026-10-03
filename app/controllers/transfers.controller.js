@@ -19,6 +19,8 @@ const transferCancellationService = require('../services/transfer-cancellation.s
 const { getReceptionCancellationAvailability } = require('../services/transfer-cancellation-eligibility.service');
 const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
+const { recordInventoryRejection } = require('../services/inventory-rejection-audit.service');
+const { exactAdd, exactSubtract, exactCompare, formatDecimalEsBo } = require('../helpers/number-formatter');
 const {
     buildOpenReviewWhere,
     isInconclusiveMode,
@@ -139,7 +141,7 @@ const getTransfersPaginate = async (req = request, res = response) => {
         };
         let transfers = await paginate(Transfers, page, limit, type, query, optionsDb);
         for (const input of transfers.data) {
-            input.dataValues.total_quantity = input.detailsTransfers.reduce((acc, item) => acc + Number(item.quantity), 0);
+            input.dataValues.total_quantity = input.detailsTransfers.reduce((acc, item) => exactAdd(acc, item.quantity || 0), '0.0000');
             input.dataValues.reconciliation_status = deriveReceptionStatus(input.reviewNotes || []);
             input.dataValues.has_reconciliation_history = (input.reviewNotes || []).length > 0;
             input.dataValues.approved_reconciliations = (input.reviewNotes || []).filter(note =>
@@ -318,7 +320,7 @@ const receivedTransfer = async (req = request, res = response ) => {
             ...item,
             tolerance: evaluateReceiptTolerance(item.detail.quantity, item.quantityReceived),
         }));
-        const hasShortage = evaluatedDetails.some(({ detail, quantityReceived }) => quantityReceived < Number(detail.quantity));
+        const hasShortage = evaluatedDetails.some(({ detail, quantityReceived }) => exactCompare(quantityReceived, detail.quantity) < 0);
         const mermaProduct = hasShortage
             ? await Product.findOne({
                 where: { id: id_merma_product, status: true },
@@ -362,8 +364,8 @@ const receivedTransfer = async (req = request, res = response ) => {
         }
 
         const reviewDetails = evaluatedDetails.filter(({ tolerance }) => tolerance.decision !== TOLERANCE_DECISIONS.ACCEPTED);
-        const shortageReviewDetails = reviewDetails.filter(({ detail, quantityReceived }) => quantityReceived < Number(detail.quantity));
-        const otherReviewDetails = reviewDetails.filter(({ detail, quantityReceived }) => quantityReceived >= Number(detail.quantity));
+        const shortageReviewDetails = reviewDetails.filter(({ detail, quantityReceived }) => exactCompare(quantityReceived, detail.quantity) < 0);
+        const otherReviewDetails = reviewDetails.filter(({ detail, quantityReceived }) => exactCompare(quantityReceived, detail.quantity) >= 0);
 
         if (shortageReviewDetails.length > 0) {
             const { shortageMovement } = await applyBlockedShortageReceipt({
@@ -386,15 +388,15 @@ const receivedTransfer = async (req = request, res = response ) => {
                 details: shortageReviewDetails.map(({ detail, quantityReceived }) => ({
                     id_detail_transfer: detail.id,
                     id_product: detail.id_product,
-                    quantity_sent: Number(detail.quantity),
+                    quantity_sent: exactAdd(detail.quantity, 0),
                     quantity_received: quantityReceived,
-                    quantity_difference: Number(detail.quantity) - quantityReceived,
+                    quantity_difference: exactSubtract(detail.quantity, quantityReceived),
                 })),
             }, t);
         }
 
         for (const { detail, quantityReceived: qtyReceived } of otherReviewDetails) {
-            const qtySent = Number(detail.quantity);
+            const qtySent = exactAdd(detail.quantity, 0);
             const { excessMovement } = await applyBlockedExcessReceipt({
                 transfer: transfer_received,
                 detail,
@@ -417,7 +419,7 @@ const receivedTransfer = async (req = request, res = response ) => {
                     id_product: detail.id_product,
                     quantity_sent: qtySent,
                     quantity_received: qtyReceived,
-                    quantity_difference: Math.abs(qtyReceived - qtySent),
+                    quantity_difference: exactSubtract(qtyReceived, qtySent),
                 }],
             }, t);
         }
@@ -437,7 +439,7 @@ const receivedTransfer = async (req = request, res = response ) => {
         const discrepantDetails = evaluatedDetails
             .filter(({ tolerance }) => tolerance.decision !== TOLERANCE_DECISIONS.ACCEPTED)
             .map(({ detail, quantityReceived, tolerance }) => ({
-                qtySent: Number(detail.quantity),
+                qtySent: exactAdd(detail.quantity, 0),
                 qtyReceived: quantityReceived,
                 diffPct: tolerance.differencePercentage === null
                     ? 'no evaluable (enviado 0)'
@@ -479,9 +481,12 @@ const receivedTransfer = async (req = request, res = response ) => {
     } catch (error) {
         await t.rollback();
         console.log('ERROR RECEPCIÓN: ' + error);
+        try { error = await recordInventoryRejection(error, req.userAuth); }
+        catch (_) { error = Object.assign(new Error('No se pudo registrar la auditoría del rechazo. La recepción no se confirmó.'), { statusCode: 503, code: 'INTEGRITY_AUDIT_FAILED' }); }
         return res.status(error.statusCode || 500).json({
           ok: false,
           code: error.code || 'TRANSFER_RECEPTION_FAILED',
+          tracking_id: error.correlationId,
           errors: [{
               msg: error.statusCode ? error.message : 'Ocurrió un imprevisto interno | hable con soporte',
               ...(error.details ? { details: error.details } : {}),

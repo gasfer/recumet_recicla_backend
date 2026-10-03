@@ -42,8 +42,8 @@ test('permite una diferencia sin registro vigente y conserva la previsualizació
   assert.equal(verification.status, 'SIN_REGISTRO_ACTIVO');
   assert.equal(verification.is_blocked, false);
   assert.equal(verification.transfer.number, 'TRAS00044');
-  assert.equal(verification.registration.quantity_pending, 10);
-  assert.equal(verification.inventory.after_kardex, 20);
+  assert.equal(verification.registration.quantity_pending, '10.0000');
+  assert.equal(verification.inventory.after_kardex, '20.0000');
 });
 
 test('bloquea un registro activo parcial aunque todavía exista remanente', () => {
@@ -55,8 +55,8 @@ test('bloquea un registro activo parcial aunque todavía exista remanente', () =
 
   assert.equal(verification.status, 'REGISTRO_PARCIAL');
   assert.equal(verification.is_blocked, true);
-  assert.equal(verification.registration.quantity_registered, 4);
-  assert.equal(verification.registration.quantity_pending, 6);
+  assert.equal(verification.registration.quantity_registered, '4.0000');
+  assert.equal(verification.registration.quantity_pending, '6.0000');
 });
 
 test('bloquea un registro activo que cubre toda la diferencia', () => {
@@ -68,8 +68,8 @@ test('bloquea un registro activo que cubre toda la diferencia', () => {
 
   assert.equal(verification.status, 'REGISTRO_EXISTENTE');
   assert.equal(verification.is_blocked, true);
-  assert.equal(verification.registration.quantity_registered, 10);
-  assert.equal(verification.registration.quantity_pending, 0);
+  assert.equal(verification.registration.quantity_registered, '10.0000');
+  assert.equal(verification.registration.quantity_pending, '0.0000');
 });
 
 test('bloquea evidencia histórica ambigua y permite registros únicamente reversados', () => {

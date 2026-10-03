@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete, preRegisterProvider, checkDuplicateProvider, getProviderCommercialDetails, commercialValidationProvider, saveProviderDetail, deleteProviderDetail, resolveGoogleMapsLink } = require('../controllers/provider.controller');
+const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete, preRegisterProvider, checkDuplicateProvider, getProviderCommercialDetails, commercialValidationProvider, saveProviderDetail, deleteProviderDetail, resolveGoogleMapsLink, getProviderFrequencyAnalysis } = require('../controllers/provider.controller');
 const { getValidateCreate, getValidatePreRegister, getValidateUpdate, validateDelete, getValidateCreateSector, validateDeleteSector } = require('../middlewares/validators/provider');
 const { generateExcelProviders } = require('../controllers/reports/providers.controller');
 
@@ -48,6 +48,10 @@ router.post('/pre-register', [
 router.get('/:id/commercial-details', [
     validarJWT,
 ], getProviderCommercialDetails);
+
+router.get('/:id/frequency-analysis', [
+    validarJWT,
+], getProviderFrequencyAnalysis);
 
 router.put('/:id/commercial-validation', [
     validarJWT,

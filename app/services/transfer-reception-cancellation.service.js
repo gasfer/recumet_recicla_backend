@@ -10,6 +10,7 @@ const {
 const { applyExplicitEffect, registerKardexOnlyEffect } = require('./inventory-posting.service');
 const operationalDocuments = require('./reconciliation-operational-document.service');
 const { ValuedKardexService } = require('./valued-kardex.service');
+const { exactAdd, exactMin, exactCompare } = require('../helpers/number-formatter');
 
 const valuedKardex = new ValuedKardexService();
 
@@ -24,7 +25,7 @@ const compensateMovement = async ({ movement, transfer, actorUserId, actionId, e
   const postEffect = stockEffect ? applyExplicitEffect : registerKardexOnlyEffect;
   const result = await postEffect({
     ...movementLocation(movement),
-    quantity: Number(movement.quantity),
+    quantity: exactAdd(movement.quantity, 0),
     direction: oppositeDirection(movement.type),
     actorUserId,
     date: new Date(),
@@ -137,9 +138,9 @@ const preserveAndReverseReceipt = async ({ transfer, actorUserId, transaction })
   }
 
   for (const detail of transfer.detailsTransfers || []) {
-    const received = Number(detail.quantity_received || 0);
-    const baseQuantity = Math.min(Number(detail.quantity || 0), received);
-    if (baseQuantity > 0) {
+    const received = exactAdd(detail.quantity_received || 0, 0);
+    const baseQuantity = exactMin(detail.quantity || 0, received);
+    if (exactCompare(baseQuantity, 0) > 0) {
       const common = {
         productId: detail.id_product,
         sucursalId: transfer.id_sucursal_received,

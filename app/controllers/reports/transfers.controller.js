@@ -25,7 +25,7 @@ const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric
 minute: "numeric",
 second: "numeric", };
 
-const roundQuantity = (value) => formatDecimalEsBo(value || 0);
+const roundQuantity = (value) => formatDecimalEsBo(value || 0, 4);
 
 moment.locale('es'); 
 
@@ -285,7 +285,7 @@ const printTransferVoucher = async (req = request, res = response) =>{
                 { text: 'PESOS TOTALES', colSpan: 2, fontSize: 8, bold: true, alignment: 'right' },
                 '',
                 { text: [...new Set(transfer.detailsTransfers.map((detail) => detail?.product?.unit?.siglas).filter(Boolean))].join(','), fontSize: 8, bold: true, alignment: 'center' },
-                { text: roundQuantity(transfer.detailsTransfers.reduce((total, detail) => decimalAdd(total, detail.quantity || 0), 0)), fontSize: 8, bold: true, alignment: 'center' },
+                { text: roundQuantity(transfer.detailsTransfers.reduce((total, detail) => decimalAdd(total, detail.quantity || 0, 4), 0)), fontSize: 8, bold: true, alignment: 'center' },
             ],
         );
         sendVoucherPdf(res, dataPdf, `guia-traslado-${transfer.cod}`, HALF_LETTER_PORTRAIT);
