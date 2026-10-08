@@ -6,6 +6,29 @@ const { getValidateCreate, getValidatePreRegister, getValidateUpdate, validateDe
 const { generateExcelProviders } = require('../controllers/reports/providers.controller');
 
 const router = Router();
+const expressfileUpload = require('express-fileupload');
+const { uploadCertificate } = require('../controllers/provider-certificate.controller');
+const { authorizeProviderAccess } = require('../middlewares/authorize-provider-access');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
+const management = require('../controllers/provider-management.controller');
+const drafts = require('../controllers/provider-draft.controller');
+const draftPermission = (req, res, next) => authorizeProviderAccess(req.params.key === 'new' || req.params.key?.endsWith('-newbranch') ? 'create' : 'update')(req, res, next);
+router.get('/drafts/:key', [validarJWT, draftPermission], drafts.read);
+router.put('/drafts/:key', [validarJWT, draftPermission], drafts.save);
+router.delete('/drafts/:key', [validarJWT, draftPermission], drafts.remove);
+const { validateSheet, createRegistrationPdf } = require('../services/provider-registration-pdf');
+
+router.post('/registration-sheet', [validarJWT, authorizeProviderAccess('view')], (req, res) => {
+    if (!validateSheet(req.body)) return res.status(400).json({ ok: false, msg: 'La ficha de registro no es válida.' });
+    const pdf = createRegistrationPdf(req.body);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="ficha-proveedor.pdf"');
+    pdf.pipe(res);
+    pdf.end();
+});
+
+router.get('/management/catalogs', [validarJWT, authorizeProviderAccess('view')], management.catalogs);
+router.get('/management', [validarJWT, authorizeProviderAccess('view')], management.search);
 
 
 /**
@@ -27,6 +50,7 @@ const router = Router();
  */
 router.get('/', [
     validarJWT,
+    authorizeProviderAccess('view'),
 ], getProviderPaginate);
 
 router.get('/autocomplete', [
@@ -41,6 +65,7 @@ router.get('/resolve-map-link', [validarJWT], resolveGoogleMapsLink);
 
 router.post('/pre-register', [
     validarJWT,
+    authorizeProviderAccess('create'),
     toUpperCaseConvert,
     getValidatePreRegister,
 ], preRegisterProvider);
@@ -53,16 +78,19 @@ router.get('/:id/frequency-analysis', [
     validarJWT,
 ], getProviderFrequencyAnalysis);
 
+router.post('/:id/certificate', [validarJWT, authorizeProviderAccess('update'), expressfileUpload({ limits: { fileSize: 8 * 1024 * 1024 }, abortOnLimit: true })], uploadCertificate);
+
 router.put('/:id/commercial-validation', [
     validarJWT,
+    authorizeProviderAccess('update'),
     toUpperCaseConvert,
 ], commercialValidationProvider);
 
 for (const detail of ['branches', 'contacts', 'bank-accounts', 'materials']) {
     const kind = detail === 'bank-accounts' ? 'bankAccounts' : detail;
-    router.post(`/:id/${detail}`, [validarJWT, toUpperCaseConvert], saveProviderDetail(kind));
-    router.put(`/:id/${detail}/:detailId`, [validarJWT, toUpperCaseConvert], saveProviderDetail(kind));
-    router.delete(`/:id/${detail}/:detailId`, [validarJWT], deleteProviderDetail(kind));
+    router.post(`/:id/${detail}`, [validarJWT, authorizeProviderAccess('update'), toUpperCaseConvert], saveProviderDetail(kind));
+    router.put(`/:id/${detail}/:detailId`, [validarJWT, authorizeProviderAccess('update'), toUpperCaseConvert], saveProviderDetail(kind));
+    router.delete(`/:id/${detail}/:detailId`, [validarJWT, authorizeProviderAccess('update')], deleteProviderDetail(kind));
 }
 
 
@@ -92,6 +120,7 @@ router.get('/product', [
  */
 router.post('/', [
     validarJWT,
+    authorizeProviderAccess('create'),
     toUpperCaseConvert,
     getValidateCreate
 ], newProvider);
@@ -114,6 +143,7 @@ router.post('/', [
  */
 router.put('/:id', [
     validarJWT,
+    authorizeProviderAccess('update'),
     toUpperCaseConvert,
     getValidateUpdate
 ], updateProvider);
@@ -136,6 +166,7 @@ router.put('/:id', [
  */
 router.put('/destroyAndActive/:id', [
     validarJWT,
+    authorizeProviderAccess('delete'),
     validateDelete
 ], activeInactiveProvider);
 

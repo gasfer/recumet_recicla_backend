@@ -4,16 +4,11 @@ const { nameExistProvider, idExistProvider, idExistCategory, idExistSector, name
 
 const validationSchema =  {
     full_names: {
-        isInt: {
-            bail: true, negated: true, errorMessage: "El nombre tiene que ser un valor alfabético",
-        },
-        isLength: {
-            errorMessage: 'El nombre debe tener máximo 174 caracteres',
-            options: {  max: 174},
-        },
+        trim: true,
+        notEmpty: { errorMessage: 'El nombre es obligatorio' },
+        isLength: { options: { min: 2, max: 174 }, errorMessage: 'El nombre debe tener entre 2 y 174 caracteres' },
         custom: { options: nameExistProvider }
-    },
-    number_document: {
+    },    number_document: {
         custom: { options: numberDocumentExistProvider }
     },
     id_sector: {
@@ -32,9 +27,7 @@ const validationSchema =  {
         }
     },
     id_category: {
-        isEmpty: {
-            negated: true, errorMessage: "La categoría es obligatorio",
-        },
+        optional: { options: { nullable: true, checkFalsy: true } },
         custom: { options: idExistCategory },
     },
     status: {

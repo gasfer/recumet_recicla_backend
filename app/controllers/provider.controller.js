@@ -243,13 +243,11 @@ const getProviderAutocomplete = async (req = request, res = response) => {
 
 const preRegisterProvider = async (req = request, res = response) => {
     try {
-        const idSucursal = req.userAuth.assign_sucursales?.[0]?.id_sucursal;
-        if (!idSucursal) return res.status(400).json({ ok: false, errors: [{ msg: 'El usuario no tiene una sucursal activa asignada' }] });
-        const provider = await providerService.preRegisterProvider(req.body, idSucursal);
+        const provider = await providerService.preRegisterProvider(req.body, req.body.id_sucursal, req.userAuth);
         return res.status(201).json({ ok: true, provider });
     } catch (error) {
         console.log(error);
-        return res.status(500).json({ ok: false, errors: [{ msg: 'No fue posible crear el pre-registro del proveedor' }] });
+        return res.status(error.statusCode || 500).json({ ok: false, errors: [{ msg: error.statusCode ? error.message : 'No fue posible crear el pre-registro del proveedor' }] });
     }
 };
 
@@ -314,11 +312,27 @@ const getProviderFrequencyAnalysis = async (req = request, res = response) => {
         const analysis = await providerFrequencyService.calculateFrequency(providerId, id_product, id_sucursal);
         return res.status(200).json({
             ok: true,
-            analysis
+            analysis: {
+                ...analysis,
+                has_sufficient_history: analysis.hasSufficientHistory,
+                total_deliveries: analysis.totalDeliveries,
+                average_days: analysis.averageDays,
+                frequency: analysis.frequencyCode,
+                frequency_mode: analysis.hasSufficientHistory ? 'automatic' : 'manual',
+                last_delivery_date: analysis.lastDeliveryDate,
+                next_estimated_date: analysis.nextEstimatedDate,
+                first_delivery_date: analysis.firstDeliveryDate,
+                total_purchases: analysis.totalPurchases,
+                elapsed_days: analysis.elapsedDays,
+                total_kg: analysis.totalKg,
+                estimated_volume: analysis.estimatedVolume,
+                recommended_contact_date: analysis.recommendedContactDate,
+                overdue_days: analysis.overdueDays,
+            }
         });
     } catch (error) {
         console.log(error);
-        return res.status(500).json({
+        return res.status(error.statusCode || 500).json({
             ok: false,
             errors: [{ msg: 'Error al calcular la frecuencia inteligente del proveedor.' }]
         });

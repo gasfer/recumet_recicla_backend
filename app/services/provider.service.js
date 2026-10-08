@@ -1,12 +1,14 @@
-const { Provider, ProviderBranch, ProviderContact, ProviderBankAccount, ProviderMaterial, Product, Bank, sequelize } = require('../database/config');
+const { Provider, ProviderBranch, ProviderContact, ProviderBankAccount, ProviderMaterial, Product, Bank, Sucursal, TypesProvider, sequelize } = require('../database/config');
 const { Op } = require('sequelize');
+const { WHOLESALE_FIELDS, validateWholesaleProfile } = require('./provider-wholesale-profile');
+const { validateRegistrationFields } = require('./provider-registration-validation');
 
 const COMMERCIAL_FIELDS = [
   'full_names', 'number_document', 'cellphone', 'id_sector', 'id_category', 'id_sucursal',
   'commercial_name', 'entity_type', 'origin_channel', 'relationship_status', 'negotiation_condition',
   'commercial_observations', 'requires_certificate', 'requires_traceability_report', 'service_mode',
   'general_observations', 'frequency', 'id_commercial_user', 'department', 'zone',
-  'certificate_file_name', 'traceability_file_name', 'frequency_mode'
+  'certificate_file_name', 'traceability_file_name', 'frequency_mode', ...WHOLESALE_FIELDS
 ];
 const PROFILE_FIELDS = [...new Set([...COMMERCIAL_FIELDS, 'direction', 'mayorista', 'name_contact', 'companyContacts', 'workAreaOrPositionOrUnit', 'cellphone_contact', 'id_type_provider', 'status'])];
 
@@ -19,6 +21,7 @@ const DETAIL_MODELS = {
 
 class ProviderService {
   async createProfile(data) {
+    await this.validateProfile(data);
     return sequelize.transaction(async (transaction) => {
       const provider = await Provider.create(this.pick(data, PROFILE_FIELDS), { transaction });
 
@@ -26,6 +29,7 @@ class ProviderService {
       await this.syncMainContact(provider, data, transaction);
       await this.syncMainMaterial(provider, data, transaction);
       await this.syncMainBankAccount(provider, data, transaction);
+      await this.syncDetails(provider, data, transaction);
 
       return this.getProviderDetails(provider.id, transaction);
     });
@@ -40,19 +44,36 @@ class ProviderService {
     });
   }
 
-  async preRegisterProvider(data, idSucursal) {
-    return sequelize.transaction((transaction) => Provider.create({
+  async preRegisterProvider(data, idSucursal, user) {
+    const branchId = Number(idSucursal);
+    if (!Number.isInteger(branchId) || branchId <= 0) {
+      throw this.validationError('Seleccione una sucursal activa antes de registrar el proveedor');
+    }
+    if (user?.role !== 'ADMINISTRADOR' && !(user?.assign_sucursales || []).some(
+      (assignment) => assignment.status !== false && Number(assignment.id_sucursal) === branchId,
+    )) {
+      const error = new Error('No tiene acceso a la sucursal seleccionada');
+      error.statusCode = 403;
+      throw error;
+    }
+    return sequelize.transaction(async (transaction) => {
+      const sucursal = await Sucursal.findByPk(branchId, { transaction });
+      if (!sucursal || !sucursal.status) throw this.validationError('La sucursal seleccionada no existe o está inactiva');
+      const provider = await Provider.create({
       full_names: data.full_names,
       number_document: data.number_document || null,
       cellphone: data.cellphone || null,
-      id_sucursal: idSucursal,
+      id_sucursal: sucursal.id,
       id_sector: data.id_sector || null,
       id_category: data.id_category || null,
       id_type_provider: 6,
       estado_registro: 'PENDIENTE',
       origin_channel: data.origin_channel || 'BALANZA',
       status: true,
-    }, { transaction }));
+      }, { transaction });
+      await this.syncMainBranch(provider, { city: sucursal.city }, transaction);
+      return this.getProviderDetails(provider.id, transaction);
+    });
   }
 
   async findDuplicate({ number_document, cellphone }) {
@@ -81,12 +102,14 @@ class ProviderService {
   async updateProfile(providerId, data) {
     return sequelize.transaction(async (transaction) => {
       const provider = await this.requireProvider(providerId, transaction);
+      await this.validateProfile({ ...data, id_type_provider: data.id_type_provider ?? provider.id_type_provider }, transaction);
       await provider.update(this.pick(data, PROFILE_FIELDS), { transaction });
 
       await this.syncMainBranch(provider, data, transaction);
       await this.syncMainContact(provider, data, transaction);
       await this.syncMainMaterial(provider, data, transaction);
       await this.syncMainBankAccount(provider, data, transaction);
+      await this.syncDetails(provider, data, transaction);
 
       return this.getProviderDetails(provider.id, transaction);
     });
@@ -149,6 +172,10 @@ class ProviderService {
         );
       }
       for (const item of data[kind]) {
+        if (kind === 'bankAccounts' && item.status !== false) {
+          const bank = await Bank.findByPk(item.id_bank, { transaction });
+          if (!bank || !bank.status) throw this.validationError('El banco seleccionado no existe o está inactivo');
+        }
         if (kind === 'materials' && item.status !== false && item.id_product) {
           const product = await Product.findByPk(item.id_product, { transaction });
           if (!product) throw this.validationError('El producto seleccionado no existe');
@@ -264,6 +291,22 @@ class ProviderService {
 
   pick(source, keys) {
     return Object.fromEntries(keys.filter((key) => Object.prototype.hasOwnProperty.call(source, key)).map((key) => [key, source[key]]));
+  }
+
+  async validateProfile(data, transaction) {
+    validateRegistrationFields(data);
+    const type = data.id_type_provider
+      ? await TypesProvider.findByPk(data.id_type_provider, { attributes: ['code'], transaction })
+      : null;
+    if (data.id_type_provider && !type) throw this.validationError('El tipo de proveedor no existe');
+    if (type && data.full_names != null) {
+      for (const field of ['department', 'id_commercial_user', 'origin_channel', 'relationship_status', 'frequency', 'service_mode']) {
+        if (!this.hasValue(data[field])) throw this.validationError(`El campo ${field} es obligatorio`);
+      }
+      if (Array.isArray(data.materials) && !data.materials.some(item => item.status !== false)) throw this.validationError('Seleccione al menos un producto');
+      if (type.code === 'B' && !(data.contacts || []).some(item => item.status !== false)) throw this.validationError('Registre al menos un contacto comercial');
+    }
+    validateWholesaleProfile(data, type?.code);
   }
 
   hasValue(value) {

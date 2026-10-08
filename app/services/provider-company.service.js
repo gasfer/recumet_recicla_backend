@@ -6,6 +6,7 @@ const {
 } = require('../database/config');
 const { Op } = require('sequelize');
 const providerService = require('./provider.service');
+const { validateRegistrationFields } = require('./provider-registration-validation');
 const { isProviderCatalogValue } = require('../constants/provider-commercial.constants');
 
 const COMPANY_FIELDS = Object.freeze([
@@ -20,7 +21,7 @@ const COMPANY_FIELDS = Object.freeze([
 const SITE_FIELDS = Object.freeze([
   'full_names', 'number_document', 'cellphone', 'direction', 'mayorista', 'name_contact',
   'companyContacts', 'workAreaOrPositionOrUnit', 'frequency', 'cellphone_contact',
-  'id_category', 'id_type_provider', 'id_sucursal', 'status', 'service_mode', 'general_observations',
+  'id_category', 'id_type_provider', 'id_sucursal', 'status', 'service_mode', 'general_observations', 'frequency_mode',
 ]);
 
 const COLLECTION_MODELS = Object.freeze({
@@ -68,6 +69,12 @@ class ProviderCompanyService {
     return sequelize.transaction(async (transaction) => {
       const company = await this.requireCompany(id, transaction, true);
       await company.update(this.pick(payload, COMPANY_FIELDS), { transaction });
+      if (data.headquarters) {
+        this.validateSite(data.headquarters, false, company.operational_type);
+        const site = await this.requireCompanySite(company.id, data.headquarters.id, transaction, true);
+        await site.update(this.pick(data.headquarters, SITE_FIELDS), { transaction });
+        await this.syncSiteDetails(site, data.headquarters, transaction);
+      }
       return this.details(company.id, transaction);
     });
   }
@@ -237,6 +244,7 @@ class ProviderCompanyService {
     if (typeof data.requires_certificate !== 'boolean') missing.push('requires_certificate');
     if (typeof data.requires_traceability_report !== 'boolean') missing.push('requires_traceability_report');
     if (missing.length) throw this.error(`Faltan datos corporativos obligatorios: ${missing.join(', ')}`, 400);
+    validateRegistrationFields(data);
     ['entity_type', 'origin_channel', 'relationship_status'].forEach((field) => this.validateCatalog(field, data[field]));
     this.validateCatalog('operational_type', data.operational_type || 'RAW_MATERIAL');
     if (this.hasValue(data.corporate_email) && !/^\S+@\S+\.\S+$/.test(data.corporate_email)) throw this.error('El correo corporativo no es válido', 400);
@@ -254,6 +262,7 @@ class ProviderCompanyService {
     this.validateCollection('contacts', data.contacts || []);
     this.validateCollection('materials', data.materials || [], operationalType);
     if (Array.isArray(data.bankAccounts)) this.validateCollection('bankAccounts', data.bankAccounts);
+    validateRegistrationFields({ ...data, latitude: location.latitude, longitude: location.longitude });
   }
 
   validateCollection(kind, items, operationalType = 'RAW_MATERIAL') {

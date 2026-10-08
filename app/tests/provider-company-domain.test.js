@@ -20,7 +20,7 @@ const validSite = {
   service_mode: 'BOTH',
   location: { department: 'Cochabamba', city: 'Cochabamba', address: 'Av. Blanco Galindo', latitude: -17.39, longitude: -66.16 },
   contacts: [{ full_name: 'Ana Pérez', position_area: 'Administración', cellphone: '70000000', is_main_contact: true }],
-  materials: [{ id_category: 1 }],
+  materials: [{ id_product: 1, frequency: 'MONTHLY', service_mode: 'BOTH' }],
   bankAccounts: [],
 };
 
@@ -42,7 +42,10 @@ test('rechaza principales y elementos duplicados en colecciones', () => {
     { full_name: 'A', position_area: 'A', cellphone: '1', is_main_contact: true },
     { full_name: 'B', position_area: 'B', cellphone: '2', is_main_contact: true },
   ]), /único contacto principal/);
-  assert.throws(() => service.validateCollection('materials', [{ id_category: 1 }, { id_category: 1 }]), /duplicados/);
+  assert.throws(() => service.validateCollection('materials', [
+    { id_product: 1, frequency: 'MONTHLY', service_mode: 'BOTH' },
+    { id_product: 1, frequency: 'MONTHLY', service_mode: 'BOTH' },
+  ]), /duplicados/);
   assert.throws(() => service.validateCollection('bankAccounts', [
     { id_bank: 1, account_holder: 'A', account_number: '1', account_type: 'OTRA', currency: 'BOB', is_main: true },
     { id_bank: 1, account_holder: 'B', account_number: '2', account_type: 'OTRA', currency: 'BOB', is_main: true },

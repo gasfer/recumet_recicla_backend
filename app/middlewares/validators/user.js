@@ -81,8 +81,8 @@ const validationSchema =  {
             errorMessage: "El rol es obligatorio",
         },
         isIn: {
-            options: [['ADMINISTRADOR', 'ENCARGADO', 'OPERADOR']],
-            errorMessage: 'El rol debe ser ADMINISTRADOR, ENCARGADO u OPERADOR',
+            options: [['ADMINISTRADOR', 'ENCARGADO', 'OPERADOR', 'COMERCIAL', 'OPERADOR_BALANZA', 'LIQUIDACION_CAJA']],
+            errorMessage: 'Seleccione Administrador/a, Encargado/a, Operador/a, Ejecutivo comercial, Operador de Balanza o Responsable de Liquidación y Caja',
         },
         isLength: {
             errorMessage: 'El rol debe tener mínimo a 4 caracteres y máximo 174 caracteres',

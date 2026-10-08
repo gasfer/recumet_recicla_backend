@@ -8,6 +8,9 @@ const { authorizeStockReconciliation } = require('../middlewares/authorize-stock
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
+const { exportPurchasesByBranch } = require('../controllers/reports/purchases-by-branch.controller');
+
+router.get('/total-stock-recumet/excel-purchases-by-branch', [validarJWT, authorizeModulePermission('KARDEX', 'reports')], exportPurchasesByBranch);
 
 
 /**

@@ -5,6 +5,7 @@ const { User, assignPermission, assignShift, assignSucursales, sequelize } = req
 const paginate = require('../helpers/paginate');
 const { Op } = require("sequelize");
 const { sendPermissionDenied } = require('../helpers/permission-denied');
+const { ensureProviderRegistrationPermission } = require('../services/user-role-permissions.service');
 
 const rejectAdminTarget = async (res, idUser) => {
     const user = await User.findByPk(idUser);
@@ -61,6 +62,7 @@ const newUser = async (req = request, res = response ) => {
         body.password = bcrypt.hashSync(body.password, salt);
         const token = await generarJWT(body.id);
         const userNew = await User.create(body);
+        await ensureProviderRegistrationPermission(userNew);
         res.status(201).json({
             ok: true,
             userNew,
@@ -90,7 +92,9 @@ const updateUser = async (req = request, res = response) => {
             delete body.password;
         }
         keepAdministratorRole(user, body);
+        const previousRole = user.role;
         await user.update(body);
+        if (previousRole !== user.role) await ensureProviderRegistrationPermission(user);
         return res.status(201).json({
             ok: true,
             msg: 'Usuario modificado exitosamente'

@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
     id_provider: DataTypes.INTEGER,
     id_category: DataTypes.INTEGER,
     id_product: DataTypes.INTEGER,
+    estimated_volume: DataTypes.DECIMAL(18, 3),
     frequency: DataTypes.STRING,
     frequency_mode: {
       type: DataTypes.STRING,
