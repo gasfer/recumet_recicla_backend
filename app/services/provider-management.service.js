@@ -8,7 +8,7 @@ function assignedBranches(user) {
   return [...new Set((user?.assign_sucursales || []).filter(item => item.status !== false).map(item => Number(item.id_sucursal)).filter(Number.isInteger))];
 }
 
-async function search(raw, user) {
+async function normalizeScopedQuery(raw, user) {
   const q = normalizeQuery(raw);
   const branches = assignedBranches(user);
   if (q.id_sucursales?.length && branches) {
@@ -26,6 +26,11 @@ async function search(raw, user) {
       }
     }
   }
+  return { q, branches };
+}
+
+async function search(raw, user) {
+  const { q, branches } = await normalizeScopedQuery(raw, user);
   const { sql, replacements } = buildQuery(q, branches);
   const [result] = await db.sequelize.query(sql, { replacements, type: QueryTypes.SELECT });
   const total = Number(result.total); const from = (q.page - 1) * q.limit;
@@ -50,4 +55,4 @@ async function catalogs(user) {
   return { branches: sucursales, storages, categories, products, types, users, departments: unique([...locations, ...departments].map(row => row.department)), cities: unique(locations.map(row => row.city)) };
 }
 
-module.exports = { search, catalogs, assignedBranches };
+module.exports = { search, catalogs, assignedBranches, normalizeScopedQuery };

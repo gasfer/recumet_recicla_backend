@@ -220,6 +220,11 @@ const historicalVerificationInventory = (item) => {
 
 const applyRegistrationVerification = (transfer, item) => {
   if (![TYPES.SURPLUS, TYPES.SHORTAGE].includes(item.difference_type)) return;
+  const operationalReviewNote = reviewNoteForItem(transfer, item);
+  if (operationalReviewNote && item.allowed_action) {
+    item.allowed_action = null;
+    item.message = `Esta diferencia ya tiene un expediente de recepción (${operationalReviewNote.registry_number}). Continúe la resolución desde Recepciones inconclusas y consulte aquí su trazabilidad.`;
+  }
   item.registration_verification = buildHistoricalVerification({
     transfer,
     item,

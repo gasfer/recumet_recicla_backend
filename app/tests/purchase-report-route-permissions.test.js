@@ -45,6 +45,8 @@ const response = () => ({
 });
 
 const reportRoutes = [
+  ['Excel sucursal x producto x proveedor', '/purchase-report/excel-branch-product-provider'],
+  ['catálogo de proveedores del reporte', '/purchase-report/provider-catalog'],
   ['listado del reporte', '/purchase-report'],
   ['Excel del reporte', '/purchase-report/excel'],
   ['PDF del reporte', '/purchase-report/pdf'],

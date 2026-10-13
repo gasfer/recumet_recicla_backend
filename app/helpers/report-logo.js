@@ -8,7 +8,7 @@ const frontendAssetLogoPath = path.resolve(
 const uploadedLogoPath = path.resolve(__dirname, '../../uploads/logo.png');
 
 const getReportLogoPath = () => (
-    fs.existsSync(frontendAssetLogoPath) ? frontendAssetLogoPath : uploadedLogoPath
+    fs.existsSync(uploadedLogoPath) ? uploadedLogoPath : frontendAssetLogoPath
 );
 
 const getReportLogoBase64 = () => {

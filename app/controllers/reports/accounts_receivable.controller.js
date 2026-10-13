@@ -1,8 +1,8 @@
+const { buildFinancialVoucher } = require('../../helpers/generator-pdf/financial-voucher.document');
+const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
+const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
 const { AccountsReceivable, AbonosAccountsReceivable,viewAbonosAccountReceivablesAll } = require('../../database/config');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../../helpers/generator-pdf/fonts');
-const styles = require('../../helpers/generator-pdf/styles');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -11,15 +11,7 @@ const { getReportLogoPath } = require('../../helpers/report-logo');
 const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { getNumberDecimal } = require("../../helpers/company");
-const {
-    buildHeader,
-    buildHr,
-    buildSectionTitle,
-    buildInfoPanel,
-    buildDetailTable,
-    buildClosingSection,
-    VOUCHER_THEME,
-} = require('../../helpers/generator-pdf/voucher-template.helper');
+const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -59,28 +51,12 @@ const generatePdfReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 8,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE CUENTAS POR COBRAR', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'accounts_receivable-generatePdfReports.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de cuentas por cobrar' });
@@ -88,19 +64,7 @@ const generatePdfReports = async (req = request, res = response) => {
 }
 
 const dataPdfReturn = (auth,sucursal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'REPORTE DE CUENTAS POR COBRAR', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'REPORTE DE CUENTAS POR COBRAR', auth, details: `Reporte generado con los parámetros establecidos · Sucursal: ${sucursal}` }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -256,28 +220,12 @@ const generatePdfReportsAbonosAll = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 8,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE ABONOS CUENTAS POR COBRAR', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'accounts_receivable-generatePdfReportsAbonosAll.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de abonos' });
@@ -352,19 +300,7 @@ const generateExcelReportsAbonosAll = async (req = request, res = response) => {
   }
 
 const dataPdfReturnAbonosAll = (auth,sucursal) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'PAGOS REALIZADOS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos, SUCURSAL: '+sucursal, alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'PAGOS REALIZADOS', auth, details: `Reporte generado con los parámetros establecidos · Sucursal: ${sucursal}` }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -435,169 +371,12 @@ const printAbonoAccountReceivableVoucher = async (req = request, res = response)
             ]
         });
         const decimal = await getNumberDecimal();
-        let dataPdf = dataPdfReturnAbonoAccountReceivableVoucher(abono_account_receivable,abono_account_receivable.accountsReceivable,decimal); //PDF 
-        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4];
-        let quantity_total = 0;
-        let units = [];
-        abono_account_receivable.accountsReceivable.output.detailsOutput.forEach(detail => {
-            quantity_total+= Number(detail?.quantity);
-            if (!units.includes(detail?.product?.unit.siglas)) {
-                units.push(detail?.product?.unit.siglas);
-            }
-            const tableData = [
-                {text:detail?.product?.cod, fontSize:8}, 
-                {text:detail?.product?.name, fontSize:8}, 
-                {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
-                {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
-                {text:Number(detail?.price).toFixed(decimal), fontSize:8, alignment: 'right'},  
-                {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
-            ];
-            detailTableNode.table.body.push(tableData);
-        });
-        detailTableNode.table.body.push(
-
-            [
-                {text:'',colSpan: 2, border:[true,false,false,false]},
-                '',
-                {
-                    text: `${Number(quantity_total).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}`,
-                    fontSize: 8,
-                    alignment: 'center',
-                    bold: true,
-                    fillColor: '#eeeeee'
-                },                  
-                {text: units.join(','), fontSize:8, alignment:'center'},
-                {
-                    border: [true, false, true, true],
-                    text: `SUB TOTAL: ${Number(abono_account_receivable.accountsReceivable.output.sub_total).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}`,
-                    colSpan: 2,
-                    fontSize: 8,
-                    fillColor: '#eeeeee',
-                    alignment: 'right',
-                    bold: true
-                }
-            ],
-            [
-                {text:'',colSpan: 4, border:[true,false,false,false]},
-                '',
-                '',
-                '',
-                {   border:[true,false,true,true],
-                    text: `DESCUENTO: ${Number(abono_account_receivable.accountsReceivable.output.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#eeeeee',alignment:'right', 
-                    bold:true,
-                },
-            ],
-            [
-                {
-                    text:'SON: ' + NumeroALetras(Number(abono_account_receivable.accountsReceivable.output.total).toFixed(decimal)),
-                    style: 'sonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
-                },
-                '',
-                '',
-                '',
-                {
-                    border: [true, false, true, true],
-                    text: `TOTAL: ${Number(abono_account_receivable.accountsReceivable.output.total).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}`,
-                    colSpan: 2,
-                    fontSize: 8,
-                    fillColor: '#eeeeee',
-                    alignment: 'right',
-                    bold: true
-                  }
-                  
-            ]
-        );
-        let docDefinition = {
-            content: dataPdf,
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
-        });
-        pdfDoc.end();
+        await sendReportPdf(res, buildFinancialVoucher(abono_account_receivable.accountsReceivable, { payable: false, decimal, payment: abono_account_receivable }), 'abono-receivable-' + abono_account_receivable.id + '.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de abono' });
     }
 }
-
-const dataPdfReturnAbonoAccountReceivableVoucher = (abono_account_receivable, accountsReceivable, decimal) => [
-    buildHeader({
-        title: 'COMPROBANTE ABONO',
-        codePrefix: 'CUENTA',
-        codeValue: accountsReceivable.cod,
-        dateLabel: 'Fecha',
-        dateValue: moment(abono_account_receivable.date_abono).format('DD/MM/YYYY HH:mm:ss'),
-        company: {
-            branchName: accountsReceivable.sucursal?.name,
-            nit: accountsReceivable.sucursal?.company?.nit,
-            phone: accountsReceivable.sucursal?.cellphone,
-            email: accountsReceivable.sucursal?.email,
-        },
-        logoWidth: 55,
-    }),
-    buildHr([0, 1, 0, 4]),
-    buildInfoPanel([
-        {
-            title: 'RECIBÍ DE (CLIENTE)',
-            rows: [
-                { label: 'Nombre:', value: accountsReceivable.output?.client?.full_names || '-', labelWidth: 60 },
-                { label: 'Nro. Nit/CI:', value: accountsReceivable.output?.client?.number_document || '-', labelWidth: 60 },
-                { label: 'Monto abono:', value: `Bs. ${Number(abono_account_receivable.monto_abono).toFixed(decimal)} (${NumeroALetras(Number(abono_account_receivable.monto_abono).toFixed(decimal))})`, labelWidth: 80 },
-                { label: 'Concepto:', value: `Abono crédito ${accountsReceivable.cod} - Venta ${accountsReceivable.output?.cod || ''}`, labelWidth: 60 },
-            ]
-        }
-    ]),
-    buildSectionTitle('DETALLE DE PRODUCTOS'),
-    buildDetailTable({
-        widths: [55, '*', 50, 50, 50, 50],
-        headers: [
-            { text: 'CÓDIGO', alignment: 'center' },
-            { text: 'DETALLE' },
-            { text: 'CANT.', alignment: 'center' },
-            { text: 'UND', alignment: 'center' },
-            { text: 'P.U.', alignment: 'center' },
-            { text: 'IMPORTE', alignment: 'center' },
-        ],
-        rows: [],
-    }),
-    {
-        margin: [0, 3, 0, 0],
-        columns: [
-            { text: `P/${accountsReceivable.output.type_registry} NRO:`, bold: true, style: 'text', width: 80 },
-            { text: `${accountsReceivable.output.number_registry}`, style: 'text' },
-            { text: `A CUENTA:`, bold: true, style: 'text', width: 65 },
-            { text: `Bs. ${Number(accountsReceivable.monto_abonado).toFixed(decimal)}`, style: 'text' },
-            { text: `SALDO:`, bold: true, style: 'text', width: 55 },
-            { text: `Bs. ${Number(accountsReceivable.monto_restante).toFixed(decimal)}`, style: 'text' },
-        ]
-    },
-    buildClosingSection({
-        signatures: [
-            { role: 'Recibí conforme', name: accountsReceivable.sucursal?.name || '' },
-            { role: 'Entregue conforme', name: accountsReceivable.output?.client?.full_names || '' },
-        ],
-        margin: [0, 10, 0, 0],
-        signatureSpace: 35,
-    }),
-];
 
 
 
@@ -625,171 +404,12 @@ const printAccountReceivableVoucher = async (req = request, res = response) =>{
             ]
         });
         const decimal = await getNumberDecimal();
-        let dataPdf = dataPdfReturnAccountPayableVoucher(account_receivable,decimal); //PDF 
-        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4]; // Tabla de detalles de productos
-        const abonosTableNode = dataPdf.find(node => node?.table?.widths?.length === 5) || dataPdf[6]; // Tabla de abonos registrados
-        let quantity_total = 0;
-        let units = [];
-        account_receivable.output.detailsOutput.forEach(detail => {
-            quantity_total+= Number(detail?.quantity);
-            if (!units.includes(detail?.product?.unit.siglas)) {
-                units.push(detail?.product?.unit.siglas);
-            }
-            const tableData = [
-                {text:detail?.product?.cod, fontSize:8}, 
-                {text:detail?.product?.name, fontSize:8}, 
-                {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
-                {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
-                {text:Number(detail?.price).toFixed(decimal), fontSize:8, alignment: 'right'},  
-                {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
-            ];
-            detailTableNode.table.body.push(tableData);
-        });
-        detailTableNode.table.body.push(
-            [
-                {text:'',colSpan: 2, border:[true,false,false,false]},
-                '',
-                {text: quantity_total,  fontSize:8, alignment:'center', bold: true, fillColor: '#dde3ea'},
-                {text: units.join(','), fontSize:8, alignment:'center'},
-                {   border:[true,false,true,true],
-                    text: `SUB TOTAL: ${Number(account_receivable.output.sub_total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#dde3ea',alignment:'right', 
-                    bold:true,
-                },
-            ],
-            [
-                {text:'',colSpan: 4, border:[true,false,false,false]},
-                '',
-                '',
-                '',
-                {   border:[true,false,true,true],
-                    text: `DESCUENTO: ${Number(account_receivable.output.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#dde3ea',alignment:'right', 
-                    bold:true,
-                },
-            ],
-            [
-                {
-                    text:'SON: ' + NumeroALetras(Number(account_receivable.output.total).toFixed(decimal)),
-                    style: 'sonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
-                },
-                '',
-                '',
-                '',
-                {   border:[true,false,true,true],
-                    text: `TOTAL: ${Number(account_receivable.output.total).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#dde3ea',alignment:'right', 
-                    bold:true,
-                },
-            ]
-        );
-        account_receivable.abonosAccountsReceivable.forEach(abono => {
-            const tableData = [
-                {text:moment(abono.date_abono).format('DD/MM/YYYY HH:mm:ss'), fontSize:8, alignment: 'center'}, 
-                {text:Number(abono?.monto_abono).toFixed(decimal), fontSize:8, alignment: 'right'}, 
-                {text:abono?.user?.full_names || '-', fontSize:8}, 
-                {text:Number(abono?.restante_credito).toFixed(decimal), fontSize:8, alignment: 'right'}, 
-                {text:Number(abono?.total_abonado).toFixed(decimal), fontSize:8, alignment: 'right'},  
-            ];
-            abonosTableNode.table.body.push(tableData);
-        });
-
-        let docDefinition = {
-            content: dataPdf,
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
-        });
-        pdfDoc.end();
+        await sendReportPdf(res, buildFinancialVoucher(account_receivable, { payable: false, decimal }), 'cuenta-receivable-' + account_receivable.id + '.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el estado de cuenta por cobrar' });
     }
 }
-
-const dataPdfReturnAccountPayableVoucher = (accountsReceivable, decimal) => [
-    buildHeader({
-        title: 'ESTADO DE CUENTA DE CRÉDITO',
-        codePrefix: 'CUENTA',
-        codeValue: accountsReceivable.cod,
-        dateLabel: 'Fecha',
-        dateValue: moment(accountsReceivable.date_credit).format('DD/MM/YYYY HH:mm:ss'),
-        company: {
-            branchName: accountsReceivable.sucursal?.name,
-            nit: accountsReceivable.sucursal?.company?.nit,
-            phone: accountsReceivable.sucursal?.cellphone,
-            email: accountsReceivable.sucursal?.email,
-        },
-        logoWidth: 55,
-    }),
-    buildHr([0, 1, 0, 4]),
-    buildInfoPanel([
-        {
-            title: 'DATOS CLIENTE',
-            rows: [
-                { label: 'Nombre:', value: accountsReceivable?.client?.full_names || accountsReceivable.output?.client?.full_names || '-', labelWidth: 50 },
-                { label: 'Nro. Nit/CI:', value: accountsReceivable?.client?.number_document || accountsReceivable.output?.client?.number_document || '-', labelWidth: 50 },
-            ]
-        },
-        {
-            title: 'CONTACTOS',
-            rows: [
-                { label: 'Teléfono:', value: accountsReceivable?.client?.cellphone || accountsReceivable.output?.client?.cellphone || '-', labelWidth: 50 },
-                { label: 'Dirección:', value: accountsReceivable?.client?.direction || accountsReceivable.output?.client?.direction || '-', labelWidth: 50 },
-            ]
-        }
-    ]),
-    buildSectionTitle('DETALLE DE PRODUCTOS'),
-    buildDetailTable({
-        widths: [55, '*', 45, 35, 55, 60],
-        headers: [
-            { text: 'CÓDIGO', alignment: 'center' },
-            { text: 'DETALLE' },
-            { text: 'CANT.', alignment: 'center' },
-            { text: 'UND', alignment: 'center' },
-            { text: 'P.U.', alignment: 'center' },
-            { text: 'IMPORTE', alignment: 'center' },
-        ],
-        rows: [],
-    }),
-    buildSectionTitle('ABONOS REGISTRADOS'),
-    buildDetailTable({
-        widths: [100, 80, '*', 80, 80],
-        headers: [
-            { text: 'FECHA, HORA ABONO', alignment: 'center' },
-            { text: 'MONTO ABONADO', alignment: 'center' },
-            { text: 'ABONADO POR' },
-            { text: 'RESTANTE', alignment: 'center' },
-            { text: 'TOTAL ABONADO', alignment: 'center' },
-        ],
-        rows: [],
-    }),
-    {
-        margin: [0, 3, 0, 0],
-        columns: [
-            { text: 'TOTAL ABONADO:', bold: true, style: 'text', width: 110 },
-            { text: `Bs. ${Number(accountsReceivable.monto_abonado).toFixed(decimal)}`, bold: true, style: 'text', width: 100 },
-            { text: 'TOTAL RESTANTE:', bold: true, style: 'text', width: 110 },
-            { text: `Bs. ${Number(accountsReceivable.monto_restante).toFixed(decimal)}`, bold: true, style: 'text' },
-        ]
-    },
-    buildClosingSection({
-        signatures: [
-            { role: 'Sucursal', name: accountsReceivable.sucursal?.name || '' },
-            { role: 'Cliente', name: accountsReceivable.client?.full_names || '' },
-        ],
-        margin: [0, 15, 0, 0],
-        signatureSpace: 35,
-    }),
-];
 
 module.exports = {
     generatePdfReports,
@@ -798,6 +418,5 @@ module.exports = {
     printAccountReceivableVoucher,
     generatePdfReportsAbonosAll,
     generateExcelReportsAbonosAll,
-    dataPdfReturnAbonoAccountReceivableVoucher,
-    dataPdfReturnAccountPayableVoucher,
+
 }

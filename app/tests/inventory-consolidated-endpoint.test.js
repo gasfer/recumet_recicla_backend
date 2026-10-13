@@ -173,7 +173,7 @@ test('Regresión: generatePdfReportsTotalStock y generateExcelReportsTotalStock 
   await generatePdfReportsTotalStock(req, resPdf);
   await resPdf.waitForFinish();
   assert.equal(resPdf.statusCode, 200);
-  assert.equal(resPdf.headers['content-type'], 'application/pdf;');
+  assert.equal(resPdf.headers['content-type'], 'application/pdf');
 
   const resExcel = createResponseMock();
   await generateExcelReportsTotalStock(req, resExcel);

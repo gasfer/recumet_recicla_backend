@@ -16,16 +16,22 @@ const draftPermission = (req, res, next) => authorizeProviderAccess(req.params.k
 router.get('/drafts/:key', [validarJWT, draftPermission], drafts.read);
 router.put('/drafts/:key', [validarJWT, draftPermission], drafts.save);
 router.delete('/drafts/:key', [validarJWT, draftPermission], drafts.remove);
-const { validateSheet, createRegistrationPdf } = require('../services/provider-registration-pdf');
+const { validateSheet, createRegistrationHtmlPdf } = require('../services/provider-registration-pdf');
 
-router.post('/registration-sheet', [validarJWT, authorizeProviderAccess('view')], (req, res) => {
+router.post('/registration-sheet', [validarJWT, authorizeProviderAccess('view')], async (req, res) => {
     if (!validateSheet(req.body)) return res.status(400).json({ ok: false, msg: 'La ficha de registro no es válida.' });
-    const pdf = createRegistrationPdf(req.body);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="ficha-proveedor.pdf"');
-    pdf.pipe(res);
-    pdf.end();
+    try {
+        const pdf = await createRegistrationHtmlPdf(req.body);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', 'inline; filename="ficha-proveedor.pdf"');
+        res.setHeader('Cache-Control', 'no-store, private');
+        return res.send(pdf);
+    } catch (error) {
+        console.error('No se pudo generar la ficha PDF:', error.message);
+        return res.status(500).json({ ok: false, msg: 'No se pudo generar la ficha de proveedor.' });
+    }
 });
+
 
 router.get('/management/catalogs', [validarJWT, authorizeProviderAccess('view')], management.catalogs);
 router.get('/management', [validarJWT, authorizeProviderAccess('view')], management.search);

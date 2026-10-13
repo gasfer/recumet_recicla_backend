@@ -1,11 +1,9 @@
 const { request, response } = require('express');
-const PdfPrinter = require('pdfmake');
+const { sendReportPdf } = require('../services/pdf/report-pdf.service');
 const ExcelJS = require('exceljs');
 const moment = require('moment');
 const fs = require('fs');
 const path = require('path');
-const fonts = require('../helpers/generator-pdf/fonts');
-const styles = require('../helpers/generator-pdf/styles');
 const { getNumberDecimal } = require('../helpers/company');
 const { excelNumberMask } = require('../helpers/number-formatter');
 const { queryPurchaseReportPage, queryPurchaseReportExport, summarizeByProduct } = require('../services/purchase-report-query.service');
@@ -93,8 +91,8 @@ const getPurchaseReport = async (req = request, res = response) => {
         const inputs = await queryPurchaseReportPage(restrictToAuthorizedBranches(req.query, req.userAuth));
         return res.status(200).json({ ok: true, inputs });
     } catch (error) {
-        console.log(error);
-        return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo consultar el Reporte de compras.' }] });
+        console.error('Error consultando el Reporte de compras:', error);
+        return res.status(error.statusCode || 500).json({ ok: false, errors: [{ msg: error.statusCode ? error.message : 'No se pudo consultar el Reporte de compras.' }] });
     }
 };
 
@@ -184,41 +182,27 @@ const generatePurchaseReportExcel = async (req = request, res = response) => {
     }
 };
 
+const purchaseTableDocument = (body, widths, metadata) => ({
+    ...metadata,
+    columns: body[0].map((cell, index) => ({ label: cell.text, width: widths[index], align: cell.alignment })),
+    rows: body.slice(1).map(cells => ({
+        kind: String(cells[0]?.text || '').startsWith('PROVEEDOR:') ? 'group'
+            : String(cells[0]?.text || '').startsWith('SUBTOTAL') ? 'subtotal'
+                : String(cells[0]?.text || '').startsWith('TOTAL') ? 'total' : 'detail',
+        cells: cells.map(cell => ({ text: cell.text ?? '', span: cell.colSpan, align: cell.alignment })),
+    })),
+});
+
 const generatePurchaseReportPdf = async (req = request, res = response) => {
     try {
         const params = restrictToAuthorizedBranches(req.query, req.userAuth);
         const inputs = await queryPurchaseReportExport(params);
         const decimal = await getNumberDecimal();
         const body = buildPurchaseReportPdfBody(inputs, decimal);
-        const definition = {
-            pageSize: 'LETTER',
-            pageOrientation: 'landscape',
-            pageMargins: [18, 18, 18, 18],
-            content: [
-                {
-                    columns: [
-                        fs.existsSync(imagePath) ? { image: `data:image/png;base64,${fs.readFileSync(imagePath, 'base64')}`, width: 42 } : { width: 42, text: '' },
-                        { text: 'REPORTE DE COMPRAS', alignment: 'center', bold: true, fontSize: 13, margin: [0, 12, 0, 0] },
-                        { width: 42, text: '' },
-                    ],
-                },
-                { text: reportFilterSummary(params).join('  |  '), alignment: 'center', fontSize: 6.5, margin: [0, 5, 0, 9] },
-                {
-                    table: {
-                        headerRows: 1,
-                        dontBreakRows: true,
-                        widths: [42, 45, 42, 47, 68, 185, 38, 57, 42, 48],
-                        body,
-                    },
-                    layout: 'lightHorizontalLines',
-                },
-            ],
-            styles,
-        };
-        const printer = new PdfPrinter(fonts); const pdf = printer.createPdfKitDocument(definition); const chunks = [];
-        pdf.on('data', (chunk) => chunks.push(chunk));
-        pdf.on('end', () => { res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', 'attachment; filename=reporte-compras.pdf'); res.send(Buffer.concat(chunks)); });
-        pdf.end();
+        const document = purchaseTableDocument(body, [42,45,42,47,68,185,38,57,42,48], {
+            title: 'REPORTE DE COMPRAS', filters: reportFilterSummary(params), paper: 'LETTER', orientation: 'landscape',
+        });
+        await sendReportPdf(res, document, 'reporte-compras.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar el PDF del Reporte de compras.' }] });
@@ -286,30 +270,10 @@ const generatePurchaseReportDetailsPdf = async (req = request, res = response) =
         const inputs = await queryPurchaseReportExport(params);
         const decimal = await getNumberDecimal();
         const body = buildDetailedPdfBody(inputs, decimal);
-        const definition = {
-            pageSize: 'LETTER',
-            pageOrientation: 'portrait',
-            pageMargins: [18, 18, 18, 18],
-            content: [
-                {
-                    columns: [
-                        fs.existsSync(imagePath) ? { image: `data:image/png;base64,${fs.readFileSync(imagePath, 'base64')}`, width: 42 } : { width: 42, text: '' },
-                        { text: 'REPORTE DE COMPRAS - RESUMEN POR PRODUCTO', alignment: 'center', bold: true, fontSize: 13, margin: [0, 12, 0, 0] },
-                        { width: 42, text: '' },
-                    ],
-                },
-                { text: reportFilterSummary(params).join('  |  '), alignment: 'center', fontSize: 6.5, margin: [0, 5, 0, 9] },
-                {
-                    table: { headerRows: 1, dontBreakRows: true, widths: [30, 70, '*', 80], body },
-                    layout: 'lightHorizontalLines',
-                },
-            ],
-            styles,
-        };
-        const printer = new PdfPrinter(fonts); const pdf = printer.createPdfKitDocument(definition); const chunks = [];
-        pdf.on('data', (chunk) => chunks.push(chunk));
-        pdf.on('end', () => { res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', 'attachment; filename=reporte-compras-resumen-producto.pdf'); res.send(Buffer.concat(chunks)); });
-        pdf.end();
+        const document = purchaseTableDocument(body, [30,70,300,80], {
+            title: 'REPORTE DE COMPRAS - RESUMEN POR PRODUCTO', filters: reportFilterSummary(params), paper: 'LETTER', orientation: 'portrait',
+        });
+        await sendReportPdf(res, document, 'reporte-compras-resumen-producto.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar el PDF de resumen por producto.' }] });
@@ -322,30 +286,10 @@ const generatePurchaseReportDetailsPdfCpp = async (req = request, res = response
         const inputs = await queryPurchaseReportExport(params);
         const decimal = await getNumberDecimal();
         const body = buildDetailedCppPdfBody(inputs, decimal);
-        const definition = {
-            pageSize: 'LETTER',
-            pageOrientation: 'portrait',
-            pageMargins: [18, 18, 18, 18],
-            content: [
-                {
-                    columns: [
-                        fs.existsSync(imagePath) ? { image: `data:image/png;base64,${fs.readFileSync(imagePath, 'base64')}`, width: 42 } : { width: 42, text: '' },
-                        { text: 'REPORTE DE COMPRAS - DETALLE COSTO PROMEDIO', alignment: 'center', bold: true, fontSize: 13, margin: [0, 12, 0, 0] },
-                        { width: 42, text: '' },
-                    ],
-                },
-                { text: reportFilterSummary(params).join('  |  '), alignment: 'center', fontSize: 6.5, margin: [0, 5, 0, 9] },
-                {
-                    table: { headerRows: 1, dontBreakRows: true, widths: [70, '*', 80, 70, 80], body },
-                    layout: 'lightHorizontalLines',
-                },
-            ],
-            styles,
-        };
-        const printer = new PdfPrinter(fonts); const pdf = printer.createPdfKitDocument(definition); const chunks = [];
-        pdf.on('data', (chunk) => chunks.push(chunk));
-        pdf.on('end', () => { res.setHeader('Content-Type', 'application/pdf'); res.setHeader('Content-Disposition', 'attachment; filename=reporte-compras-costo-promedio.pdf'); res.send(Buffer.concat(chunks)); });
-        pdf.end();
+        const document = purchaseTableDocument(body, [70,220,80,70,80], {
+            title: 'REPORTE DE COMPRAS - DETALLE COSTO PROMEDIO', filters: reportFilterSummary(params), paper: 'LETTER', orientation: 'portrait',
+        });
+        await sendReportPdf(res, document, 'reporte-compras-costo-promedio.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar el PDF detallado por costo promedio.' }] });

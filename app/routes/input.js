@@ -12,6 +12,10 @@ const { authorizeProductCategoryAccess, detailProductIds } = require('../middlew
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
+const { exportPurchaseProviderDetails } = require('../controllers/reports/purchase-provider-details.controller');
+const { purchaseProviderCatalog } = require('../controllers/purchase-provider-catalog.controller');
+router.get('/purchase-report/excel-branch-product-provider', [validarJWT, authorizeModulePermission('REPORTE COMPRAS', 'reports')], exportPurchaseProviderDetails);
+router.get('/purchase-report/provider-catalog', [validarJWT, authorizeModulePermission('REPORTE COMPRAS', 'reports')], purchaseProviderCatalog);
 
 router.get('/operational-date', [validarJWT], getOperationalDate);
 

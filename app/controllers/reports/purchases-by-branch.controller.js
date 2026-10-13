@@ -1,10 +1,13 @@
+const { selectedReportFilters } = require('../../services/report-selected-filters.service');
 'use strict';
 const { buildPurchasesByBranchReport } = require('../../services/purchases-by-branch-report.service');
 const { generatePurchasesByBranchExcel } = require('../../services/purchases-by-branch-excel.service');
 
 async function exportPurchasesByBranch(req, res) {
   try {
-    const report = await buildPurchasesByBranchReport(req.query);
+    const byProvider = String(req.query.by_provider || '').toLowerCase() === 'true';
+    const report = await buildPurchasesByBranchReport(req.query, { byProvider });
+    report.selectedFilters = await selectedReportFilters({ ...req.query, id_sucursales: req.query.id_sucursal, id_storages: req.query.id_storage, id_products: req.query.id_products });
     const workbook = await generatePurchasesByBranchExcel(report);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=reporte_compras_x_sucursal_${report.period.start}_${report.period.end}.xlsx`);

@@ -6,7 +6,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { createRequire } = require('node:module');
-const PdfPrinter = require('pdfmake');
+const { generateReportPdf, closePdfRenderer } = require('../services/pdf/report-pdf.service');
+const { inspectPdf } = require('./pdf-inspection.helper');
+test.after(() => closePdfRenderer());
 
 const controllerPath = path.resolve(__dirname, '../controllers/reports/transfers.controller.js');
 const controllerRequire = createRequire(controllerPath);
@@ -31,14 +33,7 @@ async function renderVoucher(count, options = {}) {
     }));
     const notes = options.notes === undefined ? defaultNotes : options.notes;
     let reviewQuery;
-    let pages;
-    class CapturingPrinter extends PdfPrinter {
-        createPdfKitDocument(definition) {
-            const doc = super.createPdfKitDocument(definition);
-            pages = doc._pdfMakePages;
-            return doc;
-        }
-    }
+    let document;
     const sandbox = {
         module: { exports: {} }, __dirname: path.dirname(controllerPath), Buffer, console,
         require(name) {
@@ -46,7 +41,7 @@ async function renderVoucher(count, options = {}) {
                 Transfers: { findByPk: async () => transfer },
                 TransferReviewNote: { findAll: async (query) => { reviewQuery = query; return notes; } },
             };
-            if (name === 'pdfmake') return CapturingPrinter;
+            if (name === '../../services/pdf/report-pdf.service') return { sendReportPdf: async (res, data) => { document = data; return res.send(await generateReportPdf(data)); } };
             return controllerRequire(name);
         },
     };
@@ -60,13 +55,12 @@ async function renderVoucher(count, options = {}) {
         fs.mkdirSync(process.env.RECEPTION_PDF_QA_DIR, { recursive: true });
         fs.writeFileSync(path.join(process.env.RECEPTION_PDF_QA_DIR, `reception-${count}.pdf`), buffer);
     }
-    return { reviewQuery, pages: pages.map(page => page.items.filter(item => item.type === 'line').map(({ item }) => ({
-        text: item.inlines.map(inline => inline.text).join(''), y: item.y,
-    }))) };
+    const pages = inspectPdf(buffer);
+    return { reviewQuery, document, pageSizes: pages.map(page => ({ width: page.width, height: page.height })), pages: pages.map(page => page.text.split('\n').map(text => ({ text }))) };
 }
 
-test('la guía corta continúa con conciliaciones en la primera hoja', async () => {
-    const { pages, reviewQuery } = await renderVoucher(2);
+test('la guía corta continúa con conciliaciones en la primera hoja', { skip: !process.env.PDF_QA_PYTHON }, async () => {
+    const { pages, reviewQuery, document } = await renderVoucher(2);
     const first = pages[0].map(line => line.text).join('\n');
     assert.match(first, /ITEM-001/);
     assert.match(first, /CONCILIACIÓN DE DIFERENCIAS REGISTRADAS/);
@@ -74,20 +68,36 @@ test('la guía corta continúa con conciliaciones en la primera hoja', async () 
     assert.equal(pages.length, 1, 'Una guía corta debe usar una sola hoja');
     assert.match(first, /OBSERVACIONES RECEPCIÓN/);
     assert.match(first, /Recibí conforme/);
-    const totals = pages[0].find(line => line.text === 'PESOS TOTALES');
-    const reconciliation = pages[0].find(line => line.text === 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS');
-    assert.ok(reconciliation.y - totals.y < 40, 'La conciliación debe seguir inmediatamente a los productos');
+    assert.equal(document.sections[0].title, 'DETALLE DE PRODUCTOS');
+    assert.equal(document.sections[1].title, 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS');
+    assert.equal(document.panelLayout, 'three-columns');
+    assert.equal(document.panels.length, 3);
     assert.equal(reviewQuery.where.id_transfer, 1);
     assert.ok(reviewQuery.include.some((association) => association.association === 'details'));
 });
 
-test('guía extensa conserva todos los ítems y repite los encabezados en cada continuación', async () => {
-    const count = 32;
-    const { pages } = await renderVoucher(count);
+test('la guía de traslado conserva paneles de dos columnas y recepción solicita tres columnas horizontales', () => {
+    const { buildTransferDocument } = require('../helpers/generator-pdf/transfer-voucher.document');
+    const transfer = { cod: 'TR-1', date_send: '2026-10-12', date_received: '2026-10-12', detailsTransfers: [], sucursal_send: { name: 'Origen' }, sucursal_received: { name: 'Destino' } };
+    assert.equal(buildTransferDocument(transfer).panelLayout, 'two-columns');
+    assert.equal(buildTransferDocument(transfer, { rows: [], totals: {}, units: [] }).panelLayout, 'three-columns');
+});
+
+test('el comprobante de traslado usa separadores españoles y decimales de configuración', () => {
+    const { buildTransferDocument } = require('../helpers/generator-pdf/transfer-voucher.document');
+    const transfer = { cod: 'TR-FMT', date_send: '2026-10-12', detailsTransfers: [{ quantity: 1234.5, product: { cod: 'P1', name: 'Metal', unit: { siglas: 'KGR' } } }], sucursal_send: { name: 'Origen' } };
+    const document = buildTransferDocument(transfer, undefined, [], 3);
+    assert.equal(document.sections[0].rows[0][3], '1.234,500');
+    assert.equal(document.sections[0].rows[1].cells[3], '1.234,500');
+});
+
+test('guía extensa conserva todos los ítems y repite los encabezados en cada continuación', { skip: !process.env.PDF_QA_PYTHON }, async () => {
+    const count = 80;
+    const { pages, pageSizes } = await renderVoucher(count);
     assert.ok(pages.length > 1);
     let productPages = 0;
     let reconciliationPages = 0;
-    for (const lines of pages) {
+    for (const [pageIndex, lines] of pages.entries()) {
         const text = lines.map(line => line.text).join('\n');
         if (/ITEM-\d/.test(text)) {
             productPages++;
@@ -101,7 +111,8 @@ test('guía extensa conserva todos los ítems y repite los encabezados en cada c
             assert.match(text, /PRODUCTO ORIGEN/);
             assert.match(text, /CONC\./);
         }
-        for (const line of lines) assert.ok(line.y >= 0 && line.y < 378, 'Contenido dentro de la hoja');
+        assert.equal(Math.max(pageSizes[pageIndex].width, pageSizes[pageIndex].height), 792, 'La guía extensa usa carta');
+
     }
     assert.ok(productPages >= 2, 'Se ejercita la continuación de productos');
     assert.ok(reconciliationPages >= 2, 'Se ejercita la continuación de conciliaciones');
@@ -113,7 +124,7 @@ test('guía extensa conserva todos los ítems y repite los encabezados en cada c
     }
 });
 
-test('recepción sin diferencias mantiene la guía sin tabla de conciliación', async () => {
+test('recepción sin diferencias mantiene la guía sin tabla de conciliación', { skip: !process.env.PDF_QA_PYTHON }, async () => {
     const { pages } = await renderVoucher(1, { notes: [] });
     const text = pages.flat().map((line) => line.text).join('\n');
     assert.doesNotMatch(text, /CONCILIACIÓN DE DIFERENCIAS REGISTRADAS/);

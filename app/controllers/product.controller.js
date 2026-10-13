@@ -18,6 +18,7 @@ const {
 const { attachAvailabilityToStocks } = require('../services/stock-availability.service');
 const { applyExplicitEffect } = require('../services/inventory-posting.service');
 const { verifyLocationsIntegrity } = require('../services/stock-kardex-integrity.service');
+const { sendReportPdf } = require('../services/pdf/report-pdf.service');
 
 const ExcelJS = require("exceljs");
 
@@ -733,40 +734,15 @@ const getReportProductCostPdf = async (req = request, res = response) => {
         };
       });
 
-    const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=costos.pdf');
-    doc.pipe(res);
-
-    doc.fontSize(14).text('REPORTE DE COSTOS', { align: 'center' });
-    doc.moveDown();
-
-    const headers   = ['COD', 'NOMBRE', 'DESCRIPCION', 'EN RECUMET', 'CON RECOJO', 'OTRO'];
-    const colWidths = [60, 150, 180, 80, 80, 80];
-    let x = 30;
-    const y = doc.y;
-
-    doc.fontSize(9).font('Helvetica-Bold');
-    headers.forEach((h, i) => {
-      doc.text(h, x, y, { width: colWidths[i], align: 'left' });
-      x += colWidths[i];
-    });
-
-    doc.moveDown(0.5);
-    doc.font('Helvetica').fontSize(8);
-
-    data.forEach((row) => {
-      x = 30;
-      const rowY = doc.y;
-      [row.cod, row.name, row.description, row.cost, row.cost_two, row.cost_tree]
-        .forEach((val, i) => {
-          doc.text(String(val), x, rowY, { width: colWidths[i], align: 'left' });
-          x += colWidths[i];
-        });
-      doc.moveDown(0.4);
-    });
-
-    doc.end();
+    await sendReportPdf(res, {
+      title: 'REPORTE DE COSTOS', paper: 'A4', orientation: 'landscape',
+      columns: [
+        { label: 'COD', width: 60 }, { label: 'NOMBRE', width: 150 },
+        { label: 'DESCRIPCIÓN', width: 180 }, { label: 'EN RECUMET', width: 80, align: 'right' },
+        { label: 'CON RECOJO', width: 80, align: 'right' }, { label: 'OTRO', width: 80, align: 'right' },
+      ],
+      rows: data.map(row => [row.cod, row.name, row.description, row.cost, row.cost_two, row.cost_tree]),
+    }, 'costos.pdf');
 
   } catch (error) {
     console.log(error);

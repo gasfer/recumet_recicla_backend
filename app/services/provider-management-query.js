@@ -66,9 +66,15 @@ function normalizeQuery(raw = {}) {
   return q;
 }
 
-function buildQuery(q, branchIds = null) {
+function buildQuery(q, branchIds = null, { purchaseDetails = false } = {}) {
   const replacements = { limit: q.limit, offset: (q.page - 1) * q.limit };
-  const context = ["i.status = 'ACTIVE'"];
+  const context = [q.purchase_status === 'INACTIVE' ? "i.status = 'INACTIVE'" : "i.status = 'ACTIVE'"];
+  if (q.payment_type) { context.push('i.type = :payment_type'); replacements.payment_type = q.payment_type; }
+  if (q.purchase_referral_sources) { context.push('i.referral_sources = :purchase_referral_sources'); replacements.purchase_referral_sources = q.purchase_referral_sources; }
+  for (const [key, column] of [['purchase_old_customer', 'old_customer'], ['purchase_with_pickup', 'with_pickup']]) {
+    if (q[key] !== undefined) { context.push('i.' + column + ' = :' + key); replacements[key] = q[key]; }
+  }
+  if (q.purchase_search) { context.push('i.' + (q.purchase_search_type === 'registry_number' ? 'registry_number' : 'cod') + ' ILIKE :purchase_search'); replacements.purchase_search = '%' + q.purchase_search + '%'; }
   const purchase = []; const detail = ["(d.status = 'ACTIVE' OR d.status IS NULL)"]; const provider = [];
   const bind = (key, value) => { replacements[key] = value; return `:${key}`; };
   if (branchIds) context.push(branchIds.length ? `i.id_sucursal IN (${bind('allowed_branches', branchIds)})` : 'FALSE');
@@ -111,8 +117,8 @@ function buildQuery(q, branchIds = null) {
   }
   const sorts = { id: 'id', full_names: 'full_names', date_last_input: 'date_last_input', total_inputs: 'total_inputs', total_products: 'total_products', total_amount: 'total_amount', saldo_cuentas_por_pagar: 'saldo_cuentas_por_pagar', number_document: 'number_document' };
   const order = String(q.order).toUpperCase() === 'ASC' || q.order === '1' ? 'ASC' : 'DESC';
-  const sql = `WITH context_inputs AS (SELECT i.* FROM inputs i WHERE ${context.join(' AND ')}),
-    selected_details AS (SELECT d.id_input, d.quantity, pr.id_unit FROM details_inputs d JOIN products pr ON pr.id = d.id_product WHERE ${detail.join(' AND ')}),
+  const ctes = `WITH context_inputs AS (SELECT i.* FROM inputs i WHERE ${context.join(' AND ')}),
+    selected_details AS (SELECT d.id_input, d.quantity, pr.id_unit ${purchaseDetails ? ', d.id_product, d.cost, d.total' : ''} FROM details_inputs d JOIN products pr ON pr.id = d.id_product WHERE ${detail.join(' AND ')}),
     matched AS (SELECT i.* FROM context_inputs i ${purchase.length ? `WHERE ${purchase.join(' AND ')}` : ''}),
     amounts AS (SELECT id_provider, COUNT(*) total_inputs, SUM(total) total_amount FROM matched GROUP BY id_provider),
     quantities AS (SELECT i.id_provider, sd.id_unit, SUM(sd.quantity) quantity FROM matched i JOIN selected_details sd ON sd.id_input = i.id GROUP BY i.id_provider, sd.id_unit),
@@ -132,10 +138,83 @@ function buildQuery(q, branchIds = null) {
       LEFT JOIN types_provider t ON t.id = p.id_type_provider LEFT JOIN sectors s ON s.id = p.id_sector LEFT JOIN categories cat ON cat.id = p.id_category
       LEFT JOIN amounts a ON a.id_provider = p.id LEFT JOIN latest l ON l.id_provider = p.id
       LEFT JOIN quantities_json qj ON qj.id_provider = p.id LEFT JOIN balances bal ON bal.id_provider = p.id LEFT JOIN frequency_stats f ON f.id_provider = p.id
-      ${provider.length ? `WHERE ${provider.join(' AND ')}` : ''})
+      ${provider.length ? `WHERE ${provider.join(' AND ')}` : ''})`;
+  const sql = `${ctes}
     SELECT (SELECT COUNT(*) FROM filtered) total,
       COALESCE((SELECT jsonb_agg(rows) FROM (SELECT * FROM filtered ORDER BY ${sorts[q.field_sort] || 'id'} ${order} NULLS LAST, id DESC LIMIT :limit OFFSET :offset) rows), '[]'::jsonb) data`;
+  return { sql, replacements, ctes };
+}
+
+function buildPurchaseDetailQuery(q, branches = null) {
+  const replacements = {};
+  const purchaseFilters = ["i.status = 'ACTIVE'", 'd.status = \'ACTIVE\'', 'd.removed_at IS NULL'];
+  const addIn = (column, key, values) => {
+    if (values?.length) {
+      purchaseFilters.push(`${column} IN (:${key})`);
+      replacements[key] = values;
+    }
+  };
+  if (branches) addIn('i.id_sucursal', 'allowed_branches', branches);
+  else if (branches !== null) purchaseFilters.push('FALSE');
+  addIn('i.id_sucursal', 'id_sucursales', q.id_sucursales);
+  addIn('i.id_storage', 'id_storages', q.id_storages);
+  addIn('d.id_product', 'id_products', q.id_products);
+  addIn('pr.id_category', 'id_categories', q.id_categories);
+  if (q.start && q.date_basis === 'PURCHASES') {
+    purchaseFilters.push('i.date_voucher >= :start::timestamptz AND i.date_voucher < :end::timestamptz');
+    replacements.start = q.start;
+    replacements.end = q.end;
+  }
+  for (const [key, column] of [['type_registry', 'i.type_registry'], ['payment_type', 'i.type'], ['purchase_referral_sources', 'i.referral_sources']]) {
+    if (present(q[key])) {
+      purchaseFilters.push(`${column} = :${key}`);
+      replacements[key] = q[key];
+    }
+  }
+  for (const [key, column] of [['purchase_old_customer', 'i.old_customer'], ['purchase_with_pickup', 'i.with_pickup']]) {
+    if (q[key] !== undefined) {
+      purchaseFilters.push(`${column} = :${key}`);
+      replacements[key] = q[key];
+    }
+  }
+  if (q.purchase_search) {
+    const column = q.purchase_search_type === 'registry_number' ? 'i.registry_number' : 'i.cod';
+    purchaseFilters.push(`${column} ILIKE :purchase_search`);
+    replacements.purchase_search = `%${q.purchase_search}%`;
+  }
+  if (q.id_provider) {
+    purchaseFilters.push('i.id_provider = :id_provider');
+    replacements.id_provider = q.id_provider;
+  }
+  if (q.id_type_provider) {
+    purchaseFilters.push('p.id_type_provider = :id_type_provider');
+    replacements.id_type_provider = q.id_type_provider;
+  }
+  if (q.query && q.type === 'full_names') {
+    purchaseFilters.push('p.full_names ILIKE :provider_query');
+    replacements.provider_query = `%${q.query}%`;
+  }
+  const sql = `
+    SELECT i.id_sucursal, i.id_storage, d.id_product, i.id_provider,
+      COALESCE(s.name, 'SIN SUCURSAL') AS branch, COALESCE(st.name, 'SIN ALMACÉN') AS storage,
+      pr.cod AS code, pr.name AS product, COALESCE(cat.name, 'SIN CATEGORÍA') AS category,
+      COALESCE(u.siglas, '') AS unit, p.full_names AS provider,
+      CONCAT_WS(' - ', NULLIF(tp.code, ''), NULLIF(tp.name, '')) AS provider_type,
+      SUM(d.quantity) AS quantity, SUM(COALESCE(d.total, d.quantity * d.cost, 0)) AS amount
+    FROM inputs i
+    JOIN details_inputs d ON d.id_input = i.id
+    JOIN products pr ON pr.id = d.id_product
+    LEFT JOIN providers p ON p.id = i.id_provider
+    LEFT JOIN types_provider tp ON tp.id = p.id_type_provider
+    LEFT JOIN categories cat ON cat.id = pr.id_category
+    LEFT JOIN units u ON u.id = pr.id_unit
+    LEFT JOIN sucursals s ON s.id = i.id_sucursal
+    LEFT JOIN storages st ON st.id = i.id_storage
+    WHERE ${purchaseFilters.join(' AND ')}
+    GROUP BY i.id_sucursal, i.id_storage, d.id_product, i.id_provider,
+      s.name, st.name, pr.cod, pr.name, cat.name, u.siglas, p.full_names, tp.code, tp.name
+    ORDER BY s.name, st.name, cat.name, pr.cod, p.full_names, i.id_provider`;
   return { sql, replacements };
 }
 
-module.exports = { normalizeQuery, buildQuery };
+module.exports = { normalizeQuery, buildQuery, buildPurchaseDetailQuery };

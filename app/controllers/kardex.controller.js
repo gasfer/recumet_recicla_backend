@@ -1,3 +1,4 @@
+const { stockProviderCondition } = require('../services/stock-provider-filter.service');
 const { response, request } = require('express');
 const { sequelize, ViewKardex, TransferReviewNote } = require('../database/config');
 const paginate = require('../helpers/paginate');
@@ -384,6 +385,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             ],
             attributes: [
                 'id_product',
+                [sequelize.fn('MIN', sequelize.col('ViewKardex.id')), 'first_movement_id'],
                 [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
                 [sequelize.literal('COALESCE(SUM(quantity_output), 0)'), 'quantity_output'],
                 [sequelize.literal('COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
@@ -393,6 +395,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
                     sucursalCond,
                     storageCond,
                     productCond,
+                    stockProviderCondition(req.query),
                     { date: whereDate },
                 ]
             },
@@ -422,23 +425,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
         const allKardexes = await ViewKardex.findAll(optionsDbAll);
         if (allKardexes && allKardexes.length > 0) {
             const productIds = allKardexes.map(k => k.id_product);
-            const firstMovements = await ViewKardex.findAll({
-                attributes: [
-                    'id_product',
-                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
-                ],
-                where: {
-                    [Op.and]: [
-                        sucursalCond,
-                        storageCond,
-                        { id_product: { [Op.in]: productIds } },
-                        { date: whereDate }
-                    ]
-                },
-                group: ['id_product'],
-                raw: true
-            });
-            const minIds = firstMovements.map(m => m.min_id).filter(Boolean);
+            const minIds = allKardexes.map(row => row.dataValues.first_movement_id).filter(Boolean);
             const initialBalances = minIds.length > 0 ? await ViewKardex.findAll({
                 attributes: ['id_product', 'saldo_inicial'],
                 where: {
@@ -501,6 +488,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             attributes: [
                 'id_sucursal',
                 'id_product',
+                [sequelize.fn('MIN', sequelize.col('ViewKardex.id')), 'first_movement_id'],
                 [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
                 [sequelize.literal('COALESCE(SUM(quantity_output), 0)'), 'quantity_output'],
                 [sequelize.literal('COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0)'), 'quantity_saldo'],
@@ -510,6 +498,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
                     sucursalCond,
                     storageCond,
                     productCond,
+                    stockProviderCondition(req.query),
                     { date: whereDate },
                 ]
             },
@@ -535,25 +524,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
         const sucursalProductKardexes = await ViewKardex.findAll(optionsDbSucursalProduct);
         if (sucursalProductKardexes && sucursalProductKardexes.length > 0) {
             const productIds = sucursalProductKardexes.map(k => k.id_product);
-            const firstMovementsSP = await ViewKardex.findAll({
-                attributes: [
-                    'id_product',
-                    'id_sucursal',
-                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
-                ],
-                where: {
-                    [Op.and]: [
-                        sucursalCond,
-                        storageCond,
-                        { id_product: { [Op.in]: productIds } },
-                        { date: whereDate }
-                    ]
-                },
-                group: ['id_product', 'id_sucursal'],
-                raw: true
-            });
-
-            const minIdsSP = firstMovementsSP.map(m => m.min_id).filter(Boolean);
+            const minIdsSP = sucursalProductKardexes.map(row => row.first_movement_id).filter(Boolean);
             const initialBalancesSP = minIdsSP.length > 0 ? await ViewKardex.findAll({
                 attributes: ['id_product', 'id_sucursal', 'saldo_inicial'],
                 where: {

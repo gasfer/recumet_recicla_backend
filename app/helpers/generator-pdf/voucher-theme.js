@@ -6,15 +6,15 @@
 const VOUCHER_THEME = {
     colors: {
         primary: '#2E7D32',      // Verde corporativo RECUMET (headers, acentos)
-        primaryLight: '#E8F5E9', // Verde muy suave para resaltados/fondos
-        headerFill: '#dde3ea',   // Azul acero suave para cabeceras de tabla
-        sectionBg: '#f4f6f8',    // Fondo gris claro para etiquetas de sección
-        sectionText: '#1a1a1a',  // Texto oscuro de sección
-        labelColor: '#333333',   // Etiquetas de campos (negrita/semi-negrita)
-        valueColor: '#111111',   // Valores de texto
-        muted: '#555555',        // Subtítulos, fechas, notas al pie
-        border: '#cccccc',       // Bordes y separadores sutiles
-        tableBorder: '#e0e0e0',  // Bordes internos de tabla
+        primaryLight: '#ecfdf5', // Verde muy suave para totales destacados
+        headerFill: '#eef2f6',   // Azul grisáceo sutil para cabeceras de tabla
+        sectionBg: '#f8fafc',    // Fondo neutro claro para tarjetas de información
+        sectionText: '#0f172a',  // Navy corporativo para títulos y datos
+        labelColor: '#334155',   // Etiquetas y texto secundario
+        valueColor: '#0f172a',  // Valores principales
+        muted: '#64748b',        // Subtítulos, fechas y notas al pie
+        border: '#cbd5e1',       // Bordes sutiles
+        tableBorder: '#cbd5e1',  // Cuadrícula suave para las tablas
         badgePendingBg: '#fff3e0',
         badgePendingText: '#e65100',
         badgeSuccessBg: '#e8f5e9',
@@ -39,7 +39,7 @@ const VOUCHER_THEME = {
             pageMargins: [18, 18, 18, 18],
         },
         halfLetterLandscape: {
-            pageSize: { width: 396, height: 612 },
+            pageSize: { width: 612, height: 396 },
             pageOrientation: 'landscape',
             pageMargins: [18, 18, 18, 18],
         },

@@ -1,26 +1,20 @@
+const { buildTransferDocument } = require('../../helpers/generator-pdf/transfer-voucher.document');
+const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
+const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
 const { Transfers, TransferReviewNote } = require('../../database/config');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../../helpers/generator-pdf/fonts');
-const styles = require('../../helpers/generator-pdf/styles');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
 const { whereDateForType } = require("../../helpers/where_range");
 const { getReportLogoPath } = require('../../helpers/report-logo');
+const { getNumberDecimal } = require('../../helpers/company');
 const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { buildTransferVoucherSummary } = require('../../helpers/transfer-reception');
 const { decimalAdd, formatDecimalEsBo } = require('../../helpers/number-formatter');
-const {
-    buildHeader,
-    buildHr,
-    buildSectionTitle,
-    buildInfoPanel,
-    buildDetailTable,
-    buildClosingSection,
-} = require('../../helpers/generator-pdf/voucher-template.helper');
+const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -51,28 +45,12 @@ const generatePdfReports = async (req = request, res = response) => {
         });
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE TRASLADOS', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'transfers-generatePdfReports.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de traslados' });
@@ -80,19 +58,7 @@ const generatePdfReports = async (req = request, res = response) => {
 }
 
 const dataPdfReturn = (auth) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: `REPORTE DE TRASLADOS`, alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'REPORTE DE TRASLADOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -230,65 +196,14 @@ const transferVoucherIncludes = [
     ] },
 ];
 
-const HALF_LETTER_PORTRAIT = {
-    pageSize: { width: 396, height: 612 },
-    pageOrientation: 'portrait',
-    pageMargins: [18, 18, 18, 18],
-};
-
-const HALF_LETTER_LANDSCAPE = {
-    pageSize: { width: 396, height: 612 },
-    pageOrientation: 'landscape',
-    pageMargins: [18, 18, 18, 18],
-};
-
-const sendVoucherPdf = (res, dataPdf, filename, documentOptions = HALF_LETTER_PORTRAIT) => {
-    const docDefinition = {
-        content: dataPdf,
-        pageOrientation: 'landscape',
-        styles,
-        ...documentOptions,
-    };
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
-    const chunks = [];
-
-    pdfDoc.on('data', (chunk) => chunks.push(chunk));
-    pdfDoc.on('end', () => {
-        res.setHeader('Content-Type', 'application/pdf;');
-        res.setHeader('Content-disposition', `filename=${filename}.pdf`);
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-        res.setHeader('Pragma', 'no-cache');
-        res.send(Buffer.concat(chunks));
-    });
-    pdfDoc.end();
-};
-
 const printTransferVoucher = async (req = request, res = response) =>{
     try {
         const { id_transfer } = req.params;
         const transfer = await Transfers.findByPk(id_transfer, { include: transferVoucherIncludes });
         if (!transfer) return res.status(404).json({ ok: false, errors: [{ msg: 'El traslado no existe.' }] });
 
-        const dataPdf = dataPdfReturnTransferVoucher(transfer);
-        transfer.detailsTransfers.forEach((detail) => {
-            const tableData = [
-                { text: detail?.product?.cod, fontSize: 8 },
-                { text: detail?.product?.name, fontSize: 8 },
-                { text: detail?.product?.unit?.siglas, fontSize: 8, alignment: 'center' },
-                { text: roundQuantity(detail?.quantity), fontSize: 8, alignment: 'center' },
-            ];
-            dataPdf[4].table.body.push(tableData);
-        });
-        dataPdf[4].table.body.push(
-            [
-                { text: 'PESOS TOTALES', colSpan: 2, fontSize: 8, bold: true, alignment: 'right' },
-                '',
-                { text: [...new Set(transfer.detailsTransfers.map((detail) => detail?.product?.unit?.siglas).filter(Boolean))].join(','), fontSize: 8, bold: true, alignment: 'center' },
-                { text: roundQuantity(transfer.detailsTransfers.reduce((total, detail) => decimalAdd(total, detail.quantity || 0, 4), 0)), fontSize: 8, bold: true, alignment: 'center' },
-            ],
-        );
-        sendVoucherPdf(res, dataPdf, `guia-traslado-${transfer.cod}`, HALF_LETTER_PORTRAIT);
+        const decimal = await getNumberDecimal();
+        await sendReportPdf(res, buildTransferDocument(transfer, undefined, [], decimal), `guia-traslado-${transfer.cod}.pdf`);
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la Guía de traslado.' }] });
@@ -314,163 +229,13 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
             ],
         });
         const voucherSummary = buildTransferVoucherSummary(transfer.detailsTransfers, transfer.status, reviewNotes);
-        const dataPdf = dataPdfReturnReceptionVoucher(transfer);
-
-        voucherSummary.rows.forEach((row, index) => {
-            const detail = transfer.detailsTransfers[index];
-            dataPdf[4].table.body.push([
-                { text: `${detail?.product?.cod || ''} - ${detail?.product?.name || ''}`, fontSize: 7 },
-                { text: detail?.product?.unit?.siglas, fontSize: 7, alignment: 'center' },
-                { text: roundQuantity(row.sent), fontSize: 7, alignment: 'center' },
-                { text: row.received === '-' ? '-' : roundQuantity(row.received), fontSize: 7, alignment: 'center' },
-                { text: row.normal === '-' ? '-' : roundQuantity(row.normal), fontSize: 7, alignment: 'center' },
-                { text: row.blocked === '-' ? '-' : roundQuantity(row.blocked), fontSize: 7, alignment: 'center' },
-                { text: row.differencePercentage, fontSize: 7, alignment: 'center' },
-                { text: row.status, fontSize: 7, alignment: 'center' },
-                { text: row.observation, fontSize: 7, alignment: 'center' },
-            ]);
-        });
-        dataPdf[4].table.body.push([
-            { text: 'PESOS TOTALES', fontSize: 8, bold: true, alignment: 'right' },
-            { text: voucherSummary.units.join(','), fontSize: 8, bold: true, alignment: 'center' },
-            { text: roundQuantity(voucherSummary.totals.sent), fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.received === '-' ? '-' : roundQuantity(voucherSummary.totals.received), fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.normal === '-' ? '-' : roundQuantity(voucherSummary.totals.normal), fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.blocked === '-' ? '-' : roundQuantity(voucherSummary.totals.blocked), fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.differencePercentage, fontSize: 8, bold: true, alignment: 'center' },
-            { text: voucherSummary.totals.accountedTotal, fontSize: 8, bold: true, alignment: 'center' },
-            { text: '', fontSize: 8, bold: true },
-        ]);
-
-        const reconciliationRows = reviewNotes.flatMap((note) => note.details.map((detail) => [
-            { text: `${detail.product.cod} - ${detail.product.name}`, fontSize: 6 },
-            { text: note.type === 'EXCEDENTE_PARA_REVISION' ? 'EXCEDENTE' : 'FALTANTE', fontSize: 6, alignment: 'center' },
-            { text: roundQuantity(detail.quantity_difference), fontSize: 6, alignment: 'center' },
-            { text: roundQuantity(detail.quantity_resolved || 0), fontSize: 6, alignment: 'center' },
-            { text: note.reconciliation_status, fontSize: 6, alignment: 'center' },
-            { text: note.assignedUser?.full_names || 'SIN ASIGNAR', fontSize: 6 },
-            { text: note.type === 'EXCEDENTE_PARA_REVISION'
-                ? `${detail.product.cod} - ${detail.product.name}`
-                : note.registeredProduct ? `${note.registeredProduct.cod} - ${note.registeredProduct.name}` : '-', fontSize: 6 },
-            { text: detail.resolutionActions.flatMap((action) => action.movementLinks.map((link) => `#${link.id_kardex_movement}`)).join(', ') || '-', fontSize: 6 },
-        ]));
-        if (reconciliationRows.length > 0) {
-            const totalExcess = reviewNotes.filter((note) => note.type === 'EXCEDENTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
-            const totalShortage = reviewNotes.filter((note) => note.type === 'FALTANTE_PARA_REVISION').reduce((total, note) => total + note.details.reduce((sum, detail) => sum + Number(detail.quantity_difference), 0), 0);
-            dataPdf.splice(5, 0, createReconciliationTable(reconciliationRows, totalExcess, totalShortage));
-        }
-        sendVoucherPdf(res, dataPdf, `guia-recepcion-${transfer.cod}`, HALF_LETTER_LANDSCAPE);
+        const decimal = await getNumberDecimal();
+        await sendReportPdf(res, buildTransferDocument(transfer, voucherSummary, reviewNotes, decimal), `guia-recepcion-${transfer.cod}.pdf`);
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la Guía de recepción.' }] });
     }
 };
-
-const createReconciliationTable = (rows, totalExcess, totalShortage) => ({
-    pageBreak: rows.length > 12 ? 'before' : undefined,
-    margin: [0, 4, 0, 0],
-    table: { headerRows: 2, dontBreakRows: true, widths: ['*', 38, 32, 32, 42, 54, '*', 34], body: [
-        [{ text: 'CONCILIACIÓN DE DIFERENCIAS REGISTRADAS', colSpan: 8, bold: true, fontSize: 6, fillColor: '#eeeeee' }, '', '', '', '', '', '', ''],
-        [{ text: 'PRODUCTO ORIGEN', bold: true, fontSize: 6 }, { text: 'TIPO', bold: true, fontSize: 6 }, { text: 'KG REG.', bold: true, fontSize: 6 }, { text: 'KG CONC.', bold: true, fontSize: 6 }, { text: 'ESTADO', bold: true, fontSize: 6 }, { text: 'RESPONSABLE', bold: true, fontSize: 6 }, { text: 'PRODUCTO DESTINO', bold: true, fontSize: 6 }, { text: 'KARDEX', bold: true, fontSize: 6 }],
-        ...rows,
-        [{ text: 'TOTALES', bold: true, fontSize: 6 }, { text: `EXC: ${roundQuantity(totalExcess)}`, bold: true, fontSize: 6 }, { text: `FAL: ${roundQuantity(totalShortage)}`, bold: true, fontSize: 6 }, '', '', '', '', ''],
-    ] },
-});
-
-const voucherCompany = (transfer) => ({ branchName: transfer.sucursal_send?.name });
-
-const voucherClosingSection = (transfer, includeReceptionObservations = false) => buildClosingSection({
-    observations: includeReceptionObservations
-        ? [
-            { title: 'OBSERVACIONES ENVÍO', text: transfer.observations_send || '' },
-            { title: 'OBSERVACIONES RECEPCIÓN', text: transfer.observations_received || '' },
-        ]
-        : [{ title: 'OBSERVACIONES ENVÍO', text: transfer.observations_send || '' }],
-    meta: [
-        { label: `P/${transfer.type_registry} NRO:`, value: transfer.registry_number || '', width: 72 },
-        { label: 'BALANZA:', value: transfer.scale?.name || '', width: 52 },
-    ],
-    signatures: [
-        { role: 'Entregue conforme', name: transfer.user_send?.full_names || 'Responsable de almacén' },
-        { role: 'Recibí conforme', name: transfer.user_received?.full_names || 'Chofer' },
-    ],
-    margin: [0, 4, 0, 0],
-    signatureSpace: includeReceptionObservations ? 16 : 28,
-});
-
-const dataPdfReturnTransferVoucher = (transfer) => [
-    buildHeader({
-        title: 'GUÍA DE TRASLADO',
-        codePrefix: 'TRASLADO',
-        codeValue: transfer.cod,
-        dateValue: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'),
-        company: voucherCompany(transfer),
-        logoWidth: 50,
-        compact: true,
-    }),
-    buildHr(),
-    buildInfoPanel([
-        { title: 'ORIGEN', rows: [
-            { label: 'Sucursal:', value: transfer.sucursal_send?.name || '' },
-            { label: 'Almacén:', value: transfer.storage_send?.name || '' },
-            { label: 'Fecha envío:', value: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'), labelWidth: 70 },
-        ] },
-        { title: 'DESTINO', rows: [
-            { label: 'Sucursal:', value: transfer.sucursal_received?.name || '' },
-            { label: 'Almacén:', value: transfer.storage_received?.name || '' },
-        ] },
-    ]),
-    buildSectionTitle('DETALLE DE PRODUCTOS'),
-    buildDetailTable({
-        widths: [45, '*', 35, 70],
-        headers: [
-            { text: 'CÓDIGO', alignment: 'center', fontSize: 7 },
-            { text: 'DETALLE', fontSize: 7 },
-            { text: 'UND', alignment: 'center', fontSize: 7 },
-            { text: 'CANT. ENVIADO', alignment: 'center', fontSize: 7 },
-        ],
-        rows: [],
-        fontSize: 7,
-    }),
-    voucherClosingSection(transfer),
-];
-
-const dataPdfReturnReceptionVoucher = (transfer) => [
-    buildHeader({
-        title: 'GUÍA DE RECEPCIÓN',
-        codePrefix: 'RECEPCIÓN',
-        codeValue: transfer.cod,
-        dateValue: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'),
-        company: voucherCompany(transfer),
-        logoWidth: 45,
-        compact: true,
-    }),
-    buildHr(),
-    buildInfoPanel([
-        { title: 'ORIGEN', rows: [
-            { label: 'Sucursal:', value: transfer.sucursal_send?.name || '' },
-            { label: 'Fecha envío:', value: moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'), labelWidth: 65 },
-        ] },
-        { title: 'DESTINO', rows: [
-            { label: 'Sucursal:', value: transfer.sucursal_received?.name || '' },
-            { label: 'Fecha recepción:', value: moment(transfer.date_received).format('DD/MM/YYYY HH:mm:ss'), labelWidth: 75 },
-        ] },
-    ]),
-    buildSectionTitle('DETALLE DE RECEPCIÓN'),
-    buildDetailTable({
-        widths: ['*', 18, 36, 36, 38, 42, 34, 44, 36],
-        headers: [
-            { text: 'DETALLE', fontSize: 6 }, { text: 'UND', alignment: 'center', fontSize: 6 },
-            { text: 'ENVIADO', alignment: 'center', fontSize: 6 }, { text: 'RECIBIDO', alignment: 'center', fontSize: 6 },
-            { text: 'NORMAL', alignment: 'center', fontSize: 6 }, { text: 'BLOQUEADO', alignment: 'center', fontSize: 6 },
-            { text: 'DIF. %', alignment: 'center', fontSize: 6 }, { text: 'ESTADO', alignment: 'center', fontSize: 6 },
-            { text: 'OBS.', alignment: 'center', fontSize: 6 },
-        ],
-        rows: [],
-        fontSize: 6,
-    }),
-    voucherClosingSection(transfer, true),
-];
 
 module.exports = {
     generatePdfReports,

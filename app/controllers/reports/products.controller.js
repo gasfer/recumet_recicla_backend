@@ -1,9 +1,8 @@
+const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
+const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { ProductSucursals, Product,  } = require('../../database/config');
 const { Op } = require("sequelize");
 const ExcelJS = require('exceljs');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../../helpers/generator-pdf/fonts');
-const styles = require('../../helpers/generator-pdf/styles');
 const path = require('path');
 const fs = require('fs');
 const { getReportLogoPath } = require('../../helpers/report-logo');
@@ -11,6 +10,7 @@ const imagePath = getReportLogoPath();
 const moment = require('moment');
 moment.locale('es'); 
 const { getNumberDecimal } = require("../../helpers/company");
+const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 
 
 const generatePdfReports = async (req = request, res = response) => {
@@ -31,49 +31,20 @@ const generatePdfReports = async (req = request, res = response) => {
           dataPdf[5].table.body.push(tableData);
       });
      
-      let docDefinition = {
-          content: dataPdf,
-          pageOrientation: 'landscape',
-          footer: function(currentPage, pageCount) { return [
-              {
-                  text:'Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                  fontSize: 8,alignment: 'center', margin:[10,10,10,10]
-              }
-          ] },
-          styles: styles,
-      };
-      const printer = new PdfPrinter(fonts);
-      let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-      let chunks = [];
-      pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-      pdfDoc.on("end", () => {
-          const result = Buffer.concat(chunks);
-          res.setHeader('Content-Type', 'application/pdf;');
-          res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-          return res.send(result);
-      });
-      pdfDoc.end();
+      const tables = dataPdf.filter(node => node?.table?.body?.length && node.table.headerRows > 0);
+        const sections = tables.map(table => tabularReport(table.table, {}));
+        await sendReportPdf(res, {
+            title: 'REPORTE DE PRECIOS', paper: 'A4', orientation: 'landscape', sections,
+            filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
+        }, 'generatePdfReports.pdf');
   } catch (error) {
       console.log(error);
-      const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-      return res.sendFile(pathImage);
+      return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
   }
 }
 
 const dataPdfReturn = (auth) => [
-  {
-      image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-      width: 70,
-      absolutePosition: { x:25, y: 15 }
-  },
-  {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-      absolutePosition: { y: 16 },
-  },
-  {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-      absolutePosition: {  y: 27 }
-  },
-  { text: 'REPORTE DE PRECIOS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-  { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+  ...buildStandardReportHeader({ title: 'REPORTE DE PRECIOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
   {
       style: 'tableReport',
       absolutePosition: { x:20, y: 95 },

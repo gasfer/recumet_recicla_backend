@@ -1,8 +1,8 @@
+const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
+const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
+const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
 const { Classified, DetailsClassified,sequelize } = require('../../database/config');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../../helpers/generator-pdf/fonts');
-const styles = require('../../helpers/generator-pdf/styles');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -13,15 +13,7 @@ const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
-const {
-    buildHeader,
-    buildHr,
-    buildSectionTitle,
-    buildInfoRowDouble,
-    buildDetailTable,
-    buildClosingSection,
-    VOUCHER_THEME,
-} = require('../../helpers/generator-pdf/voucher-template.helper');
+const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -62,28 +54,12 @@ const generatePdfReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE CLASIFICADOS TOTALIZADOS', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'classified-generatePdfReports.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de clasificados' });
@@ -91,19 +67,7 @@ const generatePdfReports = async (req = request, res = response) => {
 }
 
 const dataPdfReturn = (auth) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'REPORTE DE CLASIFICADOS TOTALIZADOS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'REPORTE DE CLASIFICADOS TOTALIZADOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -255,49 +219,20 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_detalle_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE CLASIFICADOS DETALLADOS', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'classified-generatePdfDetailsReports.pdf');
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
 }
 
 const dataDetailsPdfReturn = (auth) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'REPORTE DE CLASIFICADOS DETALLADAS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'REPORTE DE CLASIFICADOS DETALLADAS', auth, details: 'Reporte generado con los parámetros establecidos' }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -428,100 +363,13 @@ const printClassifiedVoucher = async (req = request, res = response) =>{
             ]
         });
         const decimal = await getNumberDecimal();
-        let dataPdf = dataPdfReturnClassifiedVoucher(classified,classified.sucursal,decimal); //PDF 
-        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 4) || dataPdf[5];
-        let quantity_total = 0;
-        let units = [];
-        classified.detailsClassified.forEach(detail => {
-            quantity_total+= Number(detail?.quantity);
-            if (!units.includes(detail?.product?.unit.siglas)) {
-                units.push(detail?.product?.unit.siglas);
-            }
-            const tableData = [
-                {text:detail?.product?.cod, fontSize:8}, 
-                {text:detail?.product?.name, fontSize:8}, 
-                {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
-                {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
-            ];
-            detailTableNode.table.body.push(tableData);
-        });
-        detailTableNode.table.body.push(
-            [
-                {text:'',colSpan: 2, border:[false,false,false,false]},
-                '',
-                {text: quantity_total,  fontSize:8, alignment:'center'},
-                {text: units.join(','), fontSize:8, alignment:'center'},
-            ],
-        );
-
-        let docDefinition = {
-            content: dataPdf,
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
-        });
-        pdfDoc.end();
+        const document = buildOperationVoucher(classified, { kind: 'classified', decimal, format: req.query.format });
+        await sendReportPdf(res, document, 'boleta-clasificado-' + id_classified + '.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de clasificación' });
     }
 }
-
-const dataPdfReturnClassifiedVoucher = (classified, sucursal, decimal) => [
-    buildHeader({
-        title: 'NOTA DE CLASIFICACIÓN',
-        codePrefix: 'CLASIFICADO',
-        codeValue: classified.cod,
-        dateLabel: 'Fecha',
-        dateValue: moment(classified.date_classified).format('DD/MM/YYYY HH:mm:ss'),
-        company: {
-            branchName: sucursal.name,
-            nit: sucursal.company?.nit,
-            phone: sucursal.cellphone,
-            email: sucursal.email,
-        },
-        logoWidth: 55,
-    }),
-    buildHr([0, 1, 0, 4]),
-    buildSectionTitle('DATOS PRODUCTO'),
-    buildInfoRowDouble(
-        'Producto:', classified?.product?.name ?? '-',
-        'Cantidad:', classified?.quantity_product ?? '-'
-    ),
-    buildSectionTitle('DETALLE'),
-    buildDetailTable({
-        widths: [55, '*', 50, 80],
-        headers: [
-            { text: 'CÓDIGO', alignment: 'center' },
-            { text: 'DETALLE' },
-            { text: 'CANT.', alignment: 'center' },
-            { text: 'UND', alignment: 'center' },
-        ],
-        rows: [],
-    }),
-    buildClosingSection({
-        observations: classified?.comments ? [{ title: 'OBSERVACIONES', text: classified.comments }] : [],
-        meta: [
-            { label: `P/${classified.type_registry} NRO:`, value: classified.number_registry, width: 70 },
-            { label: 'BALANZA:', value: classified.scale?.name || '', width: 52 },
-            { label: 'ALMACÉN:', value: classified.storage?.name || '', width: 52 },
-        ],
-        signatures: [
-            { role: 'Recibí conforme', name: '' },
-            { role: 'Entregue conforme', name: 'Responsable de almacén' },
-        ],
-        margin: [0, 8, 0, 0],
-        signatureSpace: 35,
-    }),
-];
 
 
 module.exports = {
@@ -530,5 +378,5 @@ module.exports = {
     generatePdfDetailsReports,
     generateExcelDetailsReports,
     printClassifiedVoucher,
-    dataPdfReturnClassifiedVoucher,
+
 }

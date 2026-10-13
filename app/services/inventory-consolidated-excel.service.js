@@ -1,3 +1,4 @@
+const { writeFilterHeader } = require('./report-selected-filters.service');
 'use strict';
 
 const ExcelJS = require('exceljs');
@@ -86,6 +87,8 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   // Row 3: Blank separator
   const sepRow = worksheet.addRow([]);
   sepRow.height = 8;
+  worksheet.mergeCells(3, 1, 3, totalColumns);
+  writeFilterHeader(worksheet, { row: 3, toColumn: totalColumns, text: metadata.selectedFilters });
 
   // Row 4: Header Level 1 (Location Groupings)
   const h1Values = new Array(totalColumns).fill('');

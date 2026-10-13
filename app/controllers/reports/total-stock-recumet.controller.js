@@ -1,9 +1,10 @@
+const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
+const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
+const { selectedReportFilters, writeFilterHeader } = require('../../services/report-selected-filters.service');
+const { stockProviderCondition } = require('../../services/stock-provider-filter.service');
 const { response, request } = require("express");
 const { Op } = require("sequelize");
 const { sequelize, ViewKardex } = require("../../database/config");
-const PdfPrinter = require("pdfmake");
-const fonts = require("../../helpers/generator-pdf/fonts");
-const styles = require("../../helpers/generator-pdf/styles");
 const path = require("path");
 const fs = require("fs");
 const moment = require("moment");
@@ -13,6 +14,7 @@ const { getNumberDecimal } = require("../../helpers/company");
 const { buildConsolidatedInventoryProjection } = require("../../services/inventory-consolidated-query.service");
 const { generateConsolidatedInventoryExcel } = require("../../services/inventory-consolidated-excel.service");
 const { REPORT_COLORS, solidFill, reportThinBorder } = require('../../constants/report-style.constants');
+const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 moment.locale("es");
 
 const { getReportLogoPath } = require('../../helpers/report-logo');
@@ -103,6 +105,7 @@ const returnDataTotalStockRecumet = async (queryReq) => {
                 sucursalCond,
                 storageCond,
                 productCond,
+                    stockProviderCondition(queryReq),
                 { date: whereDate },
             ]
         },
@@ -142,6 +145,7 @@ const returnDataTotalStockRecumet = async (queryReq) => {
                     sucursalCond,
                     storageCond,
                     { id_product: { [Op.in]: productIds } },
+                    stockProviderCondition(queryReq),
                     { date: whereDate }
                 ]
             },
@@ -176,46 +180,11 @@ const returnDataTotalStockRecumet = async (queryReq) => {
     return filteredAllKardexes;
 };
 
-const dataPdfReturnTotalStock = (auth) => {
-    let base64Image = "";
-    try {
-        if (fs.existsSync(imagePath)) {
-            base64Image = fs.readFileSync(imagePath, "base64");
-        }
-    } catch (e) {
-        console.error("Error reading logo:", e);
-    }
-
-    const content = [];
-    if (base64Image) {
-        content.push({
-            image: "data:image/png;base64," + base64Image,
-            width: 70,
-            absolutePosition: { x: 25, y: 15 },
-        });
-    }
-
-    content.push(
-        {
-            text: `Impreso por: ` + moment().format("LLLL"),
-            style: "fechaDoc",
-            absolutePosition: { y: 16 },
-        },
-        {
-            text: `${auth.full_names} / ${auth.number_document}`,
-            style: "fechaDoc",
-            absolutePosition: { y: 27 },
-        },
-        {
-            text: "CONSOLIDADO DE STOCK (MP Y PT) RECUMET",
-            alignment: "center",
-            style: "title",
-            absolutePosition: { y: 58 },
-        }
-    );
-
-    return content;
-};
+const dataPdfReturnTotalStock = (auth) => buildStandardReportHeader({
+    title: 'CONSOLIDADO DE STOCK (MP Y PT) RECUMET',
+    auth,
+    details: 'Reporte generado con los parámetros establecidos',
+});
 
 const generatePdfReportsTotalStock = async (req = request, res = response) => {
     try {
@@ -301,6 +270,7 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
                     sucursalCond,
                     storageCond,
                     productCond,
+                    stockProviderCondition(req.query),
                     { date: whereDate },
                 ]
             },
@@ -337,6 +307,7 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
                         sucursalCond,
                         storageCond,
                         { id_product: { [Op.in]: productIds } },
+                        stockProviderCondition(req.query),
                         { date: whereDate }
                     ]
                 },
@@ -524,46 +495,12 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         const formatDate1 =
             filterBy == "MONTH" ? "MM" : filterBy == "YEAR" ? "YYYY" : "DD-MM-YYYY";
         const formatDate2 = filterBy == "MONTH" ? "YYYY" : "DD-MM-YYYY";
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: "portrait",
-            footer: function (currentPage, pageCount) {
-                return [
-                    {
-                        text:
-                            `Fechas: ${moment(date1, formatDate1).format(formatDate1)} / ${moment(date2, formatDate2).format(formatDate2) !=
-                                "Fecha inválida"
-                                ? moment(date2, formatDate2).format(formatDate2)
-                                : ""
-                            }` +
-                            " - Páginas: " +
-                            currentPage.toString() +
-                            " de " +
-                            pageCount,
-                        fontSize: 8,
-                        alignment: "center",
-                        margin: [10, 10, 10, 10],
-                    },
-                ];
-            },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc = printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => {
-            chunks.push(chunk);
-        });
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader("Content-Type", "application/pdf;");
-            res.setHeader(
-                "Content-disposition",
-                `filename=consolidado_stock_${new Date()}.pdf`
-            );
-            res.status(200).send(result);
-        });
-        pdfDoc.end();
+        const tables = dataPdf.filter(node => node?.table?.body?.length && node.table.headerRows > 0);
+        const sections = tables.map(table => tabularReport(table.table, {}));
+        await sendReportPdf(res, {
+            title: 'STOCK TOTAL RECUMET', paper: 'A4', orientation: 'portrait', sections,
+            filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
+        }, 'generatePdfReportsTotalStock.pdf');
     } catch (error) {
         console.error("Error generating PDF:", error);
         return res.status(500).json({
@@ -654,6 +591,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                     sucursalCond,
                     storageCond,
                     productCond,
+                    stockProviderCondition(req.query),
                     { date: whereDate },
                 ]
             },
@@ -690,6 +628,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                         sucursalCond,
                         storageCond,
                         { id_product: { [Op.in]: productIds } },
+                        stockProviderCondition(req.query),
                         { date: whereDate }
                     ]
                 },
@@ -756,6 +695,12 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
 
         const thinBorder = reportThinBorder;
         
+        const selectedFilters = await selectedReportFilters(req.query);
+        if (selectedFilters) {
+            worksheet.addRow([selectedFilters]);
+            worksheet.mergeCells(1, 1, 1, 4);
+            writeFilterHeader(worksheet, { row: 1, toColumn: 4, text: selectedFilters });
+        }
         const headerRow = worksheet.addRow(headers);
         headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
         headerRow.eachCell((cell) => {
@@ -950,6 +895,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
 const generateExcelConsolidatedReportsTotalStock = async (req = request, res = response) => {
     try {
         const projection = await buildConsolidatedInventoryProjection(req.query);
+        projection.metadata.selectedFilters = await selectedReportFilters(req.query);
         const workbook = await generateConsolidatedInventoryExcel(projection);
 
         const filename = `consolidado_inventario_${projection.metadata.fileDateStr}.xlsx`;

@@ -169,20 +169,29 @@ const newClassified = async (req = request, res = response ) => {
                 ],
             });
         }
-        await applyDerivedStockEffect({
+        const sourceStockEffect = await applyDerivedStockEffect({
             productId: id_product, sucursalId: id_sucursal, storageId: id_storage,
             quantity: quantity_product, direction: 'OUTPUT', transaction: t,
         });
+        classified.stock_before = sourceStockEffect.before;
+        classified.stock_after = sourceStockEffect.after;
+        await classified.save({ transaction: t });
         /* Ingreso de detalles de la clasificación */
         const createdDetails = [];
         for (const detail of classified_details) {
             detail.id_classified = id_classified;
-            const createdDetail = await DetailsClassified.create(detail,{ transaction: t });
-            createdDetails.push(createdDetail);
-            await applyDerivedStockEffect({
+            const createdDetail = await DetailsClassified.create(detail, { transaction: t });
+            const classifiedDetail = createdDetail || detail;
+            createdDetails.push(classifiedDetail);
+            const destinationStockEffect = await applyDerivedStockEffect({
                 productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
                 quantity: detail.quantity, transaction: t,
             });
+            classifiedDetail.stock_before = destinationStockEffect.before;
+            classifiedDetail.stock_after = destinationStockEffect.after;
+            if (typeof classifiedDetail.save === 'function') {
+                await classifiedDetail.save({ transaction: t });
+            }
         }
         await recordClassificationValuation({ classified, details: createdDetails, transaction: t });
         /* Ingreso historico */
@@ -205,10 +214,11 @@ const newClassified = async (req = request, res = response ) => {
         });
     } catch (error) {
         await t.rollback();
-        console.log(error);
-        return res.status(500).json({
+        if (!error.statusCode) console.error('Error al registrar clasificación:', error);
+        return res.status(error.statusCode || 500).json({
           ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+          errors: [{ msg: error.statusCode ? error.message : 'Ocurrió un imprevisto interno | hable con soporte' }],
+          ...(error.statusCode && Array.isArray(error.details) ? { details: error.details } : {}),
         });
     }
 }

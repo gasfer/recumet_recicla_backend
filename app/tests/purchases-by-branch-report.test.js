@@ -31,6 +31,24 @@ test('consulta compras activas y aplica sucursal, almacén, categoría y product
   assert.equal(report.products[0].quantity, 40); assert.equal(report.products[0].amount, 700); assert.equal(report.products[0].branches[2].average, 20);
 });
 
+test('clasifica la matriz por proveedor conservando el producto y sus importes por sucursal', async t => {
+  t.mock.method(db.Sucursal, 'findAll', async () => [{ id: 1, name: 'MATRIZ' }, { id: 2, name: 'NORTE' }]);
+  t.mock.method(db.sequelize, 'query', async () => [
+    { id: 10, cod: 'MP-1', name: 'Cobre', unit: 'KG', category: 'METALES', id_provider: 8, provider_name: 'ANA', id_sucursal: 1, quantity: '10', amount: '100' },
+    { id: 10, cod: 'MP-1', name: 'Cobre', unit: 'KG', category: 'METALES', id_provider: 9, provider_name: 'LUIS', id_sucursal: 2, quantity: '20', amount: '400' },
+  ]);
+  const report = await buildPurchasesByBranchReport({ date1: '09', date2: '2026', filterBy: 'MONTH' }, { byProvider: true });
+  assert.deepEqual(report.providers, [{ id: 8, name: 'ANA' }, { id: 9, name: 'LUIS' }]);
+  const workbook = await generatePurchasesByBranchExcel(report);
+  const sheet = workbook.worksheets[0];
+  assert.deepEqual([sheet.getCell('A5').value, sheet.getCell('B5').value, sheet.getCell('C5').value], ['N.º', 'PROVEEDOR', 'PRODUCTO / MATERIAL']);
+  assert.equal(sheet.getCell('B7').value, 'ANA');
+  assert.equal(sheet.getCell('C7').value, 'Cobre');
+  assert.equal(sheet.getCell('E7').result, 10);
+  assert.equal(sheet.getCell('H8').result, 20);
+  assert.equal(sheet.getCell('K10').result, 500);
+});
+
 const sample = { period: { label: '15/08/2026 AL 15/09/2026' }, branches: [{ id: 1, name: 'CASA MATRIZ' }, { id: 2, name: 'REPÚBLICA' }], products: [{ code: 'MP-1', name: 'Fierro', unit: 'KGR', category: 'METALES', quantity: 40, amount: 700, branches: { 1: { quantity: 10, amount: 100, average: 10 }, 2: { quantity: 30, amount: 600, average: 20 } } }] };
 test('Excel conserva fórmulas, costos ponderados, totales y colores distintos por sucursal', async () => {
   const workbook = await generatePurchasesByBranchExcel(sample);

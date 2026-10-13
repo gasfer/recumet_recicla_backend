@@ -23,6 +23,8 @@ module.exports = (sequelize, DataTypes) => {
         this.setDataValue('cost', formattedDecimalSetter(value));
       }
     },
+    stock_before: DataTypes.DECIMAL,
+    stock_after: DataTypes.DECIMAL,
     id_classified: DataTypes.INTEGER,
     id_product: DataTypes.INTEGER,
     status: DataTypes.STRING

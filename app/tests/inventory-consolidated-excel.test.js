@@ -184,3 +184,14 @@ test('generateConsolidatedInventoryExcel construye una hoja con fecha de corte, 
   const reloadedSheet = reloaded.getWorksheet('Consolidado de inventario');
   assert.ok(reloadedSheet);
 });
+
+test('consolidado mantiene cabeceras y datos al mostrar filtros seleccionados', async () => {
+  const projection = mockProjection();
+  projection.metadata.selectedFilters = 'Sucursales: CASA MATRIZ, ORURO\nTipo de proveedor: EMPRESAS\nCategorías: COBRE';
+  const workbook = await generateConsolidatedInventoryExcel(projection);
+  const sheet = workbook.worksheets[0];
+  assert.equal(sheet.getCell('A3').value, projection.metadata.selectedFilters);
+  assert.ok(sheet.getRow(3).height >= 42);
+  assert.equal(sheet.views[0].ySplit, 5);
+  assert.ok(sheet.getRow(5).values.includes('CÓDIGO'));
+});

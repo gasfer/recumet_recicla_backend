@@ -12,7 +12,7 @@ const {
     VOUCHER_THEME
 } = require('../helpers/generator-pdf/voucher-template.helper');
 
-test('voucher-template.helper construye encabezado válido para pdfmake', () => {
+test('voucher-template.helper construye encabezado de presentación para comprobantes PDF', () => {
     const header = buildHeader({
         title: 'COMPROBANTE DE PRUEBA',
         codePrefix: 'DOC',
@@ -24,7 +24,7 @@ test('voucher-template.helper construye encabezado válido para pdfmake', () => 
 
     assert.strictEqual(header.layout, 'noBorders');
     assert.ok(header.table && header.table.body.length === 1);
-    assert.strictEqual(header.table.body[0][1].text, 'COMPROBANTE DE PRUEBA');
+    assert.strictEqual(header.table.body[0][1].stack[0].text, 'COMPROBANTE DE PRUEBA');
 });
 
 test('buildHeader compacto distribuye el ancho y no duplica el nombre de sucursal junto al logo', () => {
@@ -39,8 +39,8 @@ test('buildHeader compacto distribuye el ancho y no duplica el nombre de sucursa
     });
 
     assert.deepStrictEqual(header.table.widths, ['30%', '40%', '30%']);
-    assert.strictEqual(header.table.body[0][1].noWrap, true);
-    assert.strictEqual(header.table.body[0][1].text, 'GUÍA DE TRASLADO');
+    assert.strictEqual(header.table.body[0][1].stack[0].noWrap, false);
+    assert.strictEqual(header.table.body[0][1].stack[0].text, 'GUÍA DE TRASLADO');
     assert.strictEqual(header.table.body[0][0].stack, undefined);
 });
 

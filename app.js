@@ -1,5 +1,6 @@
 require('dotenv').config();
 const Server = require('./app/models/server');
+const { closePdfRenderer } = require('./app/services/pdf/report-pdf.service');
 
 const server = Server.instance;
 let shuttingDown = false;
@@ -9,6 +10,7 @@ const shutdown = async (signal) => {
     shuttingDown = true;
     console.log(`\nCerrando backend (${signal})...`);
     try {
+        await closePdfRenderer();
         await server.close();
         process.exit(0);
     } catch (error) {

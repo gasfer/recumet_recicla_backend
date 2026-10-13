@@ -1,3 +1,4 @@
+const { stockProviderCondition } = require('./stock-provider-filter.service');
 'use strict';
 
 const moment = require('moment');
@@ -206,7 +207,7 @@ const resolveReportLocations = async ({ sucursales = [], storages = [] }) => {
   }));
 };
 
-const queryKardexBalances = async ({ sucursales = [], storages = [], products = [], categories = [], cutoffDate, isByStorage }) => {
+const queryKardexBalances = async ({ sucursales = [], storages = [], products = [], categories = [], cutoffDate, isByStorage, providerQuery = {} }) => {
   const sucursalCond = sucursales.length > 0 ? { id_sucursal: { [Op.in]: sucursales } } : {};
   const storageCond = storages.length > 0 ? { id_storage: { [Op.in]: storages } } : {};
   const productCond = products.length > 0 ? { id_product: { [Op.in]: products } } : {};
@@ -227,6 +228,7 @@ const queryKardexBalances = async ({ sucursales = [], storages = [], products = 
         sucursalCond,
         storageCond,
         productCond,
+        stockProviderCondition(providerQuery),
         { date: { [Op.lte]: cutoffDate } },
       ],
     },
@@ -473,17 +475,17 @@ const validateProjectionIntegrity = (projection, decimals = 2) => {
   };
 };
 
-const buildConsolidatedInventoryProjection = async (rawQuery = {}) => {
+const buildConsolidatedInventoryProjection = async (rawQuery = {}, options = {}) => {
   const filters = normalizeReportFilters(rawQuery);
   const { sucursales, storages, products, categories, showZeroSaldo, querySearch, orderField, orderDir, cutoffInfo } = filters;
   const isByStorage = storages.length > 0;
-  const rawDecimals = await getNumberDecimal();
+  const rawDecimals = options.decimalPlaces ?? await getNumberDecimal();
   const decimalPlaces = (typeof rawDecimals === 'number' && rawDecimals > 0) ? rawDecimals : 2;
 
   const locations = await resolveReportLocations({ sucursales, storages });
 
   const [balancesMap, pendingMap, holdsMap, catalogProducts] = await Promise.all([
-    queryKardexBalances({ sucursales, storages, products, categories, cutoffDate: cutoffInfo.cutoffDate, isByStorage }),
+    queryKardexBalances({ sucursales, storages, products, categories, cutoffDate: cutoffInfo.cutoffDate, isByStorage, providerQuery: rawQuery }),
     queryPendingTransfers({ sucursales, storages, products, cutoffDate: cutoffInfo.cutoffDate, isByStorage }),
     queryConciliationHolds({ sucursales, storages, products, cutoffDate: cutoffInfo.cutoffDate, isByStorage }),
     queryCatalogProducts({ products, categories, querySearch, orderField, orderDir }),
@@ -494,6 +496,8 @@ const buildConsolidatedInventoryProjection = async (rawQuery = {}) => {
 
   for (const prod of catalogProducts) {
     const prodId = prod.id;
+    const providerFiltered = Boolean(rawQuery.id_provider || rawQuery.id_type_provider);
+    if (providerFiltered && !locations.some(loc => balancesMap.has(prodId + ':' + loc.key))) continue;
     const cat = prod.category;
     if (!cat) continue;
 
@@ -504,6 +508,10 @@ const buildConsolidatedInventoryProjection = async (rawQuery = {}) => {
 
     for (const loc of locations) {
       const pKey = `${prodId}:${loc.key}`;
+      if (providerFiltered && !balancesMap.has(pKey)) {
+        locQuantities[loc.key] = { registeredStock: 0, pendingReceipt: 0, inConciliation: 0 };
+        continue;
+      }
       const regStock = roundPrecision(balancesMap.get(pKey) || 0, decimalPlaces);
       const pend = roundPrecision(pendingMap.get(pKey) || 0, decimalPlaces);
       const hold = roundPrecision(holdsMap.get(pKey) || 0, decimalPlaces);
@@ -684,6 +692,37 @@ const buildConsolidatedInventoryProjection = async (rawQuery = {}) => {
   return projection;
 };
 
+const buildRegisteredStockProjection = async (rawQuery = {}, options = {}) => {
+  const filters = normalizeReportFilters(rawQuery);
+const { sucursales, storages, products, categories, querySearch } = filters;
+  const decimalPlaces = options.decimalPlaces ?? 2;
+  const cutoffInfo = resolveCutoffDate(rawQuery.filterBy || 'DAY', rawQuery.date1 || new Date().toISOString().slice(0, 10));
+  const isByStorage = storages.length > 0;
+  const locations = await resolveReportLocations({ sucursales, storages });
+  // Avoid scanning the entire kardex when a product/category filter is selected.
+  const catalog = await queryCatalogProducts({ products, categories, querySearch });
+  const selectedProducts = products.length > 0 ? products : catalog.map(product => String(product.id));
+  const balances = await queryKardexBalances({
+    sucursales, storages, products: selectedProducts, categories,
+    cutoffDate: cutoffInfo.cutoffDate, isByStorage,
+  });
+  const rows = catalog.map(product => {
+    const byLocation = Object.fromEntries(locations.map(location => [
+      location.key,
+      roundPrecision(balances.get(`${product.id}:${location.key}`) || 0, decimalPlaces),
+    ]));
+    return {
+      id: product.id,
+      code: product.cod || '',
+      product: product.name || '',
+      unit: product.unit?.siglas || product.unit?.name || 'UND',
+      locations: byLocation,
+      total: roundPrecision(Object.values(byLocation).reduce((sum, value) => sum + value, 0), decimalPlaces),
+    };
+  }).filter(product => rawQuery.showZeroSaldo === true || rawQuery.showZeroSaldo === 'true' || product.total !== 0);
+  return { cutoffDate: cutoffInfo.headerLabel, locations, rows };
+};
+
 module.exports = {
   parseFlexibleDate,
   resolveCutoffDate,
@@ -697,4 +736,5 @@ module.exports = {
   queryCatalogProducts,
   validateProjectionIntegrity,
   buildConsolidatedInventoryProjection,
+  buildRegisteredStockProjection,
 };

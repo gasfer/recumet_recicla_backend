@@ -6,6 +6,25 @@
 const { VOUCHER_THEME } = require('./voucher-theme');
 const { getReportLogoBase64 } = require('../report-logo');
 
+const HALF_LETTER_MAX_DETAIL_ROWS = 6;
+
+/**
+ * Selecciona el papel para comprobantes: media carta cuando el detalle cabe
+ * razonablemente y carta cuando necesita más espacio. Los comprobantes largos
+ * conservan la paginación normal de PDFMake en carta.
+ */
+const getVoucherPageOptions = ({ detailCount = 0, orientation = 'portrait' } = {}) => {
+    const useHalfLetter = Number(detailCount) <= HALF_LETTER_MAX_DETAIL_ROWS;
+    const pageSize = useHalfLetter
+        ? orientation === 'landscape' ? { width: 612, height: 396 } : { width: 396, height: 612 }
+        : 'LETTER';
+    return {
+        pageSize,
+        pageOrientation: orientation,
+        pageMargins: useHalfLetter ? [18, 14, 18, 14] : [18, 14, 18, 14],
+    };
+};
+
 /**
  * Obtiene el base64 del logo de la empresa de forma segura.
  */
@@ -39,7 +58,10 @@ const buildHeader = ({
     statusBadge = null,
     logoWidth = 92,
     customLogoPath,
-    compact = false,
+    compact = true,
+    subtitle = '',
+    receipt = false,
+    compactFontSize,
 }) => {
     const logoImg = getLogoBase64(customLogoPath);
     const effectiveLogoWidth = compact ? Math.min(logoWidth, 72) : Math.max(logoWidth, 92);
@@ -50,8 +72,9 @@ const buildHeader = ({
         company.email ? { text: company.email } : null,
     ].filter(Boolean);
     
+    const headerFontSize = compactFontSize || VOUCHER_THEME.fonts.tiny;
     const companyStack = {
-        fontSize: VOUCHER_THEME.fonts.tiny,
+        fontSize: headerFontSize,
         color: VOUCHER_THEME.colors.muted,
         stack: companyLines,
     };
@@ -60,58 +83,78 @@ const buildHeader = ({
         ? companyLines.length > 0 ? {
             columns: [
                 { image: logoImg, width: effectiveLogoWidth, margin: [0, 1, 0, 1] },
-                { ...companyStack, width: '*', margin: [6, 2, 0, 0] },
+                { ...companyStack, width: '*', margin: [3, 1, 0, 0] },
             ],
         } : { image: logoImg, width: effectiveLogoWidth, margin: [0, 1, 0, 1] }
         : companyStack;
 
     // Columna central: Título del documento
     const centerColumn = {
-        text: title,
-        bold: true,
-        fontSize: compact ? Math.min(VOUCHER_THEME.fonts.headerTitle, 10) : VOUCHER_THEME.fonts.headerTitle,
+        stack: [
+            {
+                text: title,
+                bold: true,
+                fontSize: compact ? Math.min(VOUCHER_THEME.fonts.headerTitle, compactFontSize ? 9 : 10) : VOUCHER_THEME.fonts.headerTitle,
+                alignment: 'center',
+                color: VOUCHER_THEME.colors.sectionText,
+                noWrap: false,
+            },
+            ...(subtitle ? [{
+                text: subtitle,
+                fontSize: headerFontSize,
+                alignment: 'center',
+                color: VOUCHER_THEME.colors.muted,
+                margin: [0, 1, 0, 0],
+            }] : []),
+        ],
         alignment: 'center',
-        margin: [0, compact ? 7 : 5, 0, 0],
-        color: VOUCHER_THEME.colors.sectionText,
-        noWrap: compact,
+        margin: [0, compact ? 2.5 : 1.5, 0, 0],
     };
 
     // Columna derecha: Código correlativo, fecha y badge opcional
     const rightStack = [];
     if (codePrefix && codeValue !== undefined && codeValue !== null) {
         rightStack.push({
-            text: `${codePrefix}: ${codeValue}`,
-            bold: true,
-            fontSize: compact ? VOUCHER_THEME.fonts.tiny : VOUCHER_THEME.fonts.body,
             alignment: 'right',
-            color: VOUCHER_THEME.colors.sectionText,
+            table: {
+                widths: ['auto'],
+                body: [[{
+                    text: `${codePrefix}: ${codeValue}`,
+                    bold: true,
+                    fontSize: compact ? headerFontSize : VOUCHER_THEME.fonts.body,
+                    color: VOUCHER_THEME.colors.primary,
+                    fillColor: VOUCHER_THEME.colors.primaryLight,
+                    margin: [2, 1, 2, 1],
+                }]],
+            },
+            layout: 'noBorders',
         });
     }
 
     if (dateValue) {
         rightStack.push({
             text: `${dateLabel}: ${dateValue}`,
-            fontSize: compact ? VOUCHER_THEME.fonts.tiny : VOUCHER_THEME.fonts.small,
+            fontSize: compact ? headerFontSize : VOUCHER_THEME.fonts.small,
             alignment: 'right',
             color: VOUCHER_THEME.colors.muted,
-            margin: [0, 2, 0, 0],
+            margin: [0, 1, 0, 0],
         });
     }
 
     if (statusBadge) {
         rightStack.push({
-            margin: [0, 3, 0, 0],
+            margin: [0, 1.5, 0, 0],
             alignment: 'right',
             table: {
                 body: [[
                     {
                         text: statusBadge.text || 'PENDIENTE',
-                        fontSize: VOUCHER_THEME.fonts.tiny,
+                        fontSize: headerFontSize,
                         bold: true,
                         color: statusBadge.textColor || VOUCHER_THEME.colors.badgePendingText,
                         fillColor: statusBadge.bgColor || VOUCHER_THEME.colors.badgePendingBg,
                         alignment: 'center',
-                        margin: [4, 1, 4, 1],
+                        margin: [2, 0.5, 2, 0.5],
                         border: [false, false, false, false],
                     }
                 ]]
@@ -120,24 +163,57 @@ const buildHeader = ({
         });
     }
 
+    if (receipt) {
+        return {
+            stack: [
+                ...(logoImg ? [{ image: logoImg, width: effectiveLogoWidth, alignment: 'center' }] : []),
+                { ...companyStack, alignment: 'center' },
+                centerColumn,
+                ...rightStack.map(block => ({ ...block, alignment: 'center' })),
+            ],
+            margin: [0, 0, 0, 2.5],
+        };
+    }
+
     return {
-        margin: [0, 0, 0, 2],
+        margin: [0, 0, 0, 1],
         layout: 'noBorders',
         table: {
-            widths: compact ? ['30%', '40%', '30%'] : [logoImg ? effectiveLogoWidth + 125 : 125, '*', 130],
+            widths: compact ? (rightStack.length ? ['30%', '40%', '30%'] : ['15%', '70%', '15%']) : [logoImg ? effectiveLogoWidth + 125 : 125, '*', 130],
             body: [[
                 leftHeader,
                 centerColumn,
-                { stack: rightStack, margin: [0, 4, 0, 0] },
+                { stack: rightStack, margin: [0, 2, 0, 0] },
             ]],
         },
     };
 };
 
 /**
+ * Encabezado compartido para reportes. Conserva cinco posiciones antes de la
+ * tabla principal porque algunos reportes añaden filas mediante dataPdf[5].
+ */
+const buildStandardReportHeader = ({ title, auth, details = '' }) => {
+    const printedAt = new Intl.DateTimeFormat('es-BO', {
+        timeZone: 'America/La_Paz',
+        dateStyle: 'short',
+        timeStyle: 'short',
+    }).format(new Date());
+    const author = [auth?.full_names, auth?.number_document].filter(Boolean).join(' / ');
+    const subtitle = [details, author ? `Impreso por: ${author}` : '', printedAt].filter(Boolean).join(' · ');
+    return [
+        buildHeader({ title, subtitle, logoWidth: 56, compact: true }),
+        buildHr([0, 0, 0, 0]),
+        { text: '' },
+        { text: '' },
+        { text: '' },
+    ];
+};
+
+/**
  * Línea separadora horizontal sutil.
  */
-const buildHr = (margin = [0, 1, 0, 3]) => ({
+const buildHr = (margin = [0, 0.5, 0, 1.5]) => ({
     margin,
     table: {
         widths: ['*'],
@@ -150,7 +226,7 @@ const buildHr = (margin = [0, 1, 0, 3]) => ({
 /**
  * Título de sección (ej. ORIGEN, DESTINO, DATOS DEL PROVEEDOR).
  */
-const buildSectionTitle = (text, margin = [2, 3, 0, 1]) => ({
+const buildSectionTitle = (text, margin = [1, 1.5, 0, 0.5]) => ({
     text,
     bold: true,
     fontSize: VOUCHER_THEME.fonts.sectionTitle,
@@ -190,10 +266,10 @@ const buildInfoRowDouble = (
 });
 
 /**
- * Panel de información agrupada (con borde izquierdo de acento verde corporativo estilo ejecutivo).
+ * Paneles de información agrupada con fondo neutro, bordes sutiles y acento verde.
  * groups: array de 1 o 2 grupos [{ title, rows: [{ label, value }] }]
  */
-const buildInfoPanel = (groups) => {
+const buildInfoPanel = (groups, { fixedHeight = false } = {}) => {
     if (!groups || groups.length === 0) return { text: '' };
 
     const renderGroupContent = (group) => {
@@ -202,18 +278,18 @@ const buildInfoPanel = (groups) => {
             stack.push({
                 text: group.title,
                 bold: true,
-                fontSize: VOUCHER_THEME.fonts.sectionTitle,
+                fontSize: VOUCHER_THEME.fonts.tiny,
                 color: VOUCHER_THEME.colors.primary,
-                margin: [0, 0, 0, 2],
+                margin: [0, 0, 0, fixedHeight ? 1 : 1.5],
             });
         }
         if (group.rows && Array.isArray(group.rows)) {
             group.rows.forEach(r => {
                 stack.push({
-                    margin: [0, 1, 0, 1],
+                    margin: [0, fixedHeight ? 0 : 0.5, 0, fixedHeight ? 0 : 0.5],
                     columns: [
-                        { text: r.label, bold: true, fontSize: VOUCHER_THEME.fonts.body, width: r.labelWidth || 65, color: VOUCHER_THEME.colors.labelColor },
-                        { text: r.value || '', fontSize: VOUCHER_THEME.fonts.body, color: VOUCHER_THEME.colors.valueColor },
+                        { text: r.label, bold: true, fontSize: r.fontSize || VOUCHER_THEME.fonts.small, width: r.labelWidth || 65, color: VOUCHER_THEME.colors.muted },
+                        { text: r.value || '', bold: true, fontSize: r.fontSize || VOUCHER_THEME.fonts.body, color: VOUCHER_THEME.colors.valueColor, noWrap: Boolean(fixedHeight), width: '*', characterSpacing: fixedHeight ? 0 : undefined },
                     ]
                 });
             });
@@ -221,38 +297,34 @@ const buildInfoPanel = (groups) => {
         return {
             table: {
                 widths: ['*'],
-                body: [[
-                    {
-                        stack,
-                        fillColor: VOUCHER_THEME.colors.primaryLight,
-                        border: [true, false, false, false],
-                        borderColor: [VOUCHER_THEME.colors.primary],
-                        margin: [4, 2, 4, 2],
-                    }
-                ]]
+                body: [[{
+                    stack,
+                    fillColor: VOUCHER_THEME.colors.sectionBg,
+                    border: [true, true, true, true],
+                    borderColor: [VOUCHER_THEME.colors.border, VOUCHER_THEME.colors.border, VOUCHER_THEME.colors.border, VOUCHER_THEME.colors.border],
+                    margin: fixedHeight ? [3, 2, 3, 2] : [3.5, 2.5, 3.5, 2.5],
+                }]],
             },
             layout: {
-                hLineWidth: () => 0,
-                vLineWidth: (i) => (i === 0 ? 2.5 : 0),
-                vLineColor: () => VOUCHER_THEME.colors.primary,
-            }
+                hLineWidth: () => 0.6,
+                vLineWidth: () => 0.6,
+                hLineColor: () => VOUCHER_THEME.colors.border,
+                vLineColor: () => VOUCHER_THEME.colors.border,
+            },
         };
     };
 
     if (groups.length === 1) {
-        return {
-            margin: [0, 2, 0, 2],
-            ...renderGroupContent(groups[0])
-        };
+        return { margin: [0, 1, 0, 1], ...renderGroupContent(groups[0]) };
     }
 
     return {
-        margin: [0, 2, 0, 2],
+        margin: [0, 1, 0, 1],
         columns: [
             { width: '49%', ...renderGroupContent(groups[0]) },
             { width: '2%', text: '' },
             { width: '49%', ...renderGroupContent(groups[1]) },
-        ]
+        ],
     };
 };
 
@@ -273,6 +345,8 @@ const buildDetailTable = ({
         bold: true,
         alignment: h.alignment || 'left',
         fillColor: headerFillColor,
+        color: VOUCHER_THEME.colors.sectionText,
+            margin: [1, 0.5, 1, 0.5],
     }));
 
     return {
@@ -280,10 +354,24 @@ const buildDetailTable = ({
         table: {
             widths,
             headerRows: 1,
+            keepWithHeaderRows: 1,
+            dontBreakRows: true,
             body: [
                 headerRow,
                 ...rows,
             ],
+        },
+        layout: {
+            hLineWidth: (index, node) => index === 0 || index === 1 || index === node.table.body.length ? 0.9 : 0.55,
+            vLineWidth: (index, node) => index === 0 || index === node.table.widths.length ? 0.9 : 0.55,
+            hLineColor: (index, node) => index === 0 || index === 1 || index === node.table.body.length
+                ? VOUCHER_THEME.colors.labelColor
+                : VOUCHER_THEME.colors.tableBorder,
+            vLineColor: () => VOUCHER_THEME.colors.tableBorder,
+            paddingLeft: () => 2,
+            paddingRight: () => 2,
+            paddingTop: rowIndex => rowIndex === 0 ? 2 : 1.5,
+            paddingBottom: rowIndex => rowIndex === 0 ? 2 : 1.5,
         },
     };
 };
@@ -295,8 +383,10 @@ const buildClosingSection = ({
     observations = [],
     meta = [],
     signatures = [],
-    margin = [0, 4, 0, 0],
-    signatureSpace = 25,
+    margin = [0, 2, 0, 0],
+    signatureSpace = 12.5,
+    signatureFontSize,
+    metaFontSize,
 }) => {
     const stack = [];
 
@@ -316,7 +406,7 @@ const buildClosingSection = ({
         }));
 
         stack.push({
-            margin: [0, 2, 0, 0],
+            margin: [0, 1, 0, 0],
             table: {
                 widths: obsWidths,
                 body: [obsHeaders, obsValues],
@@ -331,19 +421,19 @@ const buildClosingSection = ({
             metaColumns.push({
                 text: m.label,
                 bold: true,
-                fontSize: VOUCHER_THEME.fonts.body,
+                fontSize: m.fontSize || metaFontSize || VOUCHER_THEME.fonts.small,
                 width: m.width || 'auto',
                 color: VOUCHER_THEME.colors.labelColor,
             });
             metaColumns.push({
                 text: m.value || '',
-                fontSize: VOUCHER_THEME.fonts.body,
+                fontSize: m.fontSize || metaFontSize || VOUCHER_THEME.fonts.small,
                 width: m.valueWidth || '*',
             });
         });
 
         stack.push({
-            margin: [0, 3, 0, 0],
+            margin: [0, 1.5, 0, 0],
             columns: metaColumns,
         });
     }
@@ -357,7 +447,7 @@ const buildClosingSection = ({
         signatures.forEach(() => {
             lineCols.push({
                 text: '',
-                margin: [12, 0, 12, 0],
+                margin: [6, 0, 6, 0],
                 border: [false, true, false, false],
                 borderColor: [VOUCHER_THEME.colors.muted],
             });
@@ -367,7 +457,7 @@ const buildClosingSection = ({
             roleCols.push({
                 text: s.role,
                 bold: true,
-                fontSize: VOUCHER_THEME.fonts.body,
+                fontSize: signatureFontSize || VOUCHER_THEME.fonts.body,
                 alignment: 'center',
                 color: VOUCHER_THEME.colors.sectionText,
             });
@@ -376,7 +466,7 @@ const buildClosingSection = ({
         signatures.forEach(s => {
             nameCols.push({
                 text: s.name || '',
-                fontSize: VOUCHER_THEME.fonts.small,
+                fontSize: signatureFontSize || VOUCHER_THEME.fonts.small,
                 alignment: 'center',
                 color: VOUCHER_THEME.colors.muted,
             });
@@ -389,16 +479,17 @@ const buildClosingSection = ({
                 body: [lineCols],
             },
             layout: {
-                hLineWidth: () => 0,
+                hLineWidth: index => index === 0 ? 0.6 : 0,
                 vLineWidth: () => 0,
+                hLineColor: () => VOUCHER_THEME.colors.muted,
             },
         });
         stack.push({
-            margin: [0, 2, 0, 0],
+            margin: [0, 1, 0, 0],
             columns: roleCols,
         });
         stack.push({
-            margin: [0, 1, 0, 0],
+            margin: [0, 0.5, 0, 0],
             columns: nameCols,
         });
     }
@@ -412,7 +503,9 @@ const buildClosingSection = ({
 
 module.exports = {
     getLogoBase64,
+    getVoucherPageOptions,
     buildHeader,
+    buildStandardReportHeader,
     buildHr,
     buildSectionTitle,
     buildInfoRow,

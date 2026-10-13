@@ -1,77 +1,13 @@
 const test = require('node:test');
-const assert = require('node:assert');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../helpers/generator-pdf/fonts');
-const styles = require('../helpers/generator-pdf/styles');
-const { dataPdfReturnClassifiedVoucher } = require('../controllers/reports/classified.controller');
-const { dataPdfReturnInputVoucher } = require('../controllers/reports/input.controller');
-
-test('dataPdfReturnClassifiedVoucher renderiza PDF válido sin errores de layout', () => {
-    const mockClassified = {
-        cod: 'CLA-001',
-        date_classified: new Date(),
-        product: { name: 'Cobre Limpio' },
-        quantity_product: 150,
-        number_registry: 'REG-123',
-        type_registry: 'INGRESO',
-        scale: { name: 'Balanza 1' },
-        storage: { name: 'Almacén Principal' },
-        comments: 'Nota de prueba'
-    };
-    const mockSucursal = {
-        name: 'Sucursal Central',
-        cellphone: '77788899',
-        email: 'central@recumet.com',
-        company: { nit: '10203040' }
-    };
-
-    const content = dataPdfReturnClassifiedVoucher(mockClassified, mockSucursal, 2);
-    assert.ok(Array.isArray(content));
-
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument({ content, styles });
-    const chunks = [];
-    pdfDoc.on('data', c => chunks.push(c));
-    pdfDoc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        assert.ok(buffer.length > 500, 'PDF buffer no debe estar vacío');
-    });
-    pdfDoc.end();
+const assert = require('node:assert/strict');
+const { buildOperationVoucher } = require('../helpers/generator-pdf/operation-voucher.document');
+const { renderReportHtml } = require('../helpers/generator-pdf/report-html.template');
+const branch = { name: 'Sucursal Central', company: { nit: '10203040' }, cellphone: '77788899', email: 'central@recumet.com' };
+test('clasificado conserva producto, registro, balanza, almacén y firmas', () => {
+  const html = renderReportHtml(buildOperationVoucher({ cod: 'CLA-001', date_classified: '2026-10-12', product: { name: 'Cobre Limpio' }, quantity_product: 150, number_registry: 'REG-123', type_registry: 'INGRESO', scale: { name: 'Balanza 1' }, storage: { name: 'Almacén Principal' }, comments: 'Nota de prueba', sucursal: branch, detailsClassified: [{ quantity: 150, product: { cod: 'COB', name: 'Cobre', unit: { siglas: 'KG' } } }] }, { kind: 'classified', decimal: 2 }));
+  for (const text of ['Cobre Limpio','REG-123','Balanza 1','Almacén Principal','Nota de prueba','10203040','Recibí conforme','150']) assert.ok(html.includes(text), text);
 });
-
-test('dataPdfReturnInputVoucher renderiza PDF de compra válido sin errores', () => {
-    const mockInput = {
-        cod: 'COM-005',
-        date_voucher: new Date(),
-        type: 'CONTADO',
-        registry_number: 'R-999',
-        type_registry: 'COMPRA',
-        scale: { name: 'Pesa 2' },
-        provider: {
-            full_names: 'Proveedor SRL',
-            number_document: '987654321',
-            cellphone: '71234567',
-            direction: 'Av. Industrial 45'
-        },
-        comments: 'Pago en efectivo'
-    };
-    const mockSucursal = {
-        name: 'Sucursal El Alto',
-        cellphone: '70011223',
-        email: 'elalto@recumet.com',
-        company: { nit: '10203040' }
-    };
-
-    const content = dataPdfReturnInputVoucher(mockInput, mockSucursal, 2);
-    assert.ok(Array.isArray(content));
-
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument({ content, styles });
-    const chunks = [];
-    pdfDoc.on('data', c => chunks.push(c));
-    pdfDoc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        assert.ok(buffer.length > 500, 'PDF buffer de compra no debe estar vacío');
-    });
-    pdfDoc.end();
+test('compra conserva proveedor, contacto, detalle, descuento y total', () => {
+  const html = renderReportHtml(buildOperationVoucher({ cod: 'COM-005', date_voucher: '2026-10-12', type: 'CONTADO', registry_number: 'R-999', type_registry: 'COMPRA', provider: { full_names: 'Proveedor SRL', number_document: '987654321', cellphone: '71234567', direction: 'Av. Industrial 45' }, comments: 'Pago en efectivo', sucursal: branch, sumas: 20, discount: 2, total: 18, detailsInput: [{ quantity: 2, cost: 10, total: 20, product: { cod: 'P1', name: 'Metal', unit: { siglas: 'KG' } } }] }, { kind: 'purchase', decimal: 2 }));
+  for (const text of ['Proveedor SRL','987654321','71234567','Av. Industrial 45','R-999','20,00','2,00','18,00']) assert.ok(html.includes(text), text);
 });

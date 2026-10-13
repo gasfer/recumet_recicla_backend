@@ -21,9 +21,10 @@ WITH detail AS (
 SELECT l.*, COALESCE(s.stock,0) AS stock, COALESCE(d.balance,0) AS kardex,
   COALESCE(s.stock,0)-COALESCE(d.balance,0) AS difference,
   COALESCE(h.quantity,0) AS held, COALESCE(s.stock,0)-COALESCE(h.quantity,0) AS available
-FROM locations l LEFT JOIN stocks s USING(id_product,id_sucursal,id_storage)
-LEFT JOIN detail d USING(id_product,id_sucursal,id_storage)
-LEFT JOIN held h USING(id_product,id_sucursal,id_storage)
+FROM locations l
+LEFT JOIN stocks s ON s.id_product=l.id_product AND s.id_sucursal=l.id_sucursal AND s.id_storage=l.id_storage AND s.status=true
+LEFT JOIN detail d ON d.id_product=l.id_product AND d.id_sucursal=l.id_sucursal AND d.id_storage=l.id_storage
+LEFT JOIN held h ON h.id_product=l.id_product AND h.id_sucursal=l.id_sucursal AND h.id_storage=l.id_storage
 WHERE COALESCE(s.stock,0) <> COALESCE(d.balance,0)
    OR COALESCE(s.stock,0) < COALESCE(h.quantity,0)
 ORDER BY l.id_product,l.id_sucursal,l.id_storage;

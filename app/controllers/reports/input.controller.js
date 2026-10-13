@@ -1,8 +1,8 @@
+const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
+const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
+const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
 const { Input, DetailsInput,sequelize } = require('../../database/config');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../../helpers/generator-pdf/fonts');
-const styles = require('../../helpers/generator-pdf/styles');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -14,31 +14,12 @@ const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
 const { excelNumberMask } = require("../../helpers/number-formatter");
-const {
-    buildHeader,
-    buildHr,
-    buildSectionTitle,
-    buildInfoPanel,
-    buildDetailTable,
-    buildClosingSection,
-    VOUCHER_THEME,
-} = require('../../helpers/generator-pdf/voucher-template.helper');
+const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
 
-moment.locale('es'); 
-const createPdfBuffer = async (docDefinition) => {
-  return new Promise((resolve, reject) => {
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument(docDefinition);
-    let chunks = [];
-    pdfDoc.on("data", chunk => chunks.push(chunk));
-    pdfDoc.on("end", () => resolve(Buffer.concat(chunks)));
-    pdfDoc.on("error", err => reject(err));
-    pdfDoc.end();
-  });
-};
+moment.locale('es');
 
 const generatePdfReports = async (req = request, res = response) => {
     try {
@@ -87,28 +68,12 @@ const generatePdfReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE COMPRAS', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'input-generatePdfReports.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de compras' });
@@ -116,19 +81,7 @@ const generatePdfReports = async (req = request, res = response) => {
 }
 
 const dataPdfReturn = (auth) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'REPORTE DE COMPRAS TOTALIZADOS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'REPORTE DE COMPRAS TOTALIZADOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -481,31 +434,15 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_detalle_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE COMPRAS POR PRODUCTO', paper: 'A4', orientation: 'portrait',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'input-generatePdfDetailsReports.pdf');
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
 }
 
@@ -537,48 +474,20 @@ const generatePdfDetailsCPPReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_detalle_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE COSTO PROMEDIO', paper: 'A4', orientation: 'portrait',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'input-generatePdfDetailsCPPReports.pdf');
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
 }
 
 const dataDetailsPdfReturn = (auth,date1,date2) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Fecha Impreso: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text:`Impreso por:` + `${auth.number_document} - ${auth.full_names}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'COMPRAS TOTALIZADAS ', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Fecha Reporte:' +  date1 + ' ' + date2, alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'COMPRAS TOTALIZADAS', auth, details: `Fecha reporte: ${date1} ${date2}` }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -599,19 +508,7 @@ const dataDetailsPdfReturn = (auth,date1,date2) => [
 ];
 
 const dataDetailsPdfDetailsCPPReturn = (auth,date1,date2) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Fecha Impreso: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text:`Impreso por:` + `${auth.number_document} - ${auth.full_names}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'COMPRAS DETALLE COSTO PROMEDIO ', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Fecha Reporte:' +  date1 + ' ' + date2, alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'COMPRAS DETALLE COSTO PROMEDIO', auth, details: `Fecha reporte: ${date1} ${date2}` }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -778,432 +675,13 @@ const printInputVoucher = async (req = request, res = response) =>{
             ]
         });
         const decimal = await getNumberDecimal();
-        const { format } = req.query;
-        let dataPdf;
-        let docDefinition;
-
-        if (format === 'rollo') {
-            dataPdf = dataPdfReturnInputVoucherRollo(input, input.sucursal, decimal);
-            docDefinition = {
-                pageSize: { width: 226.77, height: 'auto' },
-                pageMargins: [6, 10, 6, 10],
-                content: dataPdf,
-                styles: styles,
-            };
-        } else if (format === 'media') {
-            dataPdf = dataPdfReturnInputVoucherMedia(input, input.sucursal, decimal);
-            docDefinition = {
-                pageSize: 'A5',
-                pageMargins: [15, 15, 15, 15],
-                content: dataPdf,
-                styles: styles,
-            };
-        } else {
-            dataPdf = dataPdfReturnInputVoucher(input,input.sucursal,decimal); //PDF 
-            const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4];
-            let quantity_total = 0;
-            let units = [];
-            input.detailsInput.forEach(detail => {
-                quantity_total+= Number(detail?.quantity);
-                if (!units.includes(detail?.product?.unit.siglas)) {
-                    units.push(detail?.product?.unit.siglas);
-                }
-                const tableData = [
-                    {text:detail?.product?.cod, fontSize:8}, 
-                    {text:detail?.product?.name, fontSize:8}, 
-                    {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
-                    {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
-                    {text:Number(detail?.cost).toFixed(decimal), fontSize:8, alignment: 'right'},  
-                    {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
-                ];
-                detailTableNode.table.body.push(tableData);
-            });
-            detailTableNode.table.body.push(
-                [
-                    {text:'',colSpan: 2, border:[true,false,false,false]},
-                    '',
-                    {
-                        text: `${Number(quantity_total).toLocaleString('es-BO', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2
-                        })}`,
-                        fontSize: 8,
-                        alignment: 'center',
-                        bold: true,
-                        fillColor: '#dde3ea'
-                    },
-                    {text: units.join(','), fontSize:8, alignment:'center'},
-                    {   border:[true,false,true,true],
-                        text: `SUB TOTAL: ${Number(input.sumas).toLocaleString('es-BO', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2
-                        })}`, colSpan: 2,fontSize:8,
-                        fillColor: '#dde3ea',alignment:'right', 
-                        bold:true,
-                    },
-                ],
-                [
-                    {text:'',colSpan: 4, border:[true,false,false,false]},
-                    '',
-                    '',
-                    '',
-                    {   border:[true,false,true,true],
-                        text: `DESCUENTO: ${Number(input.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                        fillColor: '#dde3ea',alignment:'right', 
-                        bold:true,
-                    },
-                ],
-                [
-                    {
-                        text:'SON: ' + NumeroALetras(Number(input.total).toFixed(decimal)),
-                        style: 'SonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
-                    },
-                    '',
-                    '',
-                    '',
-                    {   border:[true,false,true,true],
-                        text: `TOTAL: ${Number(input.total).toLocaleString('es-BO', {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2
-                        })}`, colSpan: 2,fontSize:8,
-                        fillColor: '#dde3ea',alignment:'right', 
-                        bold:true,
-                    },
-                ]
-            );
-
-            if (input.payment_type != 'EFECTIVO') {
-                const accountsPayableNode = dataPdf.find(node => node && node.table && node.table.widths && node.table.widths.length === 5);
-                if (accountsPayableNode && input.accounts_payable) {
-                    input.accounts_payable.forEach(account => {
-                        const tableData = [
-                            {text:account?.cod, fontSize:8}, 
-                            {text:moment(account?.date_credit).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
-                            {text:account?.description, fontSize:8}, 
-                            {text:Number(account?.total).toFixed(decimal), fontSize:8}, 
-                            {text:Number(account?.monto_restante).toFixed(decimal), fontSize:8}, 
-                        ];
-                        accountsPayableNode.table.body.push(tableData);
-                    });
-                }
-            }
-            if (input.status == 'ANULADO') {
-                dataPdf.push(
-                    {
-                        text: 'ANULADO',
-                        fontSize: 40,
-                        bold: true,
-                        alignment: 'center',
-                        color: 'red',
-                        opacity: 0.3,
-                        margin: [0, 20, 0, 0]
-                    }
-                );  
-            }
-
-            docDefinition = {
-                pageSize: 'LETTER',
-                pageMargins: [18, 18, 18, 18],
-                content: dataPdf,
-                styles: styles,
-            };
-        }
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
-        });
-        pdfDoc.end();
+        const document = buildOperationVoucher(input, { kind: 'purchase', decimal, format: req.query.format });
+        await sendReportPdf(res, document, 'boleta-compra-' + id_input + '.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de compra' });
     }
 }
-
-const dataPdfReturnInputVoucher = (input, sucursal, decimal) => [
-    buildHeader({
-        title: 'NOTA DE COMPRA',
-        codePrefix: 'COMPRA',
-        codeValue: input.cod,
-        dateLabel: 'Fecha',
-        dateValue: moment(input.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
-        company: {
-            branchName: sucursal.name,
-            nit: sucursal.company?.nit,
-            phone: sucursal.cellphone,
-            email: sucursal.email,
-        },
-        logoWidth: 55,
-    }),
-    buildHr([0, 1, 0, 4]),
-    buildInfoPanel([
-        {
-            title: 'DATOS PROVEEDOR',
-            rows: [
-                { label: 'Nombre:', value: input?.provider?.full_names || '-', labelWidth: 50 },
-                { label: 'Nro. Nit:', value: input?.provider?.number_document || '-', labelWidth: 50 },
-            ]
-        },
-        {
-            title: 'CONTACTOS',
-            rows: [
-                { label: 'Teléfono:', value: input?.provider?.cellphone || '-', labelWidth: 55 },
-                { label: 'Dirección:', value: input?.provider?.direction || '-', labelWidth: 55 },
-            ]
-        }
-    ]),
-    buildSectionTitle('DETALLE DE PRODUCTOS'),
-    buildDetailTable({
-        widths: [55, '*', 45, 35, 55, 60],
-        headers: [
-            { text: 'CÓDIGO', alignment: 'center' },
-            { text: 'DETALLE' },
-            { text: 'CANT.', alignment: 'center' },
-            { text: 'UND', alignment: 'center' },
-            { text: 'P.U.', alignment: 'center' },
-            { text: 'IMPORTE', alignment: 'center' },
-        ],
-        rows: [],
-    }),
-    buildClosingSection({
-        observations: input?.comments ? [{ title: 'OBSERVACIONES', text: input.comments }] : [],
-        meta: [
-            { label: `P/${input.type_registry} NRO:`, value: input.registry_number, width: 65 },
-            { label: 'BALANZA:', value: input.scale?.name || '', width: 55 },
-            { label: 'TIPO COMPRA:', value: input.type === 'CONTADO' ? 'AL CONTADO' : 'A CREDITO', width: 85 },
-        ],
-        signatures: [
-            { role: 'Recibí conforme', name: `PROVEEDOR: ${input?.provider?.full_names || ''}` },
-            { role: 'Entregue conforme', name: 'RESPONSABLE CAJA' },
-        ],
-        margin: [0, 8, 0, 0],
-        signatureSpace: 35,
-    }),
-];
-
-
-const dataPdfReturnInputVoucherRollo = (input, sucursal, decimal) => {
-    let body = [
-        [
-            { text: 'CÓDIGO / PRODUCTO', fontSize: 7, bold: true, fillColor: '#eeeeee' },
-            { text: 'CANT.', fontSize: 7, bold: true, alignment: 'right', fillColor: '#eeeeee' }
-        ]
-    ];
-    let quantity_total = 0;
-    input.detailsInput.forEach(detail => {
-        quantity_total += Number(detail.quantity);
-        body.push([
-            { text: `${detail.product.cod} - ${detail.product.name}`, fontSize: 7 },
-            { text: `${detail.quantity} ${detail.product.unit.siglas}`, fontSize: 7, alignment: 'right' }
-        ]);
-    });
-    
-    body.push(
-        [
-            { text: 'TOTAL CANTIDAD:', bold: true, fontSize: 7, alignment: 'right' },
-            { text: Number(quantity_total).toFixed(decimal), fontSize: 7, alignment: 'right' }
-        ]
-    );
-
-    return [
-        { text: sucursal.name.toUpperCase(), bold: true, fontSize: 9, alignment: 'center', margin: [0, 0, 0, 2] },
-        { text: `NIT: ${sucursal.company.nit}`, fontSize: 7, alignment: 'center' },
-        { text: `TELF: ${sucursal.cellphone} - EMAIL: ${sucursal.email}`, fontSize: 6, alignment: 'center', margin: [0, 0, 0, 5] },
-        { text: '----------------------------------------', fontSize: 7, alignment: 'center' },
-        { text: 'COMPROBANTE DE PESAJE', bold: true, fontSize: 9, alignment: 'center', margin: [0, 2, 0, 2] },
-        { text: `COMPRA: ${input.cod}`, bold: true, fontSize: 8, alignment: 'center' },
-        { text: `FECHA: ${new Date(input.date_voucher).toLocaleString('es-ES')}`, fontSize: 7, alignment: 'center', margin: [0, 0, 0, 5] },
-        { text: '----------------------------------------', fontSize: 7, alignment: 'center' },
-        { text: 'PROVEEDOR:', bold: true, fontSize: 7, margin: [0, 2, 0, 2] },
-        { text: `Nombre: ${input.provider?.full_names || '-'}`, fontSize: 7 },
-        { text: `NIT/CI: ${input.provider?.number_document || '-'}`, fontSize: 7 },
-        { text: `Balanza: ${input.scale.name}`, fontSize: 7 },
-        { text: `P/${input.type_registry} NRO: ${input.registry_number}`, fontSize: 7, margin: [0, 0, 0, 5] },
-        { text: '----------------------------------------', fontSize: 7, alignment: 'center' },
-        {
-            table: {
-                widths: ['*', 70],
-                body: body
-            },
-            layout: 'noBorders',
-            margin: [0, 5, 0, 5]
-        },
-        input.comments ? { text: `OBSERVACIONES: ${input.comments}`, fontSize: 7, margin: [0, 2, 0, 5] } : {}
-    ];
-};
-
-const dataPdfReturnInputVoucherMedia = (input, sucursal, decimal) => {
-    let quantity_total = 0;
-    let units = [];
-    let tableBody = [
-        [
-            { text: 'CÓDIGO', fontSize: 7, fillColor: '#eeeeee', bold: true },
-            { text: 'DETALLE', fontSize: 7, fillColor: '#eeeeee', bold: true },
-            { text: 'CANT.', alignment: 'center', fontSize: 7, fillColor: '#eeeeee', bold: true },
-            { text: 'UND', alignment: 'center', fontSize: 7, fillColor: '#eeeeee', bold: true },
-            { text: 'P.U.', alignment: 'center', fontSize: 7, fillColor: '#eeeeee', bold: true },
-            { text: 'IMPORTE', alignment: 'center', fontSize: 7, fillColor: '#eeeeee', bold: true },
-        ]
-    ];
-    
-    input.detailsInput.forEach(detail => {
-        quantity_total += Number(detail.quantity);
-        if (!units.includes(detail.product?.unit.siglas)) {
-            units.push(detail.product?.unit.siglas);
-        }
-        tableBody.push([
-            { text: detail.product?.cod, fontSize: 7 },
-            { text: detail.product?.name, fontSize: 7 },
-            { text: detail.quantity, fontSize: 7, alignment: 'center' },
-            { text: detail.product?.unit?.siglas, fontSize: 7, alignment: 'center' },
-            { text: Number(detail.cost).toFixed(decimal), fontSize: 7, alignment: 'right' },
-            { text: Number(detail.total).toFixed(decimal), fontSize: 7, alignment: 'right' },
-        ]);
-    });
-
-    tableBody.push(
-        [
-            { text: '', colSpan: 2, border: [true, false, false, false] },
-            '',
-            { text: quantity_total, fontSize: 7, alignment: 'center' },
-            { text: units.join(','), fontSize: 7, alignment: 'center' },
-            {
-                border: [true, false, true, true],
-                text: `SUB TOTAL: ${Number(input.sumas).toFixed(decimal)}`, colSpan: 2, fontSize: 7,
-                fillColor: '#eeeeee', alignment: 'right', bold: true,
-            },
-        ],
-        [
-            { text: '', colSpan: 4, border: [true, false, false, false] },
-            '', '', '',
-            {
-                border: [true, false, true, true],
-                text: `DESCUENTO: ${Number(input.discount).toFixed(decimal)}`, colSpan: 2, fontSize: 7,
-                fillColor: '#eeeeee', alignment: 'right', bold: true,
-            },
-        ],
-        [
-            {
-                text: 'SON: ' + NumeroALetras(Number(input.total).toFixed(decimal)),
-                fontSize: 7, colSpan: 4, border: [true, false, true, true],
-            },
-            '', '', '',
-            {
-                border: [true, false, true, true],
-                text: `TOTAL: ${Number(input.total).toFixed(decimal)}`, colSpan: 2, fontSize: 7,
-                fillColor: '#eeeeee', alignment: 'right', bold: true,
-            },
-        ]
-    );
-
-    if (input.type === 'CREDITO') {
-        tableBody.push(
-            [
-                { text: '', colSpan: 4, border: [true, false, false, false] },
-                '', '', '',
-                { text: 'A CREDITO', colSpan: 2, fontSize: 7, alignment: 'center' }
-            ],
-            [
-                { text: '', colSpan: 4, border: [true, false, false, false] },
-                '', '', '',
-                {
-                    border: [true, false, true, true],
-                    text: `A CUENTA: ${Number(input.accounts_payable.monto_abonado).toFixed(decimal)}`, colSpan: 2, fontSize: 7,
-                    fillColor: '#eeeeee', alignment: 'right', bold: true,
-                },
-            ],
-            [
-                {
-                    text: 'SON: ' + NumeroALetras(Number(input.accounts_payable.monto_restante).toFixed(decimal)),
-                    fontSize: 7, colSpan: 4, border: [true, false, true, true],
-                },
-                '', '', '',
-                {
-                    border: [true, false, true, true],
-                    text: `SALDO: ${Number(input.accounts_payable.monto_restante).toFixed(decimal)}`, colSpan: 2, fontSize: 7,
-                    fillColor: '#eeeeee', alignment: 'right', bold: true,
-                },
-            ]
-        );
-    }
-
-    return [
-        {
-            columns: [
-                {
-                    image: 'data:image/png;base64,' + fs.readFileSync(imagePath, 'base64'),
-                    width: 50,
-                },
-                {
-                    text: [
-                        { text: `${sucursal.name}\n`, bold: true, fontSize: 8 },
-                        { text: `NIT: ${sucursal.company.nit}\n`, fontSize: 7 },
-                        { text: `TELF: ${sucursal.cellphone}\n`, fontSize: 7 },
-                        { text: `${sucursal.email}`, fontSize: 7 }
-                    ],
-                    margin: [10, 0, 0, 0]
-                },
-                {
-                    text: [
-                        { text: 'NOTA DE COMPRA\n', bold: true, fontSize: 10 },
-                        { text: `NRO: ${input.cod}\n`, bold: true, fontSize: 9, color: 'red' },
-                        { text: `FECHA: ${new Date(input.date_voucher).toLocaleDateString('es-ES')}`, fontSize: 8 }
-                    ],
-                    alignment: 'right'
-                }
-            ]
-        },
-        { text: '\nDATOS PROVEEDOR:', bold: true, fontSize: 8, margin: [0, 5, 0, 2] },
-        {
-            table: {
-                widths: [45, '*', 50, '*'],
-                body: [
-                    [
-                        { text: 'Nombre:', bold: true, fontSize: 7, border: [true, true, false, true] },
-                        { text: input?.provider?.full_names || '-', fontSize: 7, border: [false, true, true, true] },
-                        { text: 'NIT/CI:', bold: true, fontSize: 7, border: [true, true, false, true] },
-                        { text: input?.provider?.number_document || '-', fontSize: 7, border: [false, true, true, true] },
-                    ],
-                    [
-                        { text: 'Teléfono:', bold: true, fontSize: 7, border: [true, false, false, true] },
-                        { text: input?.provider?.cellphone || '-', fontSize: 7, border: [false, false, true, true] },
-                        { text: 'Dirección:', bold: true, fontSize: 7, border: [true, false, false, true] },
-                        { text: input?.provider?.direction || '-', fontSize: 7, border: [false, false, true, true] },
-                    ]
-                ]
-            }
-        },
-        { text: '\nDETALLE:', bold: true, fontSize: 8, margin: [0, 5, 0, 2] },
-        {
-            table: {
-                widths: [50, '*', 40, 30, 40, 45],
-                body: tableBody
-            },
-            margin: [0, 0, 0, 5]
-        },
-        {
-            columns: [
-                { text: `P/${input.type_registry} NRO: ${input.registry_number}`, fontSize: 7 },
-                { text: `BALANZA: ${input.scale.name}`, fontSize: 7 },
-                { text: `TIPO COMPRA: ${input.type === 'CONTADO' ? 'AL CONTADO' : 'A CREDITO'}`, fontSize: 7 },
-            ],
-            margin: [0, 5, 0, 5]
-        },
-        input.comments ? { text: `OBSERVACIONES: ${input.comments}`, fontSize: 7, margin: [0, 2, 0, 5] } : {},
-        {
-            columns: [
-                { text: '\n\n\n_________________________________\nRecibí conforme\nProv: ' + (input.provider?.full_names || '').substring(0, 20), fontSize: 7, alignment: 'center' },
-                { text: '\n\n\n_________________________________\nEntregue conforme\nResponsable Caja', fontSize: 7, alignment: 'center' }
-            ],
-            margin: [0, 10, 0, 0]
-        }
-    ];
-};
 
 module.exports = {
     generatePdfReports,
@@ -1213,5 +691,5 @@ module.exports = {
     generateExcelDetailsReports,
     printInputVoucher,
     generatePdfDetailsCPPReports,
-    dataPdfReturnInputVoucher,
+
 }

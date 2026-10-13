@@ -34,6 +34,8 @@ module.exports = (sequelize, DataTypes) => {
         this.setDataValue('quantity_product', formattedDecimalQuantitySetter(value));
       }
     },
+    stock_before: DataTypes.DECIMAL,
+    stock_after: DataTypes.DECIMAL,
     id_scale: DataTypes.INTEGER,
     id_storage: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,

@@ -1,36 +1,78 @@
 const { Input, sequelize } = require('../database/config');
 const { Op } = require('sequelize');
+const moment = require('moment');
 const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('./purchase-report-filters.service');
 
 const includesForReport = (filters) => [
-    { association: 'provider', attributes: ['full_names'], include: [{ association: 'type', attributes: ['name'] }] },
+    { association: 'provider', attributes: ['full_names', 'id_type_provider'], ...(filters.providerTypeId ? { where: { id_type_provider: filters.providerTypeId }, required: true } : {}), include: [{ association: 'type', attributes: ['name'] }] },
     { association: 'sucursal', attributes: ['name'] },
     { association: 'storage', attributes: ['name'] },
     {
-        association: 'detailsInput', attributes: ['quantity', 'total'], where: { status: 'ACTIVE' },
+        association: 'detailsInput', attributes: ['quantity', 'total', 'cost'], where: { status: 'ACTIVE', removed_at: null },
         required: false,
         include: [{
-            association: 'product', attributes: ['cod', 'name'],
+            association: 'product', attributes: ['id', 'cod', 'name'],
             where: {
                 ...(filters.categoryIds.length ? { id_category: { [require('sequelize').Op.in]: filters.categoryIds } } : {}),
                 ...(filters.productIds.length ? { id: { [require('sequelize').Op.in]: filters.productIds } } : {}),
             },
             required: filters.categoryIds.length > 0 || filters.productIds.length > 0,
-            include: [{ association: 'unit', attributes: ['siglas'] }],
+            include: [{ association: 'unit', attributes: ['id', 'siglas'] }],
         }],
     },
 ];
 
 const addTotalQuantity = (inputs) => inputs.map((input) => {
+    const kgDetails = (input.detailsInput || []).filter((item) => ['KG', 'KGR', 'KILO', 'KILOGRAMO', 'KILOGRAMOS'].includes(String(item.product?.unit?.siglas || '').trim().toUpperCase()));
+    const kgQuantity = kgDetails.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const kgAmount = kgDetails.reduce((sum, item) => sum + Number(item.total ?? Number(item.quantity || 0) * Number(item.cost || 0)), 0);
     input.dataValues.total_quantity = (input.detailsInput || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    input.dataValues.kg_quantity = kgQuantity;
+    input.dataValues.kg_total = kgAmount;
+    input.dataValues.kg_purchase_price = kgQuantity ? kgAmount / kgQuantity : null;
     return input;
 });
+
+const queryPurchaseReportTotals = async (params) => {
+    const filters = normalizePurchaseReportFilters(params);
+    const options = applyDetailFilter(applyReportSearch({
+        where: buildPurchaseReportWhere(filters),
+        include: filters.providerTypeId || (filters.searchType === 'provider.full_names' && filters.query)
+            ? [{ association: 'provider', attributes: ['id'], required: true,
+                where: { ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}),
+                    ...(filters.searchType === 'provider.full_names' && filters.query ? { full_names: { [Op.iLike]: `%${filters.query}%` } } : {}) } }]
+            : [],
+    }, filters), filters);
+    const inputs = await Input.findAll({
+        where: options.where,
+        attributes: ['id', 'total'],
+        include: [{
+            association: 'detailsInput', attributes: ['quantity', 'total', 'cost'],
+            where: { status: 'ACTIVE', removed_at: null }, required: false,
+            include: [{ association: 'product', attributes: ['id'], include: [{ association: 'unit', attributes: ['siglas'] }] }],
+        }],
+    });
+    const totals = inputs.reduce((result, input) => {
+        result.total_amount += Number(input.total || 0);
+        for (const detail of input.detailsInput || []) {
+            if (!['KG', 'KGR', 'KILO', 'KILOGRAMO', 'KILOGRAMOS'].includes(String(detail.product?.unit?.siglas || '').trim().toUpperCase())) continue;
+            const quantity = Number(detail.quantity || 0);
+            result.kg_quantity += quantity;
+            result.kg_total += Number(detail.total ?? quantity * Number(detail.cost || 0));
+        }
+        return result;
+    }, { total_amount: 0, kg_quantity: 0, kg_total: 0 });
+    totals.kg_purchase_price = totals.kg_quantity ? totals.kg_total / totals.kg_quantity : null;
+    return totals;
+};
+
+const addPurchaseReportTotals = (inputs, totals) => ({ ...inputs, totals });
 
 const applyReportSearch = (options, filters) => {
     if (!filters.searchType || !filters.query) return options;
     if (filters.searchType === 'provider.full_names') {
         const provider = options.include.find((item) => item.association === 'provider');
-        provider.where = { full_names: { [Op.iLike]: `%${filters.query}%` } };
+        provider.where = { ...provider.where, full_names: { [Op.iLike]: `%${filters.query}%` } };
         provider.required = true;
         return options;
     }
@@ -48,7 +90,7 @@ const applyDetailFilter = (options, filters) => {
     options.where[Op.and].push({ id: { [Op.in]: sequelize.literal(`(
         SELECT detail.id_input FROM details_inputs AS detail
         JOIN products AS product ON product.id = detail.id_product
-        WHERE detail.status = 'ACTIVE'${categories}${products}
+        WHERE detail.status = 'ACTIVE' AND detail.removed_at IS NULL${categories}${products}
     )`) } });
     return options;
 };
@@ -57,17 +99,26 @@ const queryPurchaseReportPage = async (params) => {
     const filters = normalizePurchaseReportFilters(params);
     const options = applyDetailFilter(applyReportSearch({
         where: buildPurchaseReportWhere(filters),
-        order: [[filters.fieldSort, filters.direction]],
-        include: includesForReport(filters),
+        include: filters.providerTypeId || (filters.searchType === 'provider.full_names' && filters.query)
+            ? [{ association: 'provider', attributes: ['id', 'id_type_provider'], required: true,
+                where: { ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}),
+                    ...(filters.searchType === 'provider.full_names' && filters.query ? { full_names: { [Op.iLike]: `%${filters.query}%` } } : {}) } }]
+            : [],
     }, filters), filters);
     const page = Math.max(1, Number.parseInt(params.page, 10) || 1);
     const limit = Math.max(1, Number.parseInt(params.limit, 10) || 100);
-    const { count, rows } = await Input.findAndCountAll({
-        ...options,
-        limit,
-        offset: (page - 1) * limit,
-        distinct: true,
-    });
+    const order = [[filters.fieldSort, filters.direction], ['id', 'DESC']];
+    const [count, pageIds] = await Promise.all([
+        Input.count({ where: options.where, include: options.include, distinct: true, col: 'id' }),
+        Input.findAll({ where: options.where, include: options.include, attributes: ['id'], order,
+            limit, offset: (page - 1) * limit, subQuery: false, raw: true }),
+    ]);
+    const ids = pageIds.map((row) => row.id);
+    const rows = ids.length ? await Input.findAll({
+        where: { id: { [Op.in]: ids } },
+        order,
+        include: includesForReport(filters),
+    }) : [];
     return {
         previousPage: page > 1 ? page - 1 : null,
         currentPage: page,
@@ -77,6 +128,7 @@ const queryPurchaseReportPage = async (params) => {
         per_page: limit,
         from: count ? (page - 1) * limit + 1 : 0,
         to: Math.min(page * limit, count),
+        totals: addPurchaseReportTotals({}, await queryPurchaseReportTotals(params)).totals,
         data: addTotalQuantity(rows),
     };
 };
@@ -108,4 +160,4 @@ const summarizeByProduct = (inputs) => {
     return [...rows.values()];
 };
 
-module.exports = { queryPurchaseReportPage, queryPurchaseReportExport, summarizeByProduct, normalizePurchaseReportFilters };
+module.exports = { queryPurchaseReportPage, queryPurchaseReportTotals, addPurchaseReportTotals, queryPurchaseReportExport, summarizeByProduct, normalizePurchaseReportFilters };

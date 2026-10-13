@@ -1,7 +1,7 @@
+const { sendReportPdf } = require('../services/pdf/report-pdf.service');
+const { tabularReport } = require('../helpers/generator-pdf/tabular-report.adapter');
 const { request, response } = require('express');
 const { randomUUID } = require('crypto');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../helpers/generator-pdf/fonts');
 const styles = require('../helpers/generator-pdf/styles');
 const { TransferReviewNote, Transfers } = require('../database/config');
 const workflowService = require('../services/transfer-review-workflow.service');
@@ -512,41 +512,25 @@ const printReviewNote = async (req = request, res = response) => {
     ], ...note.details.map((detail) => [
       `${detail.product.cod} - ${detail.product.name}`, detail.quantity_sent, detail.quantity_received, detail.quantity_difference
     ])];
-    const definition = {
-      content: [
-        { text: `NOTA DE TRASLADO: #${note.transfer.cod} – ${title}`, style: 'title', bold: true },
-        { text: `Correlativo: ${note.registry_number}`, margin: [0, 8, 0, 0] },
-        { text: `Estado de conciliación: ${note.reconciliation_status}` },
-        { text: `Efecto de inventario: ${resolutionRows.some((row) => row[6] === 'Sin movimientos') ? 'SIN AJUSTE DE INVENTARIO' : 'CON MOVIMIENTOS AUTORIZADOS'}` },
-        { text: `Responsable: ${note.assignedUser?.full_names || 'Sin asignar'}` },
-        { text: `Fecha: ${new Date(note.date).toLocaleString('es-BO')}` },
-        { text: `Origen: ${note.transfer.sucursal_send.name}  |  Destino: ${note.transfer.sucursal_received.name}` },
-        { text: `Almacén: ${note.storage.name}  |  Usuario: ${note.user.full_names}` },
-        { text: `Producto registrado: ${note.registeredProduct.cod} - ${note.registeredProduct.name}`, margin: [0, 0, 0, 10] },
-        { table: { widths: ['*', 70, 70, 70], body } },
-        ...(isShortage ? [{ text: `TOTAL FALTANTE: ${totalDifference}`, margin: [0, 8, 0, 0], bold: true }] : []),
-        { text: `Observaciones: ${note.observations || '-'}`, margin: [0, 12, 0, 0] },
-        ...(resolutionRows.length > 0 ? [
-          { text: 'ACCIONES DE CONCILIACIÓN', margin: [0, 12, 0, 5], bold: true },
-          { table: { widths: ['*', 80, 60, 80, 45, 80, 65], body: [[
-            { text: 'PRODUCTO', bold: true }, { text: 'RESULTADO', bold: true }, { text: 'MOTIVO', bold: true }, { text: 'REFERENCIA', bold: true }, { text: 'CANT.', bold: true }, { text: 'DISPOSICIÓN', bold: true }, { text: 'KARDEX', bold: true },
-          ], ...resolutionRows] } },
-        ] : []),
-        ...(note.evidences.length > 0 ? [{
-          text: `Evidencias: ${note.evidences.map((evidence) => `${evidence.evidence_type}${evidence.description ? ` (${evidence.description})` : ''}`).join(' · ')}`,
-          margin: [0, 10, 0, 0],
-        }] : []),
-      ], styles,
+    const document = {
+      title: 'NOTA DE TRASLADO · ' + title, reference: note.registry_number, paper: 'A4',
+      date: new Date(note.date).toLocaleString('es-BO', { timeZone: 'America/La_Paz' }), company: { branchName: note.sucursal?.name },
+      panels: [{ title: 'DATOS DE REVISIÓN', fields: [
+        { label: 'Traslado', value: note.transfer.cod }, { label: 'Estado de conciliación', value: note.reconciliation_status },
+        { label: 'Efecto de inventario', value: resolutionRows.some(row => row[6] === 'Sin movimientos') ? 'SIN AJUSTE DE INVENTARIO' : 'CON MOVIMIENTOS AUTORIZADOS' },
+        { label: 'Responsable', value: note.assignedUser?.full_names || 'Sin asignar' },
+        { label: 'Origen', value: note.transfer.sucursal_send.name }, { label: 'Destino', value: note.transfer.sucursal_received.name },
+        { label: 'Almacén', value: note.storage.name }, { label: 'Usuario', value: note.user.full_names },
+        { label: 'Producto registrado', value: note.registeredProduct.cod + ' - ' + note.registeredProduct.name },
+      ] }],
+      sections: [
+        { title: 'DETALLE', ...tabularReport({ body, widths: [160,70,70,70] }, {}) },
+        ...(isShortage ? [{ title: 'TOTAL FALTANTE', columns: [{ label: 'KG' }], rows: [[totalDifference]] }] : []),
+        ...(resolutionRows.length ? [{ title: 'ACCIONES DE CONCILIACIÓN', columns: ['PRODUCTO','RESULTADO','MOTIVO','REFERENCIA','CANT.','DISPOSICIÓN','KARDEX'].map(label => ({ label })), rows: resolutionRows }] : []),
+      ],
+      observations: [note.observations || '-', ...(note.evidences.length ? ['Evidencias: ' + note.evidences.map(evidence => evidence.evidence_type + (evidence.description ? ' (' + evidence.description + ')' : '')).join(' · ')] : [])].join('\n'),
     };
-    const pdfDoc = new PdfPrinter(fonts).createPdfKitDocument(definition);
-    const chunks = [];
-    pdfDoc.on('data', (chunk) => chunks.push(chunk));
-    pdfDoc.on('end', () => {
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename=${note.registry_number}.pdf`);
-      res.send(Buffer.concat(chunks));
-    });
-    pdfDoc.end();
+    await sendReportPdf(res, document, note.registry_number + '.pdf');
   } catch (error) {
     console.log(error);
     return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la nota de revisión.' }] });

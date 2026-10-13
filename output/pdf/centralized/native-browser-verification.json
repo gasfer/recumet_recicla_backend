@@ -1,0 +1,18 @@
+[
+  {
+    "channel": "chrome",
+    "version": "154.0.8037.99",
+    "preview": "passed",
+    "download": "passed; identical PDF bytes",
+    "canvas": false,
+    "physicalPrint": "requires manual printer/dialog check"
+  },
+  {
+    "channel": "msedge",
+    "version": "155.0.4283.45",
+    "preview": "passed",
+    "download": "passed; identical PDF bytes",
+    "canvas": false,
+    "physicalPrint": "requires manual printer/dialog check"
+  }
+]

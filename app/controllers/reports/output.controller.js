@@ -1,8 +1,8 @@
+const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
+const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
+const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
 const { Output, DetailsOutput, sequelize } = require('../../database/config');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../../helpers/generator-pdf/fonts');
-const styles = require('../../helpers/generator-pdf/styles');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -13,15 +13,7 @@ const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
-const {
-    buildHeader,
-    buildHr,
-    buildSectionTitle,
-    buildInfoPanel,
-    buildDetailTable,
-    buildClosingSection,
-    VOUCHER_THEME,
-} = require('../../helpers/generator-pdf/voucher-template.helper');
+const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
 second: "numeric", };
@@ -77,28 +69,12 @@ const generatePdfReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE VENTAS', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'output-generatePdfReports.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de ventas' });
@@ -106,19 +82,7 @@ const generatePdfReports = async (req = request, res = response) => {
 }
 
 const dataPdfReturn = (auth) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth?.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'REPORTE DE VENTAS TOTALIZADOS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'REPORTE DE VENTAS TOTALIZADOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -325,49 +289,20 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
-        let docDefinition = {
-            content: dataPdf,
-            pageOrientation: 'landscape',
-            footer: function(currentPage, pageCount) { return [
-                {
-                    text:`Fechas: ${moment(date1,formatDate1).format(formatDate1)} / ${moment(date2,formatDate2).format(formatDate2) != 'Fecha inválida' ? moment(date2,formatDate2).format(formatDate2) :'' }` + ' - Paginas: ' +currentPage.toString() + ' de ' + pageCount,
-                    fontSize: 9,alignment: 'center', margin:[10,10,10,10]
-                }
-            ] },
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_detalle_${new Date()}.pdf`);
-            return res.send(result);
+        const document = tabularReport(dataPdf[5].table, {
+            title: 'REPORTE DE VENTAS DETALLADAS', paper: 'A4', orientation: 'landscape',
+            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
-        pdfDoc.end();
+        await sendReportPdf(res, document, 'output-generatePdfDetailsReports.pdf');
     } catch (error) {
         console.log(error);
-        const pathImage = path.join(__dirname, `../../../uploads/none-img.jpg`);
-        return res.sendFile(pathImage);
+        return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
 }
 
 const dataDetailsPdfReturn = (auth) => [
-    {
-        image: 'data:image/png;base64,'+ fs.readFileSync(imagePath,'base64'),
-        width: 70,
-        absolutePosition: { x:25, y: 15 }
-    },
-    {   text:`Impreso por: ` + moment().format('LLLL'), style: 'fechaDoc',
-        absolutePosition: { y: 16 },
-    },
-    {   text: `${auth.full_names} / ${auth.number_document}`, style: 'fechaDoc',
-        absolutePosition: {  y: 27 }
-    },
-    { text: 'REPORTE DE VENTAS DETALLADAS', alignment:'center', style: 'title', absolutePosition: {  y: 58 }},
-    { text: 'Reporte generados con los parámetros establecidos', alignment:'center',absolutePosition: {  y: 73 } },
+    ...buildStandardReportHeader({ title: 'REPORTE DE VENTAS DETALLADAS', auth, details: 'Reporte generado con los parámetros establecidos' }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
@@ -508,302 +443,13 @@ const printOutputVoucher = async (req = request, res = response) =>{
             ]
         });
         const decimal = await getNumberDecimal();
-        let dataPdf = dataPdfReturnOutputVoucher(output,output.sucursal,decimal); //PDF 
-        const detailTableNode = dataPdf.find(node => node?.table?.widths?.length === 6) || dataPdf[4];
-        let quantity_total = 0;
-        let units = [];
-        output.detailsOutput.forEach(detail => {
-            quantity_total+= Number(detail?.quantity);
-            if (!units.includes(detail?.product?.unit.siglas)) {
-                units.push(detail?.product?.unit.siglas);
-            }
-            const tableData = [
-                {text:detail?.product?.cod, fontSize:8}, 
-                {text:detail?.product?.name, fontSize:8}, 
-                {text:detail?.quantity, fontSize:8, alignment: 'center'}, 
-                {text:detail?.product?.unit?.siglas, fontSize:8, alignment: 'center'}, 
-                {text:Number(detail?.price).toFixed(decimal), fontSize:8, alignment: 'right'},  
-                {text:Number(detail?.total).toFixed(decimal), fontSize:8, alignment: 'right'}, 
-            ];
-            detailTableNode.table.body.push(tableData);
-        });
-        detailTableNode.table.body.push(
-            [
-                {text:'',colSpan: 2, border:[true,false,false,false]},
-                '',
-                {
-                    text: `${Number(quantity_total).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}`,
-                    fontSize: 8,
-                    alignment: 'center',
-                    bold: true,
-                    fillColor: '#dde3ea'
-                },                  
-                {text: units.join(','), fontSize:8, alignment:'center'},
-                {
-                    border: [true, false, true, true],
-                    text: `SUB TOTAL: ${Number(output.sub_total).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}`,
-                    colSpan: 2,
-                    fontSize: 8,
-                    fillColor: '#dde3ea',
-                    alignment: 'right',
-                    bold: true
-                }
-            ],
-            [
-                {text:'',colSpan: 4, border:[true,false,false,false]},
-                '',
-                '',
-                '',
-                {   border:[true,false,true,true],
-                    text: `DESCUENTO: ${Number(output.discount).toFixed(decimal)}`, colSpan: 2,fontSize:8,
-                    fillColor: '#dde3ea',alignment:'right', 
-                    bold:true,
-                },
-            ],
-            [
-                {
-                    text:'SON: ' + NumeroALetras(Number(output.total).toFixed(decimal)),
-                    style: 'SonBs', fontSize:8, colSpan: 4, border:[true,false,true,true],
-                },
-                '',
-                '',
-                '',
-                {
-                    border: [true, false, true, true],
-                    text: `TOTAL: ${Number(output.total).toLocaleString('es-BO', {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2
-                    })}`,
-                    colSpan: 2,
-                    fontSize: 8,
-                    fillColor: '#dde3ea',
-                    alignment: 'right',
-                    bold: true
-                  }
-            ]
-        );
-        if (output.type_output != 'VENTA' && output.type_output != 'OTRO') {
-            const tableAccountsNode = dataPdf.find(node => node && node.table && node.table.widths && node.table.widths.length === 5);
-            if (tableAccountsNode && output.accounts_receivable) {
-                output.accounts_receivable.forEach(account => {
-                    const tableData = [
-                        {text:account?.cod, fontSize:8}, 
-                        {text:moment(account?.date_credit).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
-                        {text:account?.description, fontSize:8}, 
-                        {text:Number(account?.total).toFixed(decimal), fontSize:8}, 
-                        {text:Number(account?.monto_restante).toFixed(decimal), fontSize:8}, 
-                    ];
-                    tableAccountsNode.table.body.push(tableData);
-                });
-            }
-        }
-        if (output.status == 'ANULADO') {
-            dataPdf.push(
-                {
-                    text: 'ANULADO',
-                    fontSize: 40,
-                    bold: true,
-                    alignment: 'center',
-                    color: 'red',
-                    opacity: 0.3,
-                    margin: [0, 20, 0, 0]
-                }
-            );  
-        }
-
-        let docDefinition = {
-            content: dataPdf,
-            styles: styles,
-        };
-        const printer = new PdfPrinter(fonts);
-        let pdfDoc =  printer.createPdfKitDocument(docDefinition);
-        let chunks = [];
-        pdfDoc.on("data", (chunk) => { chunks.push(chunk);});
-        pdfDoc.on("end", () => {
-            const result = Buffer.concat(chunks);
-            res.setHeader('Content-Type', 'application/pdf;');
-            res.setHeader('Content-disposition', `filename=report_compras_${new Date()}.pdf`);
-            return res.send(result);
-        });
-        pdfDoc.end();
+        const document = buildOperationVoucher(output, { kind: 'sale', decimal, format: req.query.format });
+        await sendReportPdf(res, document, 'boleta-venta-' + id_output + '.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de venta' });
     }
 }
-
-const dataPdfReturnOutputVoucher = (output, sucursal, decimal) => [
-    buildHeader({
-        title: output.voucher === 'MENOR' ? 'NOTA DE VENTA' : 'NOTA DE DESPACHO',
-        codePrefix: 'VENTA',
-        codeValue: output.cod,
-        dateLabel: 'Fecha',
-        dateValue: moment(output.date_output).format('DD/MM/YYYY HH:mm:ss'),
-        company: {
-            branchName: sucursal.name,
-            nit: sucursal.company?.nit,
-            phone: sucursal.cellphone,
-            email: sucursal.email,
-        },
-        logoWidth: 55,
-    }),
-    buildHr([0, 1, 0, 4]),
-    buildInfoPanel([
-        {
-            title: 'DATOS CLIENTE',
-            rows: [
-                { label: 'Nombre:', value: output?.client?.full_names || '-', labelWidth: 50 },
-                { label: 'Nro. Nit:', value: output?.client?.number_document || '-', labelWidth: 50 },
-            ]
-        },
-        {
-            title: 'CONTACTOS',
-            rows: [
-                { label: 'Teléfono:', value: output?.client?.cellphone || '-', labelWidth: 55 },
-                { label: 'Dirección:', value: output?.client?.direction || '-', labelWidth: 55 },
-            ]
-        }
-    ]),
-    buildSectionTitle('DETALLE DE PRODUCTOS'),
-    buildDetailTable({
-        widths: [55, '*', 45, 35, 55, 60],
-        headers: [
-            { text: 'CÓDIGO', alignment: 'center' },
-            { text: 'DETALLE' },
-            { text: 'CANT.', alignment: 'center' },
-            { text: 'UND', alignment: 'center' },
-            { text: 'P.U.', alignment: 'center' },
-            { text: 'IMPORTE', alignment: 'center' },
-        ],
-        rows: [],
-    }),
-    output?.comments ? {   
-        margin: [0, 3, 0, 0],
-        columns: [
-            { text: 'OBSERVACIONES:', bold: true, style: 'text', width: 90 },
-            { text: `${output?.comments ?? ''}`, style: 'text', fontSize: 8 },
-        ]
-    } : { text: '' },
-    {
-        style: 'tableExample',
-        table: {
-            widths: ['*', '*', '*'],
-            body: [
-                [
-                    { text: `P/${output.type_registry} NRO:`, fontSize: 8, fillColor: '#dde3ea', bold: true, border: [true, false, true, true] }, 
-                    { text: 'BALANZA', fontSize: 8, fillColor: '#dde3ea', bold: true, border: [true, false, true, true] }, 
-                    { text: 'TIPO DE VENTA', alignment: 'center', fontSize: 8, fillColor: '#dde3ea', bold: true, border: [true, false, true, true] },
-                ],
-                [
-                    { text: output?.number_registry || '', fontSize: 8 }, 
-                    { text: output?.scale?.name || '', fontSize: 8 }, 
-                    { text: `${output.type_output === 'CONTADO' ? 'AL CONTADO' : 'A CREDITO'}`, fontSize: 8, alignment: 'center' }, 
-                ]
-            ]
-        }
-    },
-    {
-        margin: [0, 3, 0, 0],
-        columns: [
-            { text: `FORMA DE PAGO:`, bold: true, style: 'text', width: output.type_payment != 'EFECTIVO' ? 90 : 110 },
-            { text: `${output.type_payment}`, style: 'text' },
-            output.type_payment != 'EFECTIVO' ? { text: `CUENTA:`, bold: true, style: 'text', width: 53 } : {},
-            output.type_payment != 'EFECTIVO' ? { text: `${output?.account_output}`, style: 'text' } : {}, 
-            output.type_payment != 'EFECTIVO' ? { text: `BANCO:`, bold: true, style: 'text', width: 50 } : {},
-            output.type_payment != 'EFECTIVO' ? { text: `${output?.bank?.name ?? '-'}`, style: 'text' } : {},
-        ]
-    },
-
-    output.voucher != 'MENOR' ? {
-        style: 'tableExample',
-        table: {
-            margin: [0,5,0,0],
-            widths: ['*', '*', '*', '*'],
-            body: [
-                [
-                    {text:'ORIGEN.', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DESTINO.', fontSize:8,fillColor: '#eeeeee', bold:true}, 
-                    {text:'EMPRESA.' ,  colSpan: 2,alignment: 'center', fontSize:8,fillColor: '#eeeeee', bold:true},
-                    ''
-                ],
-                [
-                    {text:output.outputBig.origin, fontSize:8}, 
-                    {text:output.outputBig.destination, fontSize:8}, 
-                    {text:output.outputBig.chauffeur.trasport_company.name ,  colSpan: 2, fontSize:8,alignment: 'center' }, 
-                    ''
-                ],
-                [
-                    output.voucher == 'MAYOR. EXTERIOR' ? {
-                    text:'AGENCIA PORT.', fontSize:8 ,fillColor: '#eeeeee', bold:true}
-                    : {text: '', border: [false, false, false, false]}, 
-                    output.voucher == 'MAYOR. EXTERIOR' ? 
-                    {text:'TRANS. MARITI.', fontSize:8 ,fillColor: '#eeeeee', bold:true} 
-                    : {text: '', border: [false, false, false, false]},
-                    {text:'CHOFER.',  fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'PLACA.', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                ],
-                [
-                    output.voucher == 'MAYOR. EXTERIOR' ?
-                    {text:output.outputBig.agencia,fontSize:8}
-                    : {text: '', border: [false, false, false, false]},
-                    output.voucher == 'MAYOR. EXTERIOR' ? 
-                    {text:output.outputBig.trans_mariti,fontSize:8}
-                    :  {text: '', border: [false, false, false, false]},
-                    {text:output.outputBig.chauffeur.full_names, fontSize:8}, 
-                    {text:output.outputBig.cargo_truck.placa, fontSize:8},
-                ]
-            ]
-        }
-    } : {},
-    output.voucher == 'MAYOR. EXTERIOR' ? {
-        style: 'tableExample',
-        table: {
-            widths: ['*', '*', '*','*'],
-            body: [
-                [
-                    {text:'Nº FACTURA.', fontSize:8 ,fillColor: '#eeeeee', bold:true,border: [true, false, true, true]}, 
-                    {text:'Nº PRECINTO', fontSize:8,fillColor: '#eeeeee', bold:true,border: [true, false, true, true]}, 
-                    {text:'Nº CONTENEDOR',fontSize:8,fillColor: '#eeeeee', bold:true,border: [true, false, true, true]},
-                    {text:'TIPO DE CONTE.',fontSize:8,fillColor: '#eeeeee', bold:true,border: [true, false, true, true]},
-                ],
-                [
-                    {text:output?.outputBig.number_factura, fontSize:8}, 
-                    {text:output?.outputBig.number_precinto, fontSize:8}, 
-                    {text:output?.outputBig.number_contenedor, fontSize:8}, 
-                    {text:output?.outputBig.type_container, fontSize:8}, 
-                ]
-            ]
-        }
-    } : {},
-    output?.outputBig?.poliza_seguro ? {
-        style: 'tableExample',
-        table: {
-            widths: ['*'],
-            body: [
-                [
-                    {text:'PÓLIZA DE SEGURO', fontSize:8 ,fillColor: '#eeeeee', bold:true,border: [true, false, true, true]}, 
-                ],
-                [
-                    {text:output?.outputBig.number_factura, fontSize:8}, 
-                ]
-            ]
-        }
-    } : {},
-    buildClosingSection({
-        signatures: [
-            { role: 'Recibí conforme', name: 'Responsable de almacén' },
-            { role: 'Entregue conforme', name: 'Cliente' },
-        ],
-        margin: [0, 8, 0, 0],
-        signatureSpace: 35,
-    }),
-];
 
 module.exports = {
     generatePdfReports,
@@ -811,5 +457,5 @@ module.exports = {
     generatePdfDetailsReports,
     generateExcelDetailsReports,
     printOutputVoucher,
-    dataPdfReturnOutputVoucher,
+
 }

@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizePurchaseReportFilters } = require('../services/purchase-report-filters.service');
+const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('../services/purchase-report-filters.service');
+const { Op } = require('sequelize');
 const { restrictToAuthorizedBranches, reportFilterSummary, buildPurchaseReportPdfBody } = require('../controllers/purchase-report.controller');
 
 test('el reporte normaliza filtros y descarta ordenamientos no admitidos', () => {
@@ -15,6 +16,11 @@ test('el reporte normaliza filtros y descarta ordenamientos no admitidos', () =>
   assert.equal(filters.fieldSort, 'date_voucher');
   assert.equal(filters.direction, 'DESC');
   assert.equal(filters.typePay, 'CONTADO');
+  const where = buildPurchaseReportWhere(filters);
+  assert.ok(where[Op.and].some(item => item.status === 'ACTIVE'));
+  const date = where[Op.and].find(item => item.date_voucher);
+  assert.equal(date.date_voucher[Op.gte].toISOString(), '2026-09-01T04:00:00.000Z');
+  assert.equal(date.date_voucher[Op.lt].toISOString(), '2026-10-01T04:00:00.000Z');
 });
 
 test('el reporte limita sucursales solicitadas al alcance autorizado', () => {

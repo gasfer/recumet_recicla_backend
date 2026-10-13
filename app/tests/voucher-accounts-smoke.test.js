@@ -1,154 +1,30 @@
 const test = require('node:test');
-const assert = require('node:assert');
-const PdfPrinter = require('pdfmake');
-const fonts = require('../helpers/generator-pdf/fonts');
-const styles = require('../helpers/generator-pdf/styles');
-
-const {
-    dataPdfReturnAbonoAccountPayableVoucher,
-    dataPdfReturnAccountPayableVoucher
-} = require('../controllers/reports/accounts_payables.controller');
-
-const {
-    dataPdfReturnAbonoAccountReceivableVoucher,
-    dataPdfReturnAccountPayableVoucher: dataPdfReturnAccountReceivableVoucher
-} = require('../controllers/reports/accounts_receivable.controller');
-
-const {
-    dataPdfReturnAbonoAccountReceivableMultipleVoucher
-} = require('../controllers/reports/account_receivable/printBoletaAbonoMultiple');
-
-const {
-    dataPdfReturnAbonoAccountPayableMultipleVoucher
-} = require('../controllers/reports/accounts_payable/printBoletaAbonoMultiple');
-
-test('Cuentas por Pagar: dataPdfReturnAbonoAccountPayableVoucher renderiza correctamente', () => {
-    const mockAbono = {
-        date_abono: new Date(),
-        monto_abono: 1500.50,
-        type_payment: 'EFECTIVO'
-    };
-    const mockAccount = {
-        cod: 'CXP-001',
-        sucursal: {
-            name: 'Central El Alto',
-            cellphone: '77712345',
-            email: 'alto@recumet.com',
-            company: { nit: '99887766' }
-        },
-        input: {
-            cod: 'ING-101',
-            provider: { full_names: 'Proveedor Metal', number_document: '1234567' }
-        }
-    };
-    const content = dataPdfReturnAbonoAccountPayableVoucher(mockAbono, mockAccount, 2);
-    assert.ok(Array.isArray(content));
-
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument({ content, styles });
-    const chunks = [];
-    pdfDoc.on('data', c => chunks.push(c));
-    pdfDoc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        assert.ok(buffer.length > 500);
-    });
-    pdfDoc.end();
-});
-
-test('Cuentas por Pagar: dataPdfReturnAccountPayableVoucher renderiza correctamente', () => {
-    const mockAccount = {
-        cod: 'CXP-002',
-        date_credit: new Date(),
-        total: 5000,
-        status_account: 'PENDIENTE',
-        description: 'Compra a crédito de chatarra',
-        monto_abonado: 2000,
-        monto_restante: 3000,
-        provider: { full_names: 'Proveedor Chatarra', number_document: '9876543' },
-        sucursal: {
-            name: 'Central Oruro',
-            cellphone: '77754321',
-            email: 'oruro@recumet.com',
-            company: { nit: '99887766' }
-        }
-    };
-    const content = dataPdfReturnAccountPayableVoucher(mockAccount, 2);
-    assert.ok(Array.isArray(content));
-
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument({ content, styles });
-    const chunks = [];
-    pdfDoc.on('data', c => chunks.push(c));
-    pdfDoc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        assert.ok(buffer.length > 500);
-    });
-    pdfDoc.end();
-});
-
-test('Cuentas por Cobrar: dataPdfReturnAbonoAccountReceivableVoucher renderiza correctamente', () => {
-    const mockAbono = {
-        date_abono: new Date(),
-        monto_abono: 850.00,
-        type_payment: 'EFECTIVO'
-    };
-    const mockAccount = {
-        cod: 'CXC-001',
-        monto_abonado: 850.00,
-        monto_restante: 150.00,
-        sucursal: {
-            name: 'Planta Achachicala',
-            cellphone: '77700011',
-            email: 'achachicala@recumet.com',
-            company: { nit: '99887766' }
-        },
-        output: {
-            cod: 'OUT-202',
-            type_registry: 'VENTA',
-            number_registry: 'REG-100',
-            client: { full_names: 'Fundición del Sur', number_document: '44556677' }
-        }
-    };
-    const content = dataPdfReturnAbonoAccountReceivableVoucher(mockAbono, mockAccount, 2);
-    assert.ok(Array.isArray(content));
-
-    const printer = new PdfPrinter(fonts);
-    const pdfDoc = printer.createPdfKitDocument({ content, styles });
-    const chunks = [];
-    pdfDoc.on('data', c => chunks.push(c));
-    pdfDoc.on('end', () => {
-        const buffer = Buffer.concat(chunks);
-        assert.ok(buffer.length > 500);
-    });
-    pdfDoc.end();
-});
-
-test('Abonos Múltiples (CxC y CxP): Generan vouchers válidos', () => {
-    const mockAbonoReceivable = {
-        date_abono: new Date(),
-        monto_abono: 3000,
-        comments: 'Abono múltiple recibido',
-        client: { full_names: 'Cliente Varios', number_document: '332211' },
-        sucursal: { name: 'Sucursal Central' }
-    };
-    const mockReceivable = {
-        cod: 'CXC-MULT',
-        sucursal: { name: 'Sucursal Central', company: { nit: '112233' }, cellphone: '123', email: 'a@b.com' }
-    };
-    const contentReceivable = dataPdfReturnAbonoAccountReceivableMultipleVoucher(mockAbonoReceivable, mockReceivable, 2);
-    assert.ok(Array.isArray(contentReceivable));
-
-    const mockAbonoPayable = {
-        date_abono: new Date(),
-        monto_abono: 4500,
-        comments: 'Abono múltiple a proveedor',
-        provider: { full_names: 'Proveedor Varios', number_document: '556677' },
-        sucursal: { name: 'Sucursal Central' }
-    };
-    const mockPayable = {
-        cod: 'CXP-MULT',
-        sucursal: { name: 'Sucursal Central', company: { nit: '112233' }, cellphone: '123', email: 'a@b.com' }
-    };
-    const contentPayable = dataPdfReturnAbonoAccountPayableMultipleVoucher(mockAbonoPayable, mockPayable, 2);
-    assert.ok(Array.isArray(contentPayable));
-});
+const assert = require('node:assert/strict');
+const { buildFinancialVoucher, buildMultiplePaymentVoucher } = require('../helpers/generator-pdf/financial-voucher.document');
+const { renderReportHtml } = require('../helpers/generator-pdf/report-html.template');
+function account(payable, id = 1) { const operation = { cod: 'OP-' + id, date_voucher: '2026-09-12T12:14:44', date_output: '2026-09-12T12:14:44', provider: { full_names: 'Proveedor', number_document: '123' }, client: { full_names: 'Cliente', number_document: '456' }, detailsInput: [], detailsOutput: [], sumas: 100, sub_total: 100, discount: 0, total: 100 }; return { id, cod: 'CTA-' + id, date_credit: '2026-10-12', monto_abonado: 25, monto_restante: 75, sucursal: { name: 'Matriz', company: { nit: '99887766' } }, [payable ? 'input' : 'output']: operation, [payable ? 'abonosAccountsPayable' : 'abonosAccountsReceivable']: [{ id, date_abono: '2026-10-12', monto_abono: 25, restante_credito: 75, total_abonado: 25, user: { full_names: 'Cajero' } }] }; }
+for (const payable of [true, false]) {
+ test((payable ? 'CxP' : 'CxC') + ' conserva saldo, historia de abonos y entidad', () => {
+  const document = buildFinancialVoucher(account(payable), { payable, decimal: 2 });
+  const html = renderReportHtml(document);
+  for (const text of ['25,00','75,00','Cajero','99887766',payable ? 'Proveedor' : 'Cliente']) assert.ok(html.includes(text), text);
+  assert.equal(document.panels.length, 2);
+  assert.equal(document.panels[0].title, payable ? 'DATOS PROVEEDOR' : 'DATOS CLIENTE');
+  assert.equal(document.panels[1].title, 'CONCEPTO Y REGISTRO');
+  for (const label of [payable ? 'Fecha de compra' : 'Fecha de venta', 'Tipo de boleta', 'N.º de registro']) assert.ok(document.panels[1].fields.some(item => item.label === label), label);
+  assert.ok(document.panels[1].fields.find(item => item.label === (payable ? 'Fecha de compra' : 'Fecha de venta')).value.includes('12/09/2026'));
+  assert.equal(document.sections.filter(section => /ABONOS|ESTADO DE CUENTA/.test(section.title)).length, 1);
+  assert.equal(document.sections.find(section => section.title === 'ABONOS Y SALDO').columns.length, 4);
+  assert.ok(document.sections.some(section => section.variant === 'summary' && section.amountInWords));
+ });
+ test((payable ? 'CxP' : 'CxC') + ' abono conserva bancos, cuentas y transacción', () => {
+  const html = renderReportHtml(buildFinancialVoucher(account(payable), { payable, decimal: 2, payment: { date_abono: '2026-10-12', monto_abono: 25, type_payment: 'TRANSFERENCIA', bankOrigin: { name: 'Origen' }, bankDestination: { name: 'Destino' }, account_origin: '0001', account_output: '0002', number_transaction: 'TX-123' } }));
+  for (const text of ['Origen','Destino','0001','0002','TX-123']) assert.ok(html.includes(text), text);
+ });
+ test((payable ? 'CxP' : 'CxC') + ' abono múltiple conserva cuentas aplicadas y suma numérica de saldos', () => {
+  const document = buildMultiplePaymentVoucher({ date_abono: '2026-10-12', monto_abono: 50, type_payment: 'EFECTIVO', [payable ? 'ids_abonos_payables' : 'ids_abonos_receivables']: [1,2] }, [account(payable,1),account(payable,2)], { payable, decimal: 2 });
+  const html = renderReportHtml(document);
+  for (const text of ['OP-1','OP-2','50,00','150,00']) assert.ok(html.includes(text), text);
+  assert.throws(() => buildMultiplePaymentVoucher({ ids_abonos_payables: [] }, [account(true)], { payable: true, decimal: 2 }), /abono aplicado/);
+ });
+}
