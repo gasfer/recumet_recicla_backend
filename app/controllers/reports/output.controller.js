@@ -2,7 +2,7 @@ const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
-const { Output, DetailsOutput, sequelize } = require('../../database/config');
+const { Output, DetailsOutput, Sucursal, sequelize } = require('../../database/config');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -22,7 +22,7 @@ moment.locale('es');
 
 const generatePdfReports = async (req = request, res = response) => {
     try {
-        const { filterBy, date1, date2} = req.query;
+        const { filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const outputs = await returnDataOutput(req.query);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
@@ -71,6 +71,7 @@ const generatePdfReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE VENTAS', paper: 'A4', orientation: 'landscape',
+            company: await resolveReportCompany(req.query.id_sucursal),
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
@@ -231,7 +232,7 @@ const returnDataOutput = async (params) => {
         },
         include: [ 
             { association: 'client' },
-            { association: 'sucursal',attributes: ['name'] },
+            { association: 'sucursal',attributes: ['name', 'city', 'email'], include: [{ association: 'company', attributes: ['nit', 'email'] }] },
             { association: 'storage',attributes: ['name'] },
             { association: 'scale', attributes: ['name']},
             { association: 'user', attributes: ['full_names','number_document']},
@@ -264,7 +265,7 @@ const returnDataOutput = async (params) => {
 
 const generatePdfDetailsReports = async (req = request, res = response) => {
     try {
-        const {filterBy, date1, date2} = req.query;
+        const {filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const detailsOutput = await returnDataDetailsOutput(req.query);
         let dataPdf = dataDetailsPdfReturn(req.userAuth); //PDF 
@@ -291,6 +292,7 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE VENTAS DETALLADAS', paper: 'A4', orientation: 'landscape',
+            company: await resolveReportCompany(id_sucursal),
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
@@ -300,6 +302,13 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
 }
+
+const resolveReportCompany = async idSucursal => {
+    const id = Number(idSucursal);
+    if (!Number.isInteger(id) || id <= 0) return { branchName: 'CASA MATRIZ' };
+    const branch = await Sucursal.findByPk(id, { include: [{ association: 'company', attributes: ['nit', 'email'] }] });
+    return branch ? { branchName: branch.name, city: branch.city, nit: branch.company?.nit, email: branch.email || branch.company?.email } : { branchName: 'CASA MATRIZ' };
+};
 
 const dataDetailsPdfReturn = (auth) => [
     ...buildStandardReportHeader({ title: 'REPORTE DE VENTAS DETALLADAS', auth, details: 'Reporte generado con los parámetros establecidos' }),

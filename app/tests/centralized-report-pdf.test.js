@@ -28,6 +28,7 @@ test('tabla de compra aplica resumen compacto, paleta sutil y una sola familia t
     assert.match(html, /Resumen de pesaje verificado en recepción/);
     assert.match(html, /amount-summary/);
     assert.match(html, /IMPORTE EN LETRAS/);
+    assert.match(html, /SON: CERO CON 00\/100/);
     assert.match(html, /TOTAL NETO/);
     assert.match(html, /#f1f5f9/);
     assert.match(html, /#ecfdf5/);
@@ -47,6 +48,7 @@ test('crédito de compra muestra solo A CUENTA y SALDO en el resumen inferior', 
     }, { kind: 'purchase', format: 'media', decimal: 2 });
     const credit = document.sections.find(section => section.title === 'RESUMEN DE CRÉDITO');
     assert.deepEqual(credit.rows.map(row => row[0]), ['A CUENTA', 'SALDO']);
+    assert.match(credit.amountInWords, /BOLIVIANOS CIEN CON 00\/100/);
     assert.equal(document.sections.some(section => section.title === 'TOTALES'), false);
     assert.equal(document.sections.some(section => section.title === 'CRÉDITO'), false);
     const html = renderReportHtml(document);
@@ -54,6 +56,17 @@ test('crédito de compra muestra solo A CUENTA y SALDO en el resumen inferior', 
     assert.match(html, /SALDO/);
     assert.match(html, /1\.234,50/);
     assert.match(html, /9\.876,25/);
+    assert.match(html, /BOLIVIANOS CIEN CON 00\/100/);
+});
+
+test('importe en letras interpreta separador de miles y coma decimal con precisión configurada', () => {
+    const document = buildOperationVoucher({
+        cod: 'COMP-LOCALIZADO', date_voucher: '2026-10-12', type: 'CREDITO',
+        total: '1.382,5000', sumas: '1.382,5000', discount: 0, detailsInput: [],
+    }, { kind: 'purchase', decimal: 4 });
+    const summary = document.sections.find(section => section.title === 'RESUMEN DE CRÉDITO');
+    assert.equal(summary.amountInWords, 'SON: BOLIVIANOS MIL TRESCIENTOS OCHENTA Y DOS CON 50/100');
+    assert.match(renderReportHtml(document), /1\.382,5000/);
 });
 
 test('comprobante aplica separadores españoles y cantidad de decimales configurada', () => {
@@ -69,20 +82,27 @@ test('comprobante aplica separadores españoles y cantidad de decimales configur
     assert.equal(buildOperationVoucher({ total: 1234, sumas: 1234, detailsInput: [] }, { kind: 'purchase', decimal: 0 }).sections[1].rows[0][1], '1.234');
 });
 
-test('encabezado compartido apila sucursal, NIT y correo sin etiqueta junto al logo y título a la derecha', () => {
+test('encabezado compartido muestra la sucursal debajo del título y NIT/correo junto al logo', () => {
     const html = renderReportHtml({
         title: 'REPORTE DE PRUEBA', reference: 'R-01', date: '12/10/2026',
-        company: { branchName: 'CASA MATRIZ', nit: '1009851024', phone: '69422892', email: 'contacto@recumet.com' },
+        company: { branchName: 'CASA MATRIZ', city: 'LA PAZ', nit: '1009851024', phone: '69422892', email: 'contacto@recumet.com' },
         columns: [{ label: 'Dato' }], rows: [['Prueba']],
     });
     assert.match(html, /class="brand-block"/);
-    assert.match(html, /<div class="company-details"><span>CASA MATRIZ<\/span><span>NIT: 1009851024<\/span><span>contacto@recumet\.com<\/span><\/div>/);
+    assert.match(html, /<div class="company-details"><span>LA PAZ<\/span><span>NIT: 1009851024<\/span><span>contacto@recumet\.com<\/span><\/div>/);
+    assert.match(html, /<h1>REPORTE DE PRUEBA<\/h1><div class="branch-name">CASA MATRIZ<\/div>/);
     assert.doesNotMatch(html, /Teléfono \/ Celular|Contacto:/);
     assert.match(html, /\.document-header \.company-details\{display:flex;flex-direction:column/);
     assert.match(html, /grid-template-columns:minmax\(0,1fr\) minmax\(0,1\.15fr\) minmax\(0,\.8fr\)/);
     assert.match(html, /\.document-header \.brand-block\{display:flex;align-items:center;gap:0/);
-    assert.match(html, /\.document-header \.heading\{text-align:right;justify-self:end\}/);
+    assert.match(html, /\.document-header \.heading\{text-align:center;justify-self:center\}/);
     assert.match(html, /alt="RECUMET"/);
+});
+
+test('encabezado de comprobante usa CASA MATRIZ si no hay sucursal asociada', () => {
+    const document = buildOperationVoucher({ cod: 'COMP-MATRIZ', date_voucher: '2026-10-12', total: 0, detailsInput: [] }, { kind: 'purchase', decimal: 2 });
+    const html = renderReportHtml(document);
+    assert.match(html, /<h1>NOTA DE COMPRA<\/h1><div class="branch-name">CASA MATRIZ<\/div>/);
 });
 
 test('plantilla preserva texto, totales y columnas y escapa datos', () => {

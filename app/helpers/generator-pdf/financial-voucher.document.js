@@ -1,5 +1,6 @@
 const moment = require('moment');
 const NumeroALetras = require('../numeros-aletras');
+const { decimalToNumber } = require('../number-formatter');
 const { buildOperationVoucher, companyData, money, field } = require('./operation-voucher.document');
 const paymentPanel = payment => ({ title: 'DATOS DE PAGO', fields: [field('Pago con', payment.type_payment), ...(payment.type_payment !== 'EFECTIVO' ? [field('Origen', `${payment.bankOrigin?.name || payment.abonosMultipleOrigin?.name || '-'} | Cuenta: ${payment.account_origin || ''}`), field('Destino', `${payment.bankDestination?.name || payment.abonosMultipleDestination?.name || '-'} | Cuenta: ${payment.account_output || ''}`)] : []), ...(['TRANSFERENCIA', 'QR'].includes(payment.type_payment) && payment.number_transaction ? [field('Transacción NRO', payment.number_transaction)] : [])] });
 const buildFinancialVoucher = (account, { payable, payment, decimal }) => {
@@ -18,13 +19,13 @@ const buildFinancialVoucher = (account, { payable, payment, decimal }) => {
         field(payable ? 'Fecha de compra' : 'Fecha de venta', moment(operationDate).format('DD/MM/YYYY HH:mm:ss')),
         field('Tipo de boleta', operation.type_registry || 'BOLETA'),
         field('N.º de registro', operation.registry_number || operation.number_registry || operation.cod || ''),
-        ...(payment ? [field('Monto abono', `Bs. ${money(payment.monto_abono, decimal)} (${NumeroALetras(money(payment.monto_abono, payable ? 2 : decimal))})`)] : []),
+        ...(payment ? [field('Monto abono', `Bs. ${money(payment.monto_abono, decimal)} (${NumeroALetras(decimalToNumber(payment.monto_abono, decimal))})`)] : []),
     ];
     document.panels = [
         { title: payable ? 'DATOS PROVEEDOR' : 'DATOS CLIENTE', fields: providerFields },
         { title: 'CONCEPTO Y REGISTRO', fields: operationFields },
     ];
-    document.sections = document.sections.filter(section => ['DETALLE DE PRODUCTOS', 'TOTALES'].includes(section.title));
+    document.sections = document.sections.filter(section => ['DETALLE DE PRODUCTOS', 'TOTALES', 'RESUMEN DE CRÉDITO'].includes(section.title));
     if (!payment) {
         const payments = account[payable ? 'abonosAccountsPayable' : 'abonosAccountsReceivable'] || [];
         document.sections.push({
@@ -58,6 +59,6 @@ const buildMultiplePaymentVoucher = (payment, accounts, { payable, decimal }) =>
         sections.push({ ...document.sections[0], title: `${payable ? 'Compra' : 'Venta'} Nº ${operation.cod} · A cuenta: ${money(abono.monto_abono, decimal)} · Saldo: ${money(abono.restante_credito, decimal)}` });
     });
     sections.push({ title: 'RESUMEN', columns: [{ label: 'CONCEPTO' }, { label: 'BS', align: 'right' }], rows: [['A CUENTA', money(totalPaid, decimal)], ['SALDO TOTAL', money(totalBalance, decimal)]] });
-    return { variant: 'voucher', paper: 'A4', title: 'COMPROBANTE ABONO MÚLTIPLE', reference: accounts[0]?.cod || '', date: moment(payment.date_abono).format('DD/MM/YYYY HH:mm:ss'), company: companyData(accounts[0]?.sucursal || payment.sucursal), panels: [{ title: payable ? 'ENTREGUE A (PROVEEDOR)' : 'RECIBÍ DE (CLIENTE)', fields: [field('Nombre', entity.full_names), field('NIT/CI', entity.number_document), field('Monto abono', `Bs. ${money(payment.monto_abono, decimal)} (${NumeroALetras(money(payment.monto_abono, decimal))})`), field('Concepto', payment.comments)] }, paymentPanel(payment)], sections, signatures: [{ role: 'Recibí conforme', name: entity.full_names || '' }, { role: 'Entregue conforme', name: payment.sucursal?.name || '' }] };
+    return { variant: 'voucher', paper: 'A4', title: 'COMPROBANTE ABONO MÚLTIPLE', reference: accounts[0]?.cod || '', date: moment(payment.date_abono).format('DD/MM/YYYY HH:mm:ss'), company: companyData(accounts[0]?.sucursal || payment.sucursal), panels: [{ title: payable ? 'ENTREGUE A (PROVEEDOR)' : 'RECIBÍ DE (CLIENTE)', fields: [field('Nombre', entity.full_names), field('NIT/CI', entity.number_document), field('Monto abono', `Bs. ${money(payment.monto_abono, decimal)} (${NumeroALetras(decimalToNumber(payment.monto_abono, decimal))})`), field('Concepto', payment.comments)] }, paymentPanel(payment)], sections, signatures: [{ role: 'Recibí conforme', name: entity.full_names || '' }, { role: 'Entregue conforme', name: payment.sucursal?.name || '' }] };
 };
 module.exports = { buildFinancialVoucher, buildMultiplePaymentVoucher };

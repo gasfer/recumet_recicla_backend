@@ -1,8 +1,11 @@
+const { buildPurchaseExcel } = require('../../services/purchase-management-excel.service');
+const { queryPurchaseReportExport, summarizeByProduct } = require('../../services/purchase-report-query.service');
+const { providerCommercialFilter } = require('../../services/provider-commercial-filter');
 const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
-const { Input, DetailsInput,sequelize } = require('../../database/config');
+const { Input, DetailsInput, Sucursal,sequelize } = require('../../database/config');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -70,15 +73,24 @@ const generatePdfReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE COMPRAS', paper: 'A4', orientation: 'landscape',
+            company: await resolveReportCompany(req.query.id_sucursal),
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'input-generatePdfReports.pdf');
     } catch (error) {
+        if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de compras' });
     }
 }
+
+const resolveReportCompany = async idSucursal => {
+    const ids = parseIds(idSucursal);
+    if (ids.length !== 1) return { branchName: ids.length ? 'Varias sucursales' : 'CASA MATRIZ' };
+    const branch = await Sucursal.findByPk(ids[0], { include: [{ association: 'company', attributes: ['nit', 'email'] }] });
+    return branch ? { branchName: branch.name, city: branch.city, nit: branch.company?.nit, email: branch.email || branch.company?.email } : { branchName: 'CASA MATRIZ' };
+};
 
 const dataPdfReturn = (auth) => [
     ...buildStandardReportHeader({ title: 'REPORTE DE COMPRAS TOTALIZADOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
@@ -228,6 +240,7 @@ const generatePurchaseReportExcel = async (req = request, res = response) => {
         await workbook.xlsx.write(res);
         res.end();
     } catch (error) {
+        if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar el reporte Excel de compras.' }] });
     }
@@ -266,13 +279,13 @@ const generateExcelReports = async (req = request, res = response) => {
         FECHA_COMPRA: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
         TIPO_DOCUMENTO: input.type_registry,
         NRO_DOCUMENTO: input.registry_number,
-        PROVEEDOR: input.provider.full_names,
+        PROVEEDOR: input.provider?.full_names ?? '',
         DETALLE: input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '),
         TIPO: input.type,
         REFERENCIA: (input?.referral_sources ?? '-') + '  ' +
                     'Cliente antiguo: ' + (input?.old_customer ? 'SI' : 'NO') + '  ' +
                     'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
-        TIPO_PROVEEDOR: input.provider.type.name,
+        TIPO_PROVEEDOR: input.provider?.type?.name ?? '',
         CANT_KG: Number(input.total_quantity),
         TOTAL: Number(input.total),
       };
@@ -294,42 +307,9 @@ const generateExcelReports = async (req = request, res = response) => {
       TOTAL: Number(total),
     });
 
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(`Compras totales`);
+    const workbook = await buildPurchaseExcel(req.query, input_data.slice(0, -1), decimal, false);
 
-    // Encabezados
-    const headers = Object.keys(input_data[0]);
-    worksheet.addRow(headers);
-
-    // Datos
-    input_data.forEach(data => {
-      const row = [];
-      headers.forEach(header => row.push(data[header]));
-      worksheet.addRow(row);
-    });
-
-    // Configuración visual
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.getColumn('A').width = 15; 
-    worksheet.getColumn('B').width = 20; 
-    worksheet.getColumn('C').width = 25; 
-    worksheet.getColumn('D').width = 25; 
-    worksheet.getColumn('E').width = 20; 
-    worksheet.getColumn('F').width = 50; 
-    worksheet.getColumn('G').width = 50; 
-    worksheet.getColumn('H').width = 50; 
-    worksheet.getColumn('I').width = 50; 
-    worksheet.getColumn('J').width = 15; 
-    worksheet.getColumn('K').width = 15; 
-
-    // Formato decimal para números
-    const decimalFormat = excelNumberMask(decimal);
-    worksheet.getColumn('J').numFmt = decimalFormat; // CANT_KG
-    worksheet.getColumn('K').numFmt = decimalFormat; // TOTAL
-    worksheet.getColumn('J').alignment = { horizontal: 'right' };
-    worksheet.getColumn('K').alignment = { horizontal: 'right' };
-
-    // Enviar Excel
+        // Enviar Excel
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=compras-report.xlsx`);
 
@@ -337,6 +317,7 @@ const generateExcelReports = async (req = request, res = response) => {
     res.end();
 
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });
     console.log(error);
     return res.status(500).json({
       ok: false,
@@ -346,70 +327,15 @@ const generateExcelReports = async (req = request, res = response) => {
 };
 
 
-const returnDataInput = async (params) => {
-    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2,orderNew, referral_sources, id_type_provider,
-        old_customer, with_pickup, category_ids, id_products
-    } = params;
-    const sucursalIds = parseIds(id_sucursal);
-    const storageIds = parseIds(id_storage);
-    const categoryIds = parseIds(category_ids);
-    const productIds = parseIds(id_products);
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
-    const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
-        ? [orderNew]
-        : [['date_voucher', 'DESC']];
-    const optionsDb = {
-        order: orderList,
-        where: {
-            [Op.and]: [
-                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
-                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
-                type_pay      ? { type:type_pay } : {},
-                type_registry ? { type_registry } : {},
-                id_provider   ? { id_provider   } : {},
-                status        ? { status } : {},
-                { date_voucher: whereDate },
-                referral_sources ? { referral_sources } : {},
-                old_customer ? { old_customer: old_customer == 'SI' } : {},
-                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
-            ]
-        },
-        include: [ 
-            { 
-                association: 'provider', attributes: ['full_names','number_document','name_contact'],
-                where: id_type_provider ? { id_type_provider } : {},
-                include: [{association: 'type', attributes: ['name']}],
-            },
-            { association: 'scale', attributes: ['name']},
-            { association: 'user', attributes: ['full_names','number_document']},
-            {
-                association: 'detailsInput',
-                attributes: {include: ['quantity']},
-                where: { status: 'ACTIVE' },
-                required: categoryIds.length > 0 || productIds.length > 0,
-                include: [{
-                    association: 'product',
-                    attributes: ['cod','name'],
-                    where: {
-                        ...(categoryIds.length ? { id_category: { [Op.in]: categoryIds } } : {}),
-                        ...(productIds.length ? { id: { [Op.in]: productIds } } : {}),
-                    },
-                    required: categoryIds.length > 0 || productIds.length > 0,
-                    include: [{association: 'unit', attributes: ['name','siglas']}],
-                }],
-            },
-        ]
-    };
-    const inputs = await Input.findAll(optionsDb);
-    for (const input of inputs) {
-        input.total_quantity = input.detailsInput.reduce((acc, item) => acc + Number(item.quantity), 0);
-    }
+const returnDataInput = async params => {
+    const inputs = await queryPurchaseReportExport(params);
+    if (!inputs.length) throw Object.assign(new Error('No hay compras para los filtros seleccionados.'), { statusCode: 404 });
+    for (const input of inputs) input.total_quantity = input.dataValues.total_quantity;
     return inputs;
-}
-
+};
 const generatePdfDetailsReports = async (req = request, res = response) => {
     try {
-        const {filterBy, date1, date2} = req.query;
+        const {filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const detailsInput = await returnDataDetailsInput(req.query);
         let dataPdf = dataDetailsPdfReturn(req.userAuth,date1,date2); //PDF 
@@ -436,11 +362,13 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE COMPRAS POR PRODUCTO', paper: 'A4', orientation: 'portrait',
+            company: await resolveReportCompany(id_sucursal),
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'input-generatePdfDetailsReports.pdf');
     } catch (error) {
+        if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
@@ -448,7 +376,7 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
 
 const generatePdfDetailsCPPReports = async (req = request, res = response) => {
     try {
-        const {filterBy, date1, date2} = req.query;
+        const {filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const detailsInput = await returnDataDetailsInput(req.query);
         let dataPdf = dataDetailsPdfDetailsCPPReturn(req.userAuth,date1,date2); //PDF
@@ -476,11 +404,13 @@ const generatePdfDetailsCPPReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE COSTO PROMEDIO', paper: 'A4', orientation: 'portrait',
+            company: await resolveReportCompany(id_sucursal),
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'input-generatePdfDetailsCPPReports.pdf');
     } catch (error) {
+        if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
@@ -561,29 +491,7 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
             CANTIDAD: Number(total)
         });
 
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet(`Compras detalladas`);
-
-        // Encabezados
-        const headers = Object.keys(detailsInput_data[0]);
-        worksheet.addRow(headers);
-
-        // Datos
-        detailsInput_data.forEach(data => {
-            const row = [];
-            headers.forEach(header => row.push(data[header]));
-            worksheet.addRow(row);
-        });
-
-        // Configuración visual
-        worksheet.getColumn('A').width = 15; 
-        worksheet.getColumn('B').width = 50; 
-        worksheet.getColumn('C').width = 20; 
-
-        // Formato decimal para CANTIDAD
-        const decimalFormat = excelNumberMask(decimal);
-        worksheet.getColumn('C').numFmt = decimalFormat;
-        worksheet.getColumn('C').alignment = { horizontal: 'right' };
+        const workbook = await buildPurchaseExcel(req.query, detailsInput_data.slice(0, -1), decimal, true);
 
         // Enviar Excel
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -593,6 +501,7 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
         res.end();
 
     } catch (error) {
+        if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });
         console.log(error);
         return res.status(500).json({
             ok: false,
@@ -602,57 +511,15 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
 };
 
 
-const returnDataDetailsInput = async (params) => {
-    const {id_sucursal, id_storage,type_pay, type_registry, id_provider, status, filterBy, date1, date2, referral_sources, id_type_provider, old_customer, with_pickup} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
-    const optionsDb = {
-        attributes: [
-            [sequelize.fn('SUM', sequelize.col('quantity')), 'suma_quantity'],
-            [sequelize.fn('SUM', sequelize.col('DetailsInput.total')), 'suma_total'],
-            [
-                sequelize.literal(`
-                    SUM("DetailsInput"."total") / NULLIF(SUM(quantity), 0)
-                `),
-                'cpp'
-            ]
-        ],
-        include: [
-            { 
-                association: 'product', 
-                attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']}, 
-            },
-            {    
-                association: 'input',
-                attributes: [], //para no incluir, pero si usar el where
-                where: {
-                        [Op.and]: [
-                            id_sucursal   ? { id_sucursal   } : {},
-                            id_storage    ? { id_storage   } : {},
-                            type_pay      ? { type:type_pay } : {},
-                            type_registry ? { type_registry } : {},
-                            id_provider   ? { id_provider   } : {},
-                            status ? { status } : {},
-                            { date_voucher: whereDate },
-                            referral_sources ? { referral_sources } : {},
-                            old_customer ? { old_customer: old_customer == 'SI' } : {},
-                            with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
-                        ]
-                }, 
-                include: [
-                    {
-                        association: 'provider',
-                        where: id_type_provider ? { id_type_provider } : {},
-                        attributes: [], 
-                        include: [{association: 'type', attributes: []}],
-                    },
-                ]
-            }
-        ],
-        group: [ 'id_product','product.id']
-    };
-    return await DetailsInput.findAll(optionsDb);
-}
-
+const returnDataDetailsInput = async params => {
+    const inputs = await queryPurchaseReportExport(params);
+    const summary = summarizeByProduct(inputs);
+    if (!summary.length) throw Object.assign(new Error('No hay materiales comprados para los filtros seleccionados.'), { statusCode: 404 });
+    return summary.map(row => ({
+        product: { cod: row.cod, name: row.name },
+        dataValues: { suma_quantity: row.quantity, suma_total: row.total, cpp: row.quantity ? row.total / row.quantity : 0 },
+    }));
+};
 const printInputVoucher = async (req = request, res = response) =>{
     try {
         const { id_input } = req.params;
@@ -678,6 +545,7 @@ const printInputVoucher = async (req = request, res = response) =>{
         const document = buildOperationVoucher(input, { kind: 'purchase', decimal, format: req.query.format });
         await sendReportPdf(res, document, 'boleta-compra-' + id_input + '.pdf');
     } catch (error) {
+        if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'Error al generar el comprobante de compra' });
     }

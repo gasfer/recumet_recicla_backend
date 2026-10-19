@@ -11,6 +11,10 @@ function assignedBranches(user) {
 async function normalizeScopedQuery(raw, user) {
   const q = normalizeQuery(raw);
   const branches = assignedBranches(user);
+  if (q.entity_type) {
+    const type = await db.TypesProvider.findOne({ where: { id: q.id_type_provider, status: true }, attributes: ['code'], raw: true });
+    if (type?.code !== 'A') throw Object.assign(new Error('Tipo de entidad solo corresponde a proveedores de tipo Empresas'), { statusCode: 400 });
+  }
   if (q.id_sucursales?.length && branches) {
     const invalid = q.id_sucursales.find(id => !branches.includes(id));
     if (invalid) throw Object.assign(new Error('No tiene acceso a esa sucursal'), { statusCode: 403 });
@@ -46,13 +50,21 @@ async function catalogs(user) {
     db.Sucursal.findAll(options(['id', 'name', 'city'], branchWhere)),
     db.Storage.findAll(options(['id', 'name', 'id_sucursal'], storageWhere)),
     db.Category.findAll(options(['id', 'name'])), db.Product.findAll(options(['id', 'name', 'id_category'])),
-    db.TypesProvider.findAll({ attributes: ['id', 'name', 'code'], order: [['id', 'ASC']], raw: true }),
+    db.TypesProvider.findAll({ attributes: ['id', 'name', 'code'], where: { status: true }, order: [['id', 'ASC']], raw: true }),
     db.User.findAll(options(['id', 'full_names'])),
     db.ProviderBranch.findAll(options(['id', 'department', 'city'])),
     db.Provider.findAll(options(['id', 'department'])),
   ]);
   const unique = values => [...new Set(values.filter(Boolean))].sort().map(name => ({ name, value: name }));
-  return { branches: sucursales, storages, categories, products, types, users, departments: unique([...locations, ...departments].map(row => row.department)), cities: unique(locations.map(row => row.city)) };
+  const cities = [...new Map(locations.filter(row => row.city).map(row => [JSON.stringify([row.department, row.city]), { name: row.city, value: row.city, department: row.department }])).values()].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  return { branches: sucursales, storages, categories, products, types, users, departments: unique([...locations, ...departments].map(row => row.department)), cities };
 }
 
-module.exports = { search, catalogs, assignedBranches, normalizeScopedQuery };
+async function exportRows(raw, user) {
+  const { q, branches } = await normalizeScopedQuery({ ...raw, status: true, purchase_status: 'ACTIVE' }, user);
+  const { sql, replacements } = buildQuery(q, branches, { unpaginated: true, purchaseDetails: true });
+  const [result] = await db.sequelize.query(sql, { replacements, type: QueryTypes.SELECT });
+  return result.data;
+}
+
+module.exports = { search, exportRows, catalogs, assignedBranches, normalizeScopedQuery };

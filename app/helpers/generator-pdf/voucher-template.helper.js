@@ -66,7 +66,7 @@ const buildHeader = ({
     const logoImg = getLogoBase64(customLogoPath);
     const effectiveLogoWidth = compact ? Math.min(logoWidth, 72) : Math.max(logoWidth, 92);
     const companyLines = [
-        !compact && company.branchName ? { text: company.branchName, bold: true, color: VOUCHER_THEME.colors.labelColor } : null,
+        company.city ? { text: company.city, bold: true, color: VOUCHER_THEME.colors.labelColor } : null,
         company.nit ? { text: `NIT: ${company.nit}` } : null,
         company.phone ? { text: `Tel: ${company.phone}` } : null,
         company.email ? { text: company.email } : null,
@@ -99,6 +99,14 @@ const buildHeader = ({
                 color: VOUCHER_THEME.colors.sectionText,
                 noWrap: false,
             },
+            ...(company.branchName ? [{
+                text: company.branchName,
+                fontSize: headerFontSize,
+                bold: true,
+                alignment: 'center',
+                color: VOUCHER_THEME.colors.primary,
+                margin: [0, 1, 0, 0],
+            }] : []),
             ...(subtitle ? [{
                 text: subtitle,
                 fontSize: headerFontSize,
@@ -193,7 +201,7 @@ const buildHeader = ({
  * Encabezado compartido para reportes. Conserva cinco posiciones antes de la
  * tabla principal porque algunos reportes añaden filas mediante dataPdf[5].
  */
-const buildStandardReportHeader = ({ title, auth, details = '' }) => {
+const buildStandardReportHeader = ({ title, auth, details = '', company = {} }) => {
     const printedAt = new Intl.DateTimeFormat('es-BO', {
         timeZone: 'America/La_Paz',
         dateStyle: 'short',
@@ -201,8 +209,9 @@ const buildStandardReportHeader = ({ title, auth, details = '' }) => {
     }).format(new Date());
     const author = [auth?.full_names, auth?.number_document].filter(Boolean).join(' / ');
     const subtitle = [details, author ? `Impreso por: ${author}` : '', printedAt].filter(Boolean).join(' · ');
+    const headerCompany = { branchName: company.branchName || 'CASA MATRIZ', ...company };
     return [
-        buildHeader({ title, subtitle, logoWidth: 56, compact: true }),
+        buildHeader({ title, subtitle, logoWidth: 56, compact: true, company: headerCompany }),
         buildHr([0, 0, 0, 0]),
         { text: '' },
         { text: '' },

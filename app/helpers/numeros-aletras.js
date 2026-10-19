@@ -1,19 +1,25 @@
   const NumeroALetras = (num,currency) =>{
     currency = currency || 'BOLIVIANOS';
+    const source = String(num ?? 0).trim();
+    const normalized = source.includes(',') ? source.replace(/\./g, '').replace(',', '.') : source;
+    const amount = Number(normalized);
+    if (!Number.isFinite(amount)) return '';
+    const totalCentavos = Math.round(Math.abs(amount) * 100);
     let data = {
-      numero: num,
-      enteros: Math.floor(num),
-      centavos: (((Math.round(num * 100)) - (Math.floor(num) * 100))),
+      numero: amount,
+      enteros: Math.floor(totalCentavos / 100),
+      centavos: totalCentavos % 100,
       letrasCentavos: '',
       letrasMonedaPlural: currency,
     };
     data.letrasCentavos = data.centavos === 0
                           ? 'CON 00/100'
-                          : 'CON ' +data.centavos + '/100';
+                          : 'CON ' + String(data.centavos).padStart(2, '0') + '/100';
+    const sign = amount < 0 ? 'MENOS ' : '';
     if(data.enteros === 0){
-      return 'CERO ' + data.letrasCentavos;
+      return sign + 'CERO ' + data.letrasCentavos;
     }
-    return data.letrasMonedaPlural + ' ' + Millones(data.enteros).trim() + ' ' + data.letrasCentavos;
+    return sign + data.letrasMonedaPlural + ' ' + Millones(data.enteros).trim() + ' ' + data.letrasCentavos;
   }
 
 

@@ -14,6 +14,8 @@ function providerQueryFromPurchaseFilters(raw = {}) {
     id_sucursales: filters.sucursalIds, id_storages: filters.storageIds,
     id_categories: filters.categoryIds, id_products: filters.productIds,
     id_provider: filters.providerId, id_type_provider: filters.providerTypeId,
+    id_commercial_user: filters.providerCommercialUserId,
+    entity_type: filters.entityType,
     type_registry: filters.registryType, purchase_status: 'ACTIVE', payment_type: filters.typePay,
     purchase_old_customer: filters.oldCustomer, purchase_with_pickup: filters.withPickup,
     purchase_referral_sources: filters.referralSources,

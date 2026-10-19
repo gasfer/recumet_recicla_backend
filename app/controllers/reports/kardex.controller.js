@@ -1,7 +1,7 @@
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
-const { sequelize, ViewKardex } = require("../../database/config");
+const { sequelize, ViewKardex, Sucursal } = require("../../database/config");
 const path = require("path");
 const fs = require("fs");
 const moment = require("moment");
@@ -78,6 +78,7 @@ const generatePdfReports = async (req = request, res = response) => {
         const sections = tables.map(table => tabularReport(table.table, {}));
         await sendReportPdf(res, {
             title: 'REPORTE DE KARDEX', paper: 'A4', orientation: 'landscape', sections,
+            company: await resolveReportCompany(req.query.id_sucursal),
             filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
         }, 'generatePdfReports.pdf');
     } catch (error) {
@@ -327,6 +328,7 @@ const generatePdfReportsKardexFisico = async (
         const sections = tables.map(table => tabularReport(table.table, {}));
         await sendReportPdf(res, {
             title: 'KARDEX FÍSICO', paper: 'A4', orientation: 'portrait', sections,
+            company: await resolveReportCompany(req.query.id_sucursal),
             filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
         }, 'generatePdfReportsKardexFisico.pdf');
     } catch (error) {
@@ -472,12 +474,20 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
         const sections = tables.map(table => tabularReport(table.table, {}));
         await sendReportPdf(res, {
             title: 'KARDEX DE EXISTENCIAS', paper: 'A4', orientation: 'landscape', sections,
+            company: await resolveReportCompany(req.query.id_sucursal),
             filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
         }, 'generatePdfReportsExistencia.pdf');
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
+};
+
+const resolveReportCompany = async idSucursal => {
+    const id = Number(idSucursal);
+    if (!Number.isInteger(id) || id <= 0) return { branchName: 'CASA MATRIZ' };
+    const branch = await Sucursal.findByPk(id, { include: [{ association: 'company', attributes: ['nit', 'email'] }] });
+    return branch ? { branchName: branch.name, city: branch.city, nit: branch.company?.nit, email: branch.email || branch.company?.email } : { branchName: 'CASA MATRIZ' };
 };
 
 const dataPdfReturn = (auth) => [

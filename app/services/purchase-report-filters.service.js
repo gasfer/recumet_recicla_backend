@@ -6,6 +6,7 @@ const REPORT_STATUS = new Set(['ACTIVE', 'INACTIVE']);
 const REPORT_PAYMENT_TYPES = new Set(['', 'CONTADO', 'CREDITO']);
 
 const parseIds = (value) => String(value || '').split(',').map(Number).filter((id) => Number.isInteger(id) && id > 0);
+const optionalBoolean = value => value === true || value === 'true' || value === 'SI' ? true : value === false || value === 'false' || value === 'NO' ? false : undefined;
 
 const normalizePurchaseReportFilters = (params = {}) => {
     const filterBy = ['DAY', 'MONTH', 'YEAR', 'RANGE'].includes(params.filterBy) ? params.filterBy : 'MONTH';
@@ -13,10 +14,12 @@ const normalizePurchaseReportFilters = (params = {}) => {
     return {
         providerId: params.id_provider || '',
         providerTypeId: params.id_type_provider || '',
+        providerCommercialUserId: params.id_commercial_user || '',
+        entityType: params.id_type_provider ? params.entity_type || '' : '',
         registryType: params.type_registry || '',
         referralSources: params.referral_sources || '',
-        oldCustomer: params.old_customer === true || params.old_customer === 'true' ? true : params.old_customer === false || params.old_customer === 'false' ? false : undefined,
-        withPickup: params.with_pickup === true || params.with_pickup === 'true' ? true : params.with_pickup === false || params.with_pickup === 'false' ? false : undefined,
+        oldCustomer: optionalBoolean(params.old_customer),
+        withPickup: optionalBoolean(params.with_pickup),
         filterBy,
         date1: String(params.date1 || ''),
         date2: String(params.date2 || ''),

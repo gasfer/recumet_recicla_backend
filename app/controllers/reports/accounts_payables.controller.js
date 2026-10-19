@@ -55,6 +55,7 @@ const generatePdfReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE CUENTAS POR PAGAR', paper: 'A4', orientation: 'landscape',
+            company: { branchName: accounts_payables[0]?.sucursal?.name || 'CASA MATRIZ', city: accounts_payables[0]?.sucursal?.city, nit: accounts_payables[0]?.sucursal?.company?.nit, email: accounts_payables[0]?.sucursal?.email || accounts_payables[0]?.sucursal?.company?.email },
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
@@ -179,7 +180,7 @@ const returnDataAccountPayable = async (params) => {
             ]
         },
         include: [ 
-            { association: 'sucursal',attributes: ['name'] },
+            { association: 'sucursal',attributes: ['name', 'city', 'email'], include: [{ association: 'company', attributes: ['nit', 'email'] }] },
             { association: 'provider', attributes: ['full_names']},
             { association: 'input',
                 where: { [Op.and]: [
@@ -227,6 +228,7 @@ const generatePdfReportsAbonosAll = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE ABONOS CUENTAS POR PAGAR', paper: 'A4', orientation: 'landscape',
+            company: { branchName: accounts_payables_abonos_all[0]?.sucursal?.name || 'CASA MATRIZ', city: accounts_payables_abonos_all[0]?.sucursal?.city, nit: accounts_payables_abonos_all[0]?.sucursal?.company?.nit, email: accounts_payables_abonos_all[0]?.sucursal?.email || accounts_payables_abonos_all[0]?.sucursal?.company?.email },
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
@@ -346,7 +348,7 @@ const returnDataAccountPayableAbonos = async (params) => {
         order: [orderNew],
         where,
         include: [ 
-            { association: 'sucursal',attributes: ['name'] },
+            { association: 'sucursal',attributes: ['name', 'city', 'email'], include: [{ association: 'company', attributes: ['nit', 'email'] }] },
             { association: 'user',attributes: ['full_names'] },
             { association: 'provider',attributes: ['full_names'] },
         ]

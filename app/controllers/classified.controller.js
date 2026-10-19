@@ -1,3 +1,4 @@
+const { classifiedMaterialFilter } = require('../services/classified-material-filter');
 const { response, request } = require('express');
 const {  sequelize, Classified, DetailsClassified, Stock, History } = require('../database/config');
 const paginate = require('../helpers/paginate');
@@ -76,7 +77,7 @@ const getClassifiedsPaginate = async (req = request, res = response) => {
                     id_sucursal    ? { id_sucursal } : {},
                     id_storage     ? { id_storage  } : {},
                     type_registry  ? { type_registry } : {},
-                    id_product     ? { id_product   } : {},
+                    ...classifiedMaterialFilter(req.query),
                     { status },
                     { date_classified: whereDate }
                 ]

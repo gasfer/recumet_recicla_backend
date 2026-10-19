@@ -1,7 +1,8 @@
-const { writeFilterHeader } = require('./report-selected-filters.service');
 'use strict';
 
 const ExcelJS = require('exceljs');
+const fs = require('fs');
+const { getReportLogoPath } = require('../helpers/report-logo');
 const { REPORT_COLORS, reportLocationStyle, solidFill, reportThinBorder } = require('../constants/report-style.constants');
 
 const BRAND_BLUE = REPORT_COLORS.header;
@@ -27,21 +28,131 @@ const formatNumberCell = (cell, value, decimalPlaces = 2) => {
   cell.border = thinBorder;
 };
 
+const wrappedLineCount = (value, columnWidth) => String(value ?? '').split(/\r?\n/).reduce((lines, part) => {
+  const estimatedCharactersPerLine = Math.max(8, Math.floor(columnWidth * 0.9));
+  return lines + Math.max(1, Math.ceil(part.length / estimatedCharactersPerLine));
+}, 0);
+
+const writeSelectedFiltersRow = (worksheet, { rowNumber, totalColumns, selectedFilters, logoColumns }) => {
+  const filters = String(selectedFilters || '').split(/\r?\n/).map(filter => filter.trim()).filter(Boolean);
+  const readFilter = (name) => filters.find(filter => new RegExp(`^${name}:`, 'i').test(filter))?.replace(new RegExp(`^${name}:\\s*`, 'i'), '') || '';
+  const splitSelected = (value) => value.split(/,\s*/).map(item => item.trim()).filter(Boolean);
+  const branches = splitSelected(readFilter('Sucursales'));
+  const selectedCategories = splitSelected(readFilter('Categorías'));
+  const remainingFilters = filters.filter(filter =>
+    !/^(Sucursales|Área\s*\/\s*Almacén|Categorías):/i.test(filter)
+    && !/^Saldos cero:\s*Excluidos$/i.test(filter));
+
+  const periodFilters = remainingFilters.filter(filter => /^(Tipo filtrado|Fecha):/i.test(filter));
+  const otherFilters = remainingFilters.filter(filter => !/^(Tipo filtrado|Fecha):/i.test(filter));
+  const criteriaLines = [
+    periodFilters.map(filter => `☑ ${filter}`).join('  '),
+    ...otherFilters.map(filter => `☑ ${filter}`),
+  ].filter(Boolean);
+  const availableColumns = totalColumns - logoColumns;
+  const branchSpan = availableColumns >= 7 ? 2 : 1;
+  const criteriaSpan = availableColumns >= 5 ? 1 : 0;
+  const categorySpan = Math.max(2, availableColumns - branchSpan - criteriaSpan);
+  const categoryColumnSpans = [Math.ceil(categorySpan / 2), Math.floor(categorySpan / 2)];
+  const categoryLists = [
+    selectedCategories.filter((_, index) => index % 2 === 0),
+    selectedCategories.filter((_, index) => index % 2 === 1),
+  ];
+  const branchValue = [
+    ...(branches.length ? ['☑ Sucursales seleccionadas:', ...branches.map(branch => `  ☑ ${branch}`)] : []),
+    ...(criteriaSpan ? [] : otherFilters.map(filter => `☑ ${filter}`)),
+  ].join('\n');
+  const categoryValues = categoryLists.map((categories, index) => [
+    ...(index === 0 && selectedCategories.length ? ['☑ Categorías seleccionadas:'] : []),
+    ...categories.map(category => `  ☑ ${category}`),
+  ].join('\n'));
+  const criteriaValue = criteriaSpan ? criteriaLines.join('\n') : '';
+  const filterGroups = [
+    { start: logoColumns + 1, span: branchSpan, value: branchValue, lineCount: branches.length + (branches.length ? 1 : 0) + (!criteriaSpan ? otherFilters.length : 0) },
+    { start: logoColumns + branchSpan + 1, span: categoryColumnSpans[0], value: categoryValues[0], lineCount: categoryLists[0].length + (selectedCategories.length ? 1 : 0) },
+    { start: logoColumns + branchSpan + categoryColumnSpans[0] + 1, span: categoryColumnSpans[1], value: categoryValues[1], lineCount: categoryLists[1].length },
+    { start: totalColumns - criteriaSpan + 1, span: criteriaSpan, value: criteriaValue, lineCount: criteriaLines.length },
+  ].filter(group => group.span > 0);
+  const row = worksheet.getRow(rowNumber);
+  row.height = Math.max(56, ...filterGroups.map(group => group.lineCount * 12 + 8));
+  for (let column = 1; column <= totalColumns; column++) {
+    const cell = row.getCell(column);
+    cell.fill = solidFill(REPORT_COLORS.subheader);
+    cell.border = {};
+  }
+
+  filterGroups.forEach(group => {
+    const endColumn = group.start + group.span - 1;
+    if (endColumn > group.start) worksheet.mergeCells(rowNumber, group.start, rowNumber, endColumn);
+    const cell = row.getCell(group.start);
+    cell.value = group.value;
+    cell.font = { name: 'Arial', size: 8, bold: true, color: { argb: 'FF1E5B3A' } };
+    cell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true, indent: 1 };
+  });
+};
+
+const writeInventoryReportHeader = (worksheet, { workbook, totalColumns, title, context, selectedFilters }) => {
+  const logoColumns = totalColumns >= 8 ? 3 : 1;
+  const contextColumns = Math.min(3, Math.max(1, totalColumns - logoColumns - 2));
+  const contextColumn = totalColumns - contextColumns + 1;
+  const titleStart = logoColumns + 1;
+  const titleEnd = contextColumn - 1;
+  const titleRow = worksheet.addRow([]);
+  titleRow.height = 36;
+  worksheet.mergeCells(titleRow.number, titleStart, titleRow.number, titleEnd);
+  worksheet.mergeCells(titleRow.number, contextColumn, titleRow.number, totalColumns);
+  for (let column = 1; column <= totalColumns; column++) {
+    const cell = titleRow.getCell(column);
+    cell.fill = solidFill(BRAND_BLUE);
+    cell.font = { name: 'Arial', size: column < contextColumn ? 10 : 7, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
+    cell.alignment = {
+      horizontal: column < contextColumn ? 'left' : 'right',
+      vertical: 'middle', wrapText: false, shrinkToFit: true,
+    };
+  }
+  titleRow.getCell(titleStart).value = title;
+  titleRow.getCell(contextColumn).value = context;
+
+  const filterRow = worksheet.addRow([]);
+  writeSelectedFiltersRow(worksheet, { rowNumber: filterRow.number, totalColumns, selectedFilters, logoColumns });
+  if (!selectedFilters) {
+    filterRow.height = 56;
+    for (let column = 1; column <= totalColumns; column++) {
+      filterRow.getCell(column).fill = solidFill(REPORT_COLORS.subheader);
+    }
+  }
+
+  worksheet.mergeCells(titleRow.number, 1, filterRow.number, logoColumns);
+  titleRow.getCell(1).fill = solidFill(REPORT_COLORS.row);
+  const logoPath = getReportLogoPath();
+  if (workbook && fs.existsSync(logoPath)) {
+    const logo = workbook.addImage({ filename: logoPath, extension: 'png' });
+    worksheet.addImage(logo, {
+      tl: { col: totalColumns >= 8 ? 1.35 : 0.28, row: titleRow.number - 0.96 },
+      ext: { width: 88, height: 88 }, editAs: 'oneCell',
+    });
+  }
+};
+
 const generateConsolidatedInventoryExcel = async (projection) => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'RECUMET S.R.L.';
   workbook.created = new Date();
+  const selectedBranches = projection.metadata.filtersSummary?.sucursales || [];
+  const shouldUseLandscape = selectedBranches.length > 1 || (selectedBranches.length === 0 && projection.locations.length > 1);
 
   const worksheet = workbook.addWorksheet('Consolidado de inventario', {
     pageSetup: {
-      orientation: 'landscape',
+      orientation: shouldUseLandscape ? 'landscape' : 'portrait',
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,
       paperSize: 9, // A4
+      horizontalCentered: true,
+      margins: { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 },
     },
     views: [
-      { state: 'frozen', xSplit: 3, ySplit: 5 },
+      { state: 'frozen', xSplit: 3, ySplit: 4, showGridLines: false },
     ],
   });
 
@@ -54,6 +165,11 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   // Observations: (last column)
   const totalLocations = locations.length;
   const totalColumns = 3 + (totalLocations * 2) + 2 + 1;
+  const descriptionWidth = 34;
+  const observationWidth = totalLocations > 1 ? 38 : 32;
+  const codeWidth = 16;
+  const unitWidth = 9;
+  const quantityWidth = totalLocations > 2 ? 14 : 13;
   const colorForLocation = (index, shade) => reportLocationStyle(locations[index]?.label)[shade];
   const shadeLocation = (row, index, shade) => {
     for (let column = 4 + index * 2; column <= 5 + index * 2; column++) {
@@ -61,36 +177,15 @@ const generateConsolidatedInventoryExcel = async (projection) => {
     }
   };
 
-  // Row 1: Title
-  const titleRow = worksheet.addRow(['RECUMET S.R.L. - CONSOLIDADO DE INVENTARIO (MATERIA PRIMA Y PRODUCTOS TERMINADOS)']);
-  titleRow.height = 28;
-  titleRow.font = { name: 'Arial', size: 12, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
-  worksheet.mergeCells(1, 1, 1, totalColumns);
-  for (let c = 1; c <= totalColumns; c++) {
-    const cell = titleRow.getCell(c);
-    cell.fill = solidFill(BRAND_BLUE);
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-  }
+  writeInventoryReportHeader(worksheet, {
+    workbook,
+    totalColumns,
+    title: 'CONSOLIDADO DE INVENTARIO (MATERIA PRIMA Y PRODUCTOS TERMINADOS)',
+    context: `CORTE: ${metadata.headerLabel} | MODO: ${metadata.filterBy}`,
+    selectedFilters: metadata.selectedFilters,
+  });
 
-  // Row 2: Subtitle with Cutoff Date and Filter info
-  const subtitleText = `Fecha de corte: ${metadata.headerLabel} | Modo: ${metadata.filterBy} | Saldos cero: ${metadata.filtersSummary.showZeroSaldo ? 'Incluidos' : 'Excluidos'}`;
-  const subtitleRow = worksheet.addRow([subtitleText]);
-  subtitleRow.height = 20;
-  subtitleRow.font = { name: 'Arial', size: 9, italic: true, color: { argb: REPORT_COLORS.text } };
-  worksheet.mergeCells(2, 1, 2, totalColumns);
-  for (let c = 1; c <= totalColumns; c++) {
-    const cell = subtitleRow.getCell(c);
-    cell.fill = solidFill(REPORT_COLORS.row);
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
-  }
-
-  // Row 3: Blank separator
-  const sepRow = worksheet.addRow([]);
-  sepRow.height = 8;
-  worksheet.mergeCells(3, 1, 3, totalColumns);
-  writeFilterHeader(worksheet, { row: 3, toColumn: totalColumns, text: metadata.selectedFilters });
-
-  // Row 4: Header Level 1 (Location Groupings)
+  // Row 3: Header Level 1 (Location Groupings)
   const h1Values = new Array(totalColumns).fill('');
   h1Values[0] = 'DATOS DEL PRODUCTO';
 
@@ -106,8 +201,8 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   h1Row.height = 38;
   h1Row.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
 
-  // Merge A4:C4 for product info
-  worksheet.mergeCells(4, 1, 4, 3);
+  // Merge A3:C3 for product info
+  worksheet.mergeCells(h1Row.number, 1, h1Row.number, 3);
   for (let c = 1; c <= 3; c++) {
     const cell = h1Row.getCell(c);
     cell.fill = solidFill(HEADER_DARK);
@@ -118,7 +213,7 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   // Merge location groups
   let locCol = 4;
   for (let i = 0; i < totalLocations; i++) {
-    worksheet.mergeCells(4, locCol, 4, locCol + 1);
+    worksheet.mergeCells(h1Row.number, locCol, h1Row.number, locCol + 1);
     shadeLocation(h1Row, i, 'header');
     for (let c = locCol; c <= locCol + 1; c++) {
       const cell = h1Row.getCell(c);
@@ -130,7 +225,7 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   }
 
   // Merge Totales Consolidados
-  worksheet.mergeCells(4, locCol, 4, locCol + 1);
+  worksheet.mergeCells(h1Row.number, locCol, h1Row.number, locCol + 1);
   for (let c = locCol; c <= locCol + 1; c++) {
     const cell = h1Row.getCell(c);
     cell.fill = solidFill(HEADER_DARK);
@@ -144,7 +239,7 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   obsCell.alignment = { horizontal: 'center', vertical: 'middle' };
   obsCell.border = thinBorder;
 
-  // Row 5: Header Level 2 (Subcolumns)
+  // Row 4: Header Level 2 (Subcolumns)
   const h2Values = ['CÓDIGO', 'DESCRIPCIÓN', 'UND'];
   for (let i = 0; i < totalLocations; i++) {
     h2Values.push('Stock reg.', 'Traslado Pendiente');
@@ -153,12 +248,12 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   h2Values.push('OBS.');
 
   const h2Row = worksheet.addRow(h2Values);
-  h2Row.height = 20;
+  h2Row.height = 28;
   h2Row.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.text } };
   for (let c = 1; c <= totalColumns; c++) {
     const cell = h2Row.getCell(c);
     cell.fill = solidFill(REPORT_COLORS.subheader);
-    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     cell.border = thinBorder;
   }
   for (let i = 0; i < totalLocations; i++) shadeLocation(h2Row, i, 'header');
@@ -213,14 +308,18 @@ const generateConsolidatedInventoryExcel = async (projection) => {
         rowValues.push(prod.observations || '');
 
         const prodRow = worksheet.addRow(rowValues);
-        prodRow.height = 18;
+        const rowLines = Math.max(
+          wrappedLineCount(prod.name, descriptionWidth),
+          wrappedLineCount(prod.observations, observationWidth),
+        );
+        prodRow.height = Math.max(18, rowLines * 13 + 5);
         prodRow.font = { name: 'Arial', size: 9 };
         const rowColor = productRowIndex++ % 2 === 0 ? REPORT_COLORS.row : REPORT_COLORS.alternateRow;
         for (let c = 1; c <= totalColumns; c++) prodRow.getCell(c).fill = solidFill(rowColor);
 
         prodRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
         prodRow.getCell(1).border = thinBorder;
-        prodRow.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
+        prodRow.getCell(2).alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
         prodRow.getCell(2).border = thinBorder;
         prodRow.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
         prodRow.getCell(3).border = thinBorder;
@@ -234,7 +333,7 @@ const generateConsolidatedInventoryExcel = async (projection) => {
         formatNumberCell(prodRow.getCell(curC++), prod.totalRegisteredStock, decimalPlaces);
         formatNumberCell(prodRow.getCell(curC++), prod.totalPendingReceipt, decimalPlaces);
         const lastCell = prodRow.getCell(totalColumns);
-        lastCell.alignment = { horizontal: 'left', vertical: 'middle' };
+        lastCell.alignment = { horizontal: 'left', vertical: 'top', wrapText: true };
         lastCell.border = thinBorder;
         lastCell.fill = solidFill(REPORT_COLORS.observations);
       }
@@ -364,18 +463,22 @@ const generateConsolidatedInventoryExcel = async (projection) => {
   gObs.fill = solidFill(GRAND_TOTAL_BG);
   gObs.border = doubleBottomBorder;
 
-  // Auto-fit column widths with min bounds
+  // Ancla el área de impresión al contenido para evitar páginas con columnas vacías.
+  const lastColumn = worksheet.getColumn(totalColumns).letter;
+  worksheet.pageSetup.printArea = `A1:${lastColumn}${worksheet.lastRow.number}`;
+
+  // Anchos controlados: las descripciones y observaciones se ajustan dentro de su celda.
   worksheet.columns.forEach((column, index) => {
     if (index === 0) {
-      column.width = 14; // CÓDIGO
+      column.width = codeWidth;
     } else if (index === 1) {
-      column.width = 32; // DESCRIPCIÓN
+      column.width = descriptionWidth;
     } else if (index === 2) {
-      column.width = 10; // UND
+      column.width = unitWidth;
     } else if (index === totalColumns - 1) {
-      column.width = 20; // OBSERVACIONES
+      column.width = observationWidth;
     } else {
-      column.width = 16; // Quantity columns
+      column.width = quantityWidth;
     }
   });
 
@@ -384,4 +487,5 @@ const generateConsolidatedInventoryExcel = async (projection) => {
 
 module.exports = {
   generateConsolidatedInventoryExcel,
+  writeInventoryReportHeader,
 };

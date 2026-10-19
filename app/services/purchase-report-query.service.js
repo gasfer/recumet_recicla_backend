@@ -1,10 +1,11 @@
+const { providerCommercialFilter } = require('./provider-commercial-filter');
 const { Input, sequelize } = require('../database/config');
 const { Op } = require('sequelize');
 const moment = require('moment');
 const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('./purchase-report-filters.service');
 
 const includesForReport = (filters) => [
-    { association: 'provider', attributes: ['full_names', 'id_type_provider'], ...(filters.providerTypeId ? { where: { id_type_provider: filters.providerTypeId }, required: true } : {}), include: [{ association: 'type', attributes: ['name'] }] },
+    { association: 'provider', attributes: ['full_names', 'id_type_provider'], ...(filters.providerTypeId || filters.providerCommercialUserId ? { where: { ...providerCommercialFilter(filters.providerCommercialUserId, filters.entityType), ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}) }, required: true } : {}), include: [{ association: 'type', attributes: ['name'] }] },
     { association: 'sucursal', attributes: ['name'] },
     { association: 'storage', attributes: ['name'] },
     {
@@ -37,16 +38,16 @@ const queryPurchaseReportTotals = async (params) => {
     const filters = normalizePurchaseReportFilters(params);
     const options = applyDetailFilter(applyReportSearch({
         where: buildPurchaseReportWhere(filters),
-        include: filters.providerTypeId || (filters.searchType === 'provider.full_names' && filters.query)
+        include: filters.providerTypeId || filters.providerCommercialUserId || (filters.searchType === 'provider.full_names' && filters.query)
             ? [{ association: 'provider', attributes: ['id'], required: true,
-                where: { ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}),
+                where: { ...providerCommercialFilter(filters.providerCommercialUserId, filters.entityType), ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}),
                     ...(filters.searchType === 'provider.full_names' && filters.query ? { full_names: { [Op.iLike]: `%${filters.query}%` } } : {}) } }]
             : [],
     }, filters), filters);
     const inputs = await Input.findAll({
         where: options.where,
         attributes: ['id', 'total'],
-        include: [{
+        include: [...options.include, {
             association: 'detailsInput', attributes: ['quantity', 'total', 'cost'],
             where: { status: 'ACTIVE', removed_at: null }, required: false,
             include: [{ association: 'product', attributes: ['id'], include: [{ association: 'unit', attributes: ['siglas'] }] }],
@@ -76,7 +77,15 @@ const applyReportSearch = (options, filters) => {
         provider.required = true;
         return options;
     }
-    const allowed = new Set(['cod', 'registry_number', 'type_registry']);
+    if (filters.searchType === 'scale.name' || filters.searchType === 'user.full_names') {
+        const [association, field] = filters.searchType.split('.');
+        let related = options.include.find(item => item.association === association);
+        if (!related) { related = { association, attributes: [] }; options.include.push(related); }
+        related.required = true;
+        related.where = { ...related.where, [field]: { [Op.iLike]: `%${filters.query}%` } };
+        return options;
+    }
+    const allowed = new Set(['cod', 'registry_number', 'type_registry', 'comments']);
     if (allowed.has(filters.searchType)) {
         options.where[Op.and].push({ [filters.searchType]: { [Op.iLike]: `%${filters.query}%` } });
     }
@@ -99,9 +108,9 @@ const queryPurchaseReportPage = async (params) => {
     const filters = normalizePurchaseReportFilters(params);
     const options = applyDetailFilter(applyReportSearch({
         where: buildPurchaseReportWhere(filters),
-        include: filters.providerTypeId || (filters.searchType === 'provider.full_names' && filters.query)
+        include: filters.providerTypeId || filters.providerCommercialUserId || (filters.searchType === 'provider.full_names' && filters.query)
             ? [{ association: 'provider', attributes: ['id', 'id_type_provider'], required: true,
-                where: { ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}),
+                where: { ...providerCommercialFilter(filters.providerCommercialUserId, filters.entityType), ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}),
                     ...(filters.searchType === 'provider.full_names' && filters.query ? { full_names: { [Op.iLike]: `%${filters.query}%` } } : {}) } }]
             : [],
     }, filters), filters);

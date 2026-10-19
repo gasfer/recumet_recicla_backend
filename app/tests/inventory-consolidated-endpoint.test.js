@@ -161,7 +161,7 @@ test('generateExcelConsolidatedReportsTotalStock genera archivo con Content-Disp
   assert.equal(kardexCreatedOrUpdated, false, 'No debe crear ni actualizar Kardex');
 });
 
-test('Regresión: generatePdfReportsTotalStock y generateExcelReportsTotalStock continúan funcionando sin cambios', async (t) => {
+test('Regresión: generatePdfReportsTotalStock y generateExcelReportsTotalStock continúan funcionando con la cabecera unificada', async (t) => {
   t.mock.method(db.ViewKardex, 'findAll', async () => []);
 
   const req = {

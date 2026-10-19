@@ -48,9 +48,9 @@ async function selectedProviderPurchaseFilters(q) {
   return lines.join('\n');
 }
 
-async function buildProviderPurchasesReport(raw = {}, user) {
-  const { q, branches } = await normalizeScopedQuery({ ...raw, purchase_status: 'ACTIVE', page: 1, limit: 50 }, user);
-  const { sql, replacements } = buildPurchaseDetailQuery(q, branches);
+async function buildProviderPurchasesReport(raw = {}, user, { providerManagement = false } = {}) {
+  const { q, branches } = await normalizeScopedQuery({ ...raw, ...(providerManagement ? { status: true } : {}), purchase_status: 'ACTIVE', page: 1, limit: 50 }, user);
+  const { sql, replacements } = buildPurchaseDetailQuery(q, branches, { providerManagement });
   const [data, selectedFilters] = await Promise.all([
     db.sequelize.query(sql, { replacements, type: QueryTypes.SELECT }), selectedProviderPurchaseFilters(q),
   ]);

@@ -1,6 +1,6 @@
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
-const { ProductSucursals, Product,  } = require('../../database/config');
+const { ProductSucursals, Product, Sucursal } = require('../../database/config');
 const { Op } = require("sequelize");
 const ExcelJS = require('exceljs');
 const path = require('path');
@@ -33,8 +33,11 @@ const generatePdfReports = async (req = request, res = response) => {
      
       const tables = dataPdf.filter(node => node?.table?.body?.length && node.table.headerRows > 0);
         const sections = tables.map(table => tabularReport(table.table, {}));
+        const branchId = Number(req.query.id_sucursal);
+        const branch = Number.isInteger(branchId) && branchId > 0 ? await Sucursal.findByPk(branchId, { include: [{ association: 'company', attributes: ['nit', 'email'] }] }) : null;
         await sendReportPdf(res, {
             title: 'REPORTE DE PRECIOS', paper: 'A4', orientation: 'landscape', sections,
+            company: branch ? { branchName: branch.name, city: branch.city, nit: branch.company?.nit, email: branch.email || branch.company?.email } : { branchName: 'CASA MATRIZ' },
             filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
         }, 'generatePdfReports.pdf');
   } catch (error) {

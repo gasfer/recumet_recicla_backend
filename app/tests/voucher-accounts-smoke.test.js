@@ -19,7 +19,7 @@ for (const payable of [true, false]) {
  });
  test((payable ? 'CxP' : 'CxC') + ' abono conserva bancos, cuentas y transacción', () => {
   const html = renderReportHtml(buildFinancialVoucher(account(payable), { payable, decimal: 2, payment: { date_abono: '2026-10-12', monto_abono: 25, type_payment: 'TRANSFERENCIA', bankOrigin: { name: 'Origen' }, bankDestination: { name: 'Destino' }, account_origin: '0001', account_output: '0002', number_transaction: 'TX-123' } }));
-  for (const text of ['Origen','Destino','0001','0002','TX-123']) assert.ok(html.includes(text), text);
+  for (const text of ['Origen','Destino','0001','0002','TX-123','BOLIVIANOS VEINTICINCO CON 00/100']) assert.ok(html.includes(text), text);
  });
  test((payable ? 'CxP' : 'CxC') + ' abono múltiple conserva cuentas aplicadas y suma numérica de saldos', () => {
   const document = buildMultiplePaymentVoucher({ date_abono: '2026-10-12', monto_abono: 50, type_payment: 'EFECTIVO', [payable ? 'ids_abonos_payables' : 'ids_abonos_receivables']: [1,2] }, [account(payable,1),account(payable,2)], { payable, decimal: 2 });
@@ -28,3 +28,9 @@ for (const payable of [true, false]) {
   assert.throws(() => buildMultiplePaymentVoucher({ ids_abonos_payables: [] }, [account(true)], { payable: true, decimal: 2 }), /abono aplicado/);
  });
 }
+
+test('abono convierte montos con miles antes de llamar al conversor de letras', () => {
+ const document = buildFinancialVoucher(account(true), { payable: true, decimal: 2, payment: { date_abono: '2026-10-12', monto_abono: '1.234,50', type_payment: 'EFECTIVO' } });
+ const amount = document.panels[1].fields.find(item => item.label === 'Monto abono').value;
+ assert.equal(amount, 'Bs. 1.234,50 (BOLIVIANOS MIL DOSCIENTOS TREINTA Y CUATRO CON 50/100)');
+});

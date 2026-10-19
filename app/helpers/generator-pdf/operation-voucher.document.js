@@ -1,7 +1,7 @@
 const moment = require('moment');
 const NumeroALetras = require('../numeros-aletras');
-const { formatDecimalEsBo } = require('../number-formatter');
-const companyData = branch => ({ branchName: branch?.name, nit: branch?.company?.nit, phone: branch?.cellphone || branch?.phone, email: branch?.email || branch?.company?.email });
+const { decimalToNumber, formatDecimalEsBo } = require('../number-formatter');
+const companyData = branch => ({ branchName: branch?.name || 'CASA MATRIZ', city: branch?.city, nit: branch?.company?.nit, phone: branch?.cellphone || branch?.phone, email: branch?.email || branch?.company?.email });
 const money = (value, decimal = 2) => formatDecimalEsBo(value || 0, decimal);
 const field = (label, value) => ({ label, value: value ?? '' });
 const detailColumns = [
@@ -51,7 +51,7 @@ const buildOperationVoucher = (operation, { kind, decimal = 2, format } = {}) =>
     const accounts = operation[purchase ? 'accounts_payable' : 'accounts_receivable'];
     if (!classified && !thermal && !(purchase && operation.type === 'CREDITO')) sections.push({
         title: 'TOTALES', variant: 'summary',
-        amountInWords: `SON: ${NumeroALetras(Number(Number(operation.total || 0).toFixed(decimal)))}`,
+        amountInWords: `SON: ${NumeroALetras(decimalToNumber(operation.total || 0, decimal))}`,
         note: 'Documento emitido conforme a las políticas de pesaje y control ambiental de residuos valorizables.',
         columns: [{ label: 'CONCEPTO', width: 3 }, { label: 'MONTO BS', width: 2, align: 'right' }],
         rows: [
@@ -62,6 +62,8 @@ const buildOperationVoucher = (operation, { kind, decimal = 2, format } = {}) =>
     });
     if (purchase && !thermal && operation.type === 'CREDITO') sections.push({
         title: 'RESUMEN DE CRÉDITO', variant: 'summary',
+        amountInWords: `SON: ${NumeroALetras(decimalToNumber(operation.total || 0, decimal))}`,
+        note: 'Importe total de la compra expresado en bolivianos.',
         columns: [{ label: 'CONCEPTO' }, { label: 'MONTO BS', align: 'right' }],
         rows: [['A CUENTA', money(accounts?.monto_abonado, decimal)], ['SALDO', money(accounts?.monto_restante, decimal)]],
     });

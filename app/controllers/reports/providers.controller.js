@@ -1,117 +1,39 @@
-const { ViewProviderTotals } = require('../../database/config');
-const ExcelJS = require('exceljs');
-const moment = require('moment');
-moment.locale('es');
-const { Op } = require("sequelize");
 const { getNumberDecimal } = require('../../helpers/company');
 
-const generateExcelProviders = async (req = request, res = response) => {
+const { generateProviderDirectoryExcel } = require('../../services/provider-directory-excel.service');
+const management = require('../../services/provider-management.service');
+const { buildProviderPurchasesReport } = require('../../services/provider-purchases-report.service');
+const { generateProviderProductsExcel } = require('../../services/provider-products-excel.service');
+
+const { providerDirectoryFilters } = require('../../services/provider-directory-filters.service');
+const { providerReportHeader } = require('../../services/provider-report-header.service');
+const generateExcelProviders = async (req, res) => {
   try {
-    const providers = await returnDataProviders(req.query);
-    const decimal = await getNumberDecimal();
-    let output_data = [];
-    if (providers.length == 0) {
-      output_data.push({
-        FECHA_ULTIMA_COMPRA: '',
-        COMPRA_KG: '',
-        SALDO: '',
-        SECTOR: '',
-        CATEGORÍA: '',
-        FRECUENCIA: '',
-        'EMPRESA - TALLER, NEGOCIO': '',
-        'CI / NIT': '',
-        'DIRECCIÓN - ACOPIADORA': '',
-        'CONTACTO': '',
-        'PERSONA NOMBRE': '',
-        'PERSONA CELULAR': '',
-        'MAYORiSTA': '',
-      });
+    const isProducts = req.query.report === 'products';
+    const query = { ...req.query, status: true, purchase_status: 'ACTIVE' };
+    const configuredDecimal = Number(await getNumberDecimal());
+    const decimal = Number.isInteger(configuredDecimal) ? Math.min(8, Math.max(0, configuredDecimal)) : 2;
+    const catalogs = await management.catalogs(req.userAuth);
+    const filters = providerDirectoryFilters(query, catalogs);
+    let workbook;
+    if (isProducts) {
+      const report = await buildProviderPurchasesReport(query, req.userAuth, { providerManagement: true });
+      const company = await providerReportHeader(query, catalogs, req.decimalPolicy?.companyId);
+      workbook = generateProviderProductsExcel(report, filters, decimal, company);
+    } else {
+      const providers = await management.exportRows(query, req.userAuth);
+      const company = await providerReportHeader(query, catalogs, req.decimalPolicy?.companyId);
+      workbook = generateProviderDirectoryExcel(providers, filters, decimal, { company });
     }
-    providers.forEach(provider => {
-      const tableData = {
-        FECHA_ULTIMA_COMPRA: provider.date_last_input? moment(provider.date_last_input).format('DD/MM/YYYY') :'-' ,
-        COMPRA_KG: Number(provider.total_products).toFixed(decimal),
-        SALDO: Number(provider.saldo_cuentas_por_pagar).toFixed(decimal),
-        SECTOR: provider?.sector?.name ?? '-',
-        CATEGORÍA: provider?.category?.name ?? '-',
-        FRECUENCIA: provider.frequency,
-        'EMPRESA - TALLER, NEGOCIO': provider.full_names,
-        'CI / NIT': provider.number_document,
-        'DIRECCIÓN - ACOPIADORA': provider.direction,
-        'CONTACTO': provider.companyContacts,
-        'PERSONA NOMBRE': provider.name_contact,
-        'PERSONA CELULAR': provider.cellphone_contact,
-        'AREA - UNIDAD': provider.workAreaOrPositionOrUnit,
-        'MAYORiSTA': provider.mayorista ? 'SI' : 'NO',
-      }
-      output_data.push(tableData);
-    });
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(`Lista proveedores`);
-    const headers = Object.keys(output_data[0]);
-    worksheet.addRow(headers);
-    output_data.forEach(data => {
-      const row = [];
-      headers.forEach(header => {
-        row.push(data[header]);
-      });
-      worksheet.addRow(row);
-    });
-    worksheet.getColumn('A').width = 20;
-    worksheet.getColumn('B').width = 20;
-    worksheet.getColumn('C').width = 25;
-    worksheet.getColumn('D').width = 25;
-    worksheet.getColumn('E').width = 20;
-    worksheet.getColumn('F').width = 20;
-    worksheet.getColumn('G').width = 50;
-    worksheet.getColumn('H').width = 15;
-    worksheet.getColumn('I').width = 50;
-    worksheet.getColumn('J').width = 15;
-    worksheet.getColumn('K').width = 50;
-    worksheet.getColumn('L').width = 50;
-    worksheet.getColumn('M').width = 50;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=precios-report.xlsx`);
-    workbook.xlsx.write(res)
-      .then(() => {
-        res.end();
-      })
-      .catch(err => {
-        console.error('Error generar Excel:', err);
-        res.status(500).json({ error: 'Error al crear excel' });
-      })
+    res.setHeader('Content-Disposition', `attachment; filename=${isProducts ? 'recumet-proveedores-por-producto.xlsx' : 'recumet-reporte-maestro-proveedores.xlsx'}`);
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      ok: false,
-      errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
-    });
-  };
-}
-
-
-const returnDataProviders = async (params) => {
-  let {query, type, status, orderNew , id_type_provider} = params;
-  let isSearchPos = type === 'pos' ? true : false;   
-  let optionsDb = {
-      order: [orderNew],
-      where: { 
-          [Op.and]: [
-              { status },
-              id_type_provider ? {id_type_provider}: {}
-          ]
-      },
-      include: [ { association: 'category'},{ association: 'sector'}, { association: 'type'}]
-  };
-  if(isSearchPos) type = null;
-  if(isSearchPos) optionsDb.where[Op.or] = [
-      { full_names: { [Op.iLike]: `%${query}%`}},
-      { number_document: { [Op.iLike]: `%${query}%`}},
-      { name_contact: { [Op.iLike]: `%${query}%`}},
-  ];
-  return await ViewProviderTotals.findAll(optionsDb); 
-}
-
+    console.error('Error generar Excel proveedores:', error.message);
+    if (!res.headersSent) res.status(error.statusCode || 500).json({ ok: false, errors: [{ msg: error.statusCode ? error.message : 'No se pudo generar el Excel de proveedores' }] });
+  }
+};
 module.exports = {
   generateExcelProviders,
 }

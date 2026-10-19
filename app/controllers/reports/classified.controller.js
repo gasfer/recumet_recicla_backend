@@ -1,17 +1,14 @@
+const { classifiedReportContext, classifiedExcel, titleFor } = require('../../services/classified-report-presentation.service');
+const { classifiedMaterialFilter } = require('../../services/classified-material-filter');
 const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
-const { Classified, DetailsClassified,sequelize } = require('../../database/config');
-const path = require('path');
-const fs = require('fs');
+const { Classified, DetailsClassified, sequelize } = require('../../database/config');
 const moment = require('moment');
 const NumeroALetras = require("../../helpers/numeros-aletras");
 const { whereDateForType } = require("../../helpers/where_range");
-const { getReportLogoPath } = require('../../helpers/report-logo');
-const imagePath = getReportLogoPath();
-const ExcelJS = require('exceljs');
-const { response } = require("express");
+const { response, request } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
@@ -22,7 +19,7 @@ moment.locale('es');
 
 const generatePdfReports = async (req = request, res = response) => {
     try {
-        const { filterBy, date1, date2} = req.query;
+        const { filterBy, date1, date2, id_sucursal} = req.query;
         const classifieds = await returnDataClassified(req.query);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
         let total = 0;
@@ -33,7 +30,7 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:moment(classified?.date_classified).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:classified?.type_registry, fontSize:9}, 
                 {text:classified?.number_registry, fontSize:9}, 
-                {text:classified?.scale.name, fontSize:9}, 
+                {text:classified?.scale?.name, fontSize:9}, 
                 {text:classified?.comments, fontSize:9}, 
                 {text:classified?.product?.name, fontSize:9}, 
                 {text:classified?.cost_product, fontSize:9}, 
@@ -55,8 +52,10 @@ const generatePdfReports = async (req = request, res = response) => {
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
-            title: 'REPORTE DE CLASIFICADOS TOTALIZADOS', paper: 'A4', orientation: 'landscape',
-            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            title: titleFor(false), paper: 'A4', orientation: 'landscape',
+            ...(await classifiedReportContext(req.query, req.userAuth)),
+            reportTheme: 'recumet',
+            
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'classified-generatePdfReports.pdf');
@@ -94,75 +93,19 @@ const dataPdfReturn = (auth) => [
 
 const generateExcelReports = async (req = request, res = response) => {
   try {
-    const classifieds = await returnDataClassified(req.query);
-    let classified_data = [];
-    if (classifieds.length == 0) {
-    classified_data.push({
-        CÓDIGO: '',
-        FECHA_CLASIFICACIÓN: '',
-        TIPO_DOC: '',
-        NRO_DOC: '',
-        BALANZA: '',
-        COMENTARIOS: '',
-        PRODUCTO: '',
-        COSTO: '',
-        CANTIDAD: '',
-      });
-    }
-    classifieds.forEach(classified => {
-      const tableData = {
-        CÓDIGO: classified.cod,
-        FECHA_CLASIFICACIÓN: classified.date_classified,
-        TIPO_DOC: classified?.type_registry,
-        NRO_DOC: classified?.number_registry,
-        BALANZA: classified?.scale.name,
-        COMENTARIOS: classified?.comments,
-        PRODUCTO: classified?.product?.name,
-        COSTO: classified?.cost_product,
-        CANTIDAD: classified?.quantity_product,
-      }
-      classified_data.push(tableData);
-    });
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(`Clasificados totales`);
-    // Agregar encabezados
-    const headers = Object.keys(classified_data[0]);
-    worksheet.addRow(headers);
-    // Agregar datos
-    classified_data.forEach(data => {
-      const row = [];
-      headers.forEach(header => {
-        row.push(data[header]);
-      });
-      worksheet.addRow(row);
-    });
-    worksheet.getColumn('A').width = 15; 
-    worksheet.getColumn('B').width = 20; 
-    worksheet.getColumn('C').width = 25; 
-    worksheet.getColumn('D').width = 25; 
-    worksheet.getColumn('E').width = 20; 
-    worksheet.getColumn('F').width = 50; 
-    worksheet.getColumn('G').width = 50; 
-    worksheet.getColumn('H').width = 15; 
-    worksheet.getColumn('I').width = 15; 
+    const rows = await returnDataClassified(req.query);
+    const decimal = await getNumberDecimal();
+    const context = await classifiedReportContext(req.query, req.userAuth);
+    const workbook = classifiedExcel(rows, decimal, context, false);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=clasificados-report.xlsx`);
-    workbook.xlsx.write(res)
-      .then(() => {
-        res.end();
-      })
-      .catch(err => {
-        console.error('Error generar Excel:', err);
-        res.status(500).json({ error: 'Error al crear excel' });
-      })
+    res.setHeader('Content-Disposition', 'attachment; filename=clasificados.xlsx');
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (error) {
-    console.log(error);
-    return res.status(500).json({
-      ok: false,
-      errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
-  });
-  };
-}
+    console.error(error);
+    return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar el Excel de clasificados.' }] });
+  }
+};
 
 const returnDataClassified = async (params) => {
     const {type_registry,id_product, id_sucursal, id_storage, status, filterBy, date1, date2, orderNew} = params;
@@ -177,13 +120,14 @@ const returnDataClassified = async (params) => {
                 id_sucursal   ? { id_sucursal   } : {},
                 id_storage    ? { id_storage   } : {},
                 type_registry ? { type_registry } : {},
-                id_product    ? { id_product   } : {},
+                ...classifiedMaterialFilter(params),
                 status        ? { status } : {},
                 { date_classified: whereDate }
             ]
         },
         include: [ 
             { association: 'scale', attributes: ['name']},
+            { association: 'sucursal', attributes: ['name', 'city', 'email'], include: [{ association: 'company', attributes: ['nit', 'email'] }] },
             { association: 'product',  attributes: [
                 [sequelize.literal(`CONCAT("product"."cod",' - ' ,"product"."name")`), 'name'],
               ],
@@ -196,7 +140,7 @@ const returnDataClassified = async (params) => {
 
 const generatePdfDetailsReports = async (req = request, res = response) => {
     try {
-        const {filterBy, date1, date2} = req.query;
+        const {filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const detailsClassified = await returnDataDetailsClassified(req.query);
         let dataPdf = dataDetailsPdfReturn(req.userAuth); //PDF 
@@ -220,8 +164,10 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
-            title: 'REPORTE DE CLASIFICADOS DETALLADOS', paper: 'A4', orientation: 'landscape',
-            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            title: titleFor(true), paper: 'A4', orientation: 'landscape',
+            ...(await classifiedReportContext(req.query, req.userAuth)),
+            reportTheme: 'recumet',
+            
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'classified-generatePdfDetailsReports.pdf');
@@ -253,62 +199,20 @@ const dataDetailsPdfReturn = (auth) => [
 ];
 
 const generateExcelDetailsReports = async (req = request, res = response) => {
-    try {
-        const detailsClassified = await returnDataDetailsClassified(req.query)
-        let detailsInput_data = [];
-        if (detailsClassified.length == 0) {
-            detailsInput_data.push({
-                CÓDIGO: '',
-                PRODUCTO: '',
-                COSTO: '',
-                CANTIDAD: '',
-            });
-        }
-        detailsClassified.forEach(detail => {
-            const tableData = {
-                CÓDIGO: detail?.product.cod,
-                PRODUCTO: detail?.product.name,
-                COSTO: Number(detail?.cost),
-                CANTIDAD:Number(detail?.dataValues.suma_quantity),
-            }
-            detailsInput_data.push(tableData);
-        });
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet(`Clasificados detalladas`);
-        // Agregar encabezados
-        const headers = Object.keys(detailsInput_data[0]);
-        worksheet.addRow(headers);
-        // Agregar datos
-        detailsInput_data.forEach(data => {
-            const row = [];
-            headers.forEach(header => {
-                row.push(data[header]);
-            });
-            worksheet.addRow(row);
-        });
-        worksheet.getColumn('A').width = 15; 
-        worksheet.getColumn('B').width = 50; 
-        worksheet.getColumn('C').width = 20; 
-        worksheet.getColumn('D').width = 20; 
-        worksheet.getColumn('E').width = 20; 
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', `attachment; filename=compras-detalle-report.xlsx`);
-        workbook.xlsx.write(res)
-            .then(() => {
-                res.end();
-            })
-            .catch(err => {
-                console.error('Error generar Excel:', err);
-                res.status(500).json({ error: 'Error al crear excel' });
-            })
-    } catch (error) {
-      console.log(error);
-      return res.status(500).json({
-        ok: false,
-        errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
-    });
-    };
-}
+  try {
+    const rows = await returnDataDetailsClassified(req.query);
+    const decimal = await getNumberDecimal();
+    const context = await classifiedReportContext(req.query, req.userAuth);
+    const workbook = classifiedExcel(rows, decimal, context, true);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=clasificados-detalle.xlsx');
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar el Excel de clasificados.' }] });
+  }
+};
 
 const returnDataDetailsClassified = async (params) => {
     const {type_registry,id_product, id_sucursal, id_storage, status, filterBy, date1, date2} = params;
@@ -331,7 +235,7 @@ const returnDataDetailsClassified = async (params) => {
                             id_sucursal   ? { id_sucursal   } : {},
                             id_storage    ? { id_storage   } : {},
                             type_registry ? { type_registry } : {},
-                            id_product    ? { id_product   } : {},
+                            ...classifiedMaterialFilter(params),
                             status ? { status } : {},
                             { date_classified: whereDate }
                         ]

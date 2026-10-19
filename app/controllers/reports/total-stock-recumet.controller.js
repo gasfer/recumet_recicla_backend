@@ -1,10 +1,10 @@
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
-const { selectedReportFilters, writeFilterHeader } = require('../../services/report-selected-filters.service');
+const { selectedReportFilters } = require('../../services/report-selected-filters.service');
 const { stockProviderCondition } = require('../../services/stock-provider-filter.service');
 const { response, request } = require("express");
 const { Op } = require("sequelize");
-const { sequelize, ViewKardex } = require("../../database/config");
+const { sequelize, ViewKardex, Sucursal } = require("../../database/config");
 const path = require("path");
 const fs = require("fs");
 const moment = require("moment");
@@ -12,7 +12,7 @@ const { whereDateForType } = require("../../helpers/where_range");
 const ExcelJS = require("exceljs");
 const { getNumberDecimal } = require("../../helpers/company");
 const { buildConsolidatedInventoryProjection } = require("../../services/inventory-consolidated-query.service");
-const { generateConsolidatedInventoryExcel } = require("../../services/inventory-consolidated-excel.service");
+const { generateConsolidatedInventoryExcel, writeInventoryReportHeader } = require("../../services/inventory-consolidated-excel.service");
 const { REPORT_COLORS, solidFill, reportThinBorder } = require('../../constants/report-style.constants');
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 moment.locale("es");
@@ -497,9 +497,24 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         const formatDate2 = filterBy == "MONTH" ? "YYYY" : "DD-MM-YYYY";
         const tables = dataPdf.filter(node => node?.table?.body?.length && node.table.headerRows > 0);
         const sections = tables.map(table => tabularReport(table.table, {}));
+        const selectedFilterLines = (await selectedReportFilters(req.query)).split('\n').filter(Boolean);
+        const filtersByLabel = selectedFilterLines.reduce((filters, line) => {
+            const separator = line.indexOf(':');
+            if (separator < 0) return filters;
+            const label = line.slice(0, separator).trim();
+            const value = line.slice(separator + 1).trim();
+            if (value) filters[label] = value;
+            return filters;
+        }, {});
+        const filterGroups = [
+            { label: 'Sucursales', items: [{ label: 'Seleccionadas', value: filtersByLabel['Sucursales'] }].filter(item => item.value) },
+            { label: 'Catálogo', items: ['Categorías', 'Productos', 'Tipo de proveedor', 'Proveedor'].filter(label => filtersByLabel[label]).map(label => ({ label, value: filtersByLabel[label] })) },
+            { label: 'Criterios', items: ['Tipo filtrado', 'Fecha', 'Saldos cero', 'Búsqueda'].filter(label => filtersByLabel[label]).map(label => ({ label, value: filtersByLabel[label] })) },
+        ].filter(group => group.items.length);
+        if (req.userAuth?.full_names) filterGroups.push({ label: 'Generado por', items: [{ label: 'Usuario', value: req.userAuth.full_names }] });
         await sendReportPdf(res, {
-            title: 'STOCK TOTAL RECUMET', paper: 'A4', orientation: 'portrait', sections,
-            filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
+            title: 'STOCK TOTAL RECUMET', paper: 'A4', orientation: 'portrait', sections, reportTheme: 'stock', filterGroups,
+            company: await resolveReportCompany(id_sucursal || id_sucursales),
         }, 'generatePdfReportsTotalStock.pdf');
     } catch (error) {
         console.error("Error generating PDF:", error);
@@ -508,6 +523,13 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
             errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte` }],
         });
     }
+};
+
+const resolveReportCompany = async idsValue => {
+    const ids = String(idsValue || '').split(',').map(Number).filter(id => Number.isInteger(id) && id > 0);
+    if (ids.length !== 1) return { branchName: ids.length ? 'Varias sucursales' : 'CASA MATRIZ' };
+    const branch = await Sucursal.findByPk(ids[0], { include: [{ association: 'company', attributes: ['nit', 'email'] }] });
+    return branch ? { branchName: branch.name, city: branch.city, nit: branch.company?.nit, email: branch.email || branch.company?.email } : { branchName: 'CASA MATRIZ' };
 };
 
 const generateExcelReportsTotalStock = async (req = request, res = response) => {
@@ -696,11 +718,16 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         const thinBorder = reportThinBorder;
         
         const selectedFilters = await selectedReportFilters(req.query);
-        if (selectedFilters) {
-            worksheet.addRow([selectedFilters]);
-            worksheet.mergeCells(1, 1, 1, 4);
-            writeFilterHeader(worksheet, { row: 1, toColumn: 4, text: selectedFilters });
-        }
+        const filterLines = String(selectedFilters || '').split(/\r?\n/);
+        const cutoff = filterLines.find(filter => /^Fecha:/i.test(filter))?.replace(/^Fecha:\s*/i, '') || '';
+        const mode = filterLines.find(filter => /^Tipo filtrado:/i.test(filter))?.replace(/^Tipo filtrado:\s*/i, '') || '';
+        writeInventoryReportHeader(worksheet, {
+            workbook,
+            totalColumns: 4,
+            title: 'CONSOLIDADO DE INVENTARIO (MATERIA PRIMA Y PRODUCTOS TERMINADOS)',
+            context: [`CORTE: ${cutoff}`, `MODO: ${mode}`].filter(Boolean).join(' | '),
+            selectedFilters,
+        });
         const headerRow = worksheet.addRow(headers);
         headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
         headerRow.eachCell((cell) => {
@@ -759,7 +786,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
 
                 // Add group header row in Excel
                 const catRow = worksheet.addRow([categoryName.toUpperCase()]);
-                catRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+                catRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
                 worksheet.mergeCells(`A${catRow.number}:D${catRow.number}`);
                 
                 for (let i = 1; i <= 4; i++) {
@@ -797,8 +824,13 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
 
         // Add Resumen por Sucursal Section
         const subTitleRow = worksheet.addRow(["RESUMEN POR SUCURSAL"]);
-        subTitleRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+        subTitleRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
         worksheet.mergeCells(`A${subTitleRow.number}:D${subTitleRow.number}`);
+        for (let column = 1; column <= 4; column++) {
+            const cell = subTitleRow.getCell(column);
+            cell.fill = solidFill(REPORT_COLORS.subheader);
+            cell.border = thinBorder;
+        }
 
         const sucHeaderRow = worksheet.addRow([
             "SUCURSAL",
@@ -806,7 +838,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             "TOTAL (PT)",
             "TOTAL GENERAL"
         ]);
-        sucHeaderRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+        sucHeaderRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
         sucHeaderRow.eachCell((cell) => {
             cell.fill = solidFill(REPORT_COLORS.subheader);
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -843,7 +875,7 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             totalSaldoPt,
             totalSaldo
         ]);
-        consRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F3D99' } };
+        consRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
         for (let i = 1; i <= 3; i++) {
             const cell = consRow.getCell(i);
             cell.fill = solidFill(REPORT_COLORS.total);
@@ -865,12 +897,14 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         // Auto-fit column widths
         worksheet.columns.forEach(column => {
             let maxLen = 0;
-            column.eachCell({ includeEmpty: true }, cell => {
+            column.eachCell({ includeEmpty: true }, (cell, rowNumber) => {
+                if (rowNumber <= 2) return;
                 const len = cell.value ? String(cell.value).length : 0;
                 if (len > maxLen) maxLen = len;
             });
             column.width = Math.max(maxLen + 4, 12);
         });
+        worksheet.getColumn(1).width = Math.max(worksheet.getColumn(1).width || 0, 30);
 
         res.setHeader(
             "Content-Type",

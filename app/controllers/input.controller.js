@@ -1,3 +1,6 @@
+const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('../services/purchase-report-filters.service');
+const { queryPurchaseReportTotals } = require('../services/purchase-report-query.service');
+const { providerCommercialFilter } = require('../services/provider-commercial-filter');
 const { response, request } = require('express');
 const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
 const paginate = require('../helpers/paginate');
@@ -41,21 +44,21 @@ const getInputFindOne = async (req = request, res = response) => {
     try {
         const { id_input } = req.params;
         const optionsDb = {
-            include: [ 
+            include: [
                 { association: 'provider' },
                 { association: 'sucursal',attributes: ['name'] },
                 { association: 'storage',attributes: ['name'] },
                 { association: 'scale', attributes: ['name']},
                 { association: 'user', attributes: ['full_names','number_document']},
                 { association: 'bank'},
-                { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false, attributes: {exclude: ['id_input','createdAt','updatedAt']}, 
+                { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false, attributes: {exclude: ['id_input','createdAt','updatedAt']},
                     include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
                                 attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
                 },
                 { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
             ]
         };
-        let input = await Input.findByPk(id_input, optionsDb); 
+        let input = await Input.findByPk(id_input, optionsDb);
         return res.status(200).json({
             ok: true,
             input,
@@ -71,83 +74,43 @@ const getInputFindOne = async (req = request, res = response) => {
 
 const getInputsPaginate = async (req = request, res = response) => {
     try {
-        const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry, 
+        const {query, page, limit, type, id_sucursal, id_storage, type_pay, type_registry,
                 id_provider, status, filterBy, date1, date2, orderNew, referral_sources, id_type_provider,
                 old_customer, with_pickup, field_sort, order
             } = req.query;
         const sucursalIds = parseIds(id_sucursal);
         const storageIds = parseIds(id_storage);
-        const whereDate = whereDateForType(filterBy,date1, date2, '"Input"."date_voucher"');
-        const whereDateSum = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
-        const where = {
-            [Op.and]: [
-                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
-                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
-                type_pay      ? { type:type_pay } : {},
-                type_registry ? { type_registry } : {},
-                id_provider   ? { id_provider   } : {},
-                { status: status || 'ACTIVE' },
-                { date_voucher: whereDate },
-                referral_sources ? { referral_sources } : {},
-                old_customer ? { old_customer: old_customer == 'SI' } : {},
-                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
-            ]
-        };
-        const whereSum = {
-            [Op.and]: [
-                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
-                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
-                type_pay      ? { type:type_pay } : {},
-                type_registry ? { type_registry } : {},
-                id_provider   ? { id_provider   } : {},
-                { status: status || 'ACTIVE' },
-                { date_voucher: whereDateSum },
-                referral_sources ? { referral_sources } : {},
-                old_customer ? { old_customer: old_customer == 'SI' } : {},
-                with_pickup   ? { with_pickup: with_pickup == 'SI'} : {},
-            ]
-        };
+        const where = buildPurchaseReportWhere(normalizePurchaseReportFilters(req.query));
         const optionsDb = {
             order: [getOperationalOrder({ field_sort, order, orderNew })],
             where,
-            include: [ 
+            include: [
                 {
                     association: 'provider',
-                    where: id_type_provider ? { id_type_provider } : {},
-                    include: [{association: 'type', attributes: ['name']}],
+                    required: true,
+                    where: { ...providerCommercialFilter(req.query.id_commercial_user, req.query.id_type_provider ? req.query.entity_type : null), ...(id_type_provider ? { id_type_provider } : {}) },
+                    include: [{association: 'type', attributes: ['id', 'code', 'name']}],
                 },
-                  
+
                 { association: 'sucursal',attributes: ['name'] },
                 { association: 'storage',attributes: ['name'] },
                 { association: 'scale', attributes: ['name']},
                 { association: 'user', attributes: ['full_names','number_document']},
                 { association: 'bank'},
-                { association: 'detailsInput', where: { status: 'ACTIVE' }, required: false, attributes: {exclude: ['id_input','createdAt','updatedAt']}, 
+                { association: 'detailsInput', where: { status: 'ACTIVE', removed_at: null }, required: false, attributes: {exclude: ['id_input','createdAt','updatedAt']},
                     include: [{ association: 'product', include: [{association: 'category'},{association: 'unit'}],
                                 attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']},}]
                 },
                 { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
             ]
         };
-        let inputs = await paginate(Input, page, limit, type, query, optionsDb); 
+        const searchQuery = String(query ?? '').trim();
+        let inputs = await paginate(Input, page, limit, searchQuery ? type : '', searchQuery, optionsDb);
         for (const input of inputs.data) {
             input.dataValues.total_quantity = input.detailsInput.reduce((acc, item) => acc + Number(item.quantity), 0);
         }
-        const totalInput = await Input.sum('total', {where});
-        
-        const totalQuantity = await DetailsInput.sum('quantity', {
-            include: [
-                {
-                    attributes: [],
-                    association: 'input',
-                    where: whereSum
-                }
-            ]
-        });
-        inputs.totals = {
-            totalInput,
-            totalQuantity
-        }
+        const totals = await queryPurchaseReportTotals({ ...req.query, type, query });
+        inputs.totals = { totalInput: totals.total_amount, totalQuantity: totals.kg_quantity };
         return res.status(200).json({
             ok: true,
             inputs,
@@ -178,7 +141,7 @@ const newInput = async (req = request, res = response) => {
         //number default, not ficha
         if(type_registry === 'SIN FICHA') {
             const lastInput = await Input.findOne({
-                where: { 
+                where: {
                     type_registry: 'SIN FICHA',
                     registry_number: { [Op.or]: [
                         { [Op.like]: 'SF-%' },
@@ -301,7 +264,7 @@ const newInput = async (req = request, res = response) => {
             id_sucursal,
             id_reference: input.id,
             status: true
-        }, { transaction: t }); 
+        }, { transaction: t });
         await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
         return res.status(201).json({
@@ -341,7 +304,7 @@ const updateInput = async (req = request, res = response) => {
         input_data.updated_by = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
         const input_old = await Input.findByPk(id_input,{
-            include: [ 
+            include: [
                 { association: 'provider'},
                 { association: 'scale'},
                 { association: 'user'},
@@ -390,7 +353,7 @@ const updateInput = async (req = request, res = response) => {
         if (type_registry === 'SIN FICHA') {
             if (!input_old.registry_number || input_old.type_registry != 'SIN FICHA') {
                 const lastInput = await Input.findOne({
-                    where: { 
+                    where: {
                         type_registry: 'SIN FICHA',
                         registry_number: { [Op.or]: [
                             { [Op.like]: 'SF-%' },
@@ -408,13 +371,13 @@ const updateInput = async (req = request, res = response) => {
                     ],
                     transaction: t
                 });
-                
+
                 let nextNumber = 1;
                 if (lastInput && lastInput.registry_number) {
                     const lastNumber = parseInt(lastInput.registry_number.split('-')[1]);
                     nextNumber = lastNumber + 1;
                 }
-                
+
                 input_data.registry_number = get_num_request('SFC-',nextNumber,5);
             } else {
                 input_data.registry_number = input_old.registry_number;
@@ -462,7 +425,7 @@ const updateInput = async (req = request, res = response) => {
             }
             persistedDetails.push(persistedDetail);
              //**ACTUALIZAR COSTO PRODUCTO */
-            // await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});     
+            // await Product.update({costo: detail.cost},{where: {id:detail.id_product},transaction: t});
             await applyDerivedStockEffect({
                 productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
                 quantity: detail.quantity, transaction: t,
@@ -580,7 +543,7 @@ const updateInput = async (req = request, res = response) => {
             action: 'UPDATE',
             id_reference: id_input,
             status: true
-        }, { transaction: t }); 
+        }, { transaction: t });
         await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
         return res.status(201).json({
@@ -709,12 +672,12 @@ const anularInput = async (req = request, res = response) => {
             id_sucursal,
             id_reference: input_anular.id,
             status: true
-        }, { transaction: t }); 
+        }, { transaction: t });
         await verifyLocationsIntegrityPreserved({ locations: integrityLocations, beforeDiagnostics: beforeIntegrity, transaction: t });
         await t.commit();
         return res.status(201).json({
             ok: true,
-            msg: "Compra anulada correctamente", 
+            msg: "Compra anulada correctamente",
         });
     } catch (error) {
         await t.rollback();
@@ -722,17 +685,17 @@ const anularInput = async (req = request, res = response) => {
         return res.status(500).json({
           ok: false,
           errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
-        });  
+        });
     }
 }
 
 const uploadFileVoucher = async (req, res) => {
     const { idInput } = req.query;
     const { keyFile, file } = req;
-    
+
     // Ensure uploads/vouchers directory exists
-    const baseUploads = process.env.RESOURCES_PATH 
-        ? path.resolve(process.env.RESOURCES_PATH) 
+    const baseUploads = process.env.RESOURCES_PATH
+        ? path.resolve(process.env.RESOURCES_PATH)
         : path.join(__dirname, '../../uploads');
     const uploadDirectory = path.join(baseUploads, 'vouchers');
     if (!fs.existsSync(uploadDirectory)) {
@@ -747,11 +710,11 @@ const uploadFileVoucher = async (req, res) => {
                 msg: `La compra con ID ${idInput} no existe`,
             });
         }
-        
+
         const extensions = ['png', 'PNG', 'jpg', 'JPG', 'jpeg', 'JPEG', 'webp', 'WEBP', 'pdf', 'PDF'];
         inputDB.payment_voucher = await fileMoveAndRemoveOld(file, inputDB.payment_voucher || '', idInput, 'vouchers', extensions);
         await inputDB.save();
-        
+
         return res.json({
             ok: true,
             msg: `Comprobante subido correctamente`,

@@ -6,7 +6,7 @@ const valueText = value => {
 };
 
 // Accept formatted table data; presentation flags from callers are deliberately omitted.
-const tabularReport = ({ body, widths = [], headerRows = 1 }, metadata) => {
+const tabularReport = ({ body, widths = [], headerRows = 1 }, metadata = {}) => {
     if (!Array.isArray(body) || !body.length) throw new Error('Tabla de reporte PDF no válida');
     const fixedWidth = widths.filter(width => typeof width === 'number').reduce((sum, width) => sum + width, 0);
     const autoCount = widths.filter(width => typeof width !== 'number').length;
@@ -25,6 +25,7 @@ const tabularReport = ({ body, widths = [], headerRows = 1 }, metadata) => {
     });
     return {
         ...metadata,
+        company: metadata.company || {},
         columns: labels.map((label, index) => ({ label: label.join(' / '), width: typeof widths[index] === 'number' ? widths[index] : autoWidth, align: body[0][index]?.alignment })),
         rows: body.slice(count).map(cells => {
             const label = valueText(cells[0]);

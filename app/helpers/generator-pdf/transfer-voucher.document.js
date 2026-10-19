@@ -17,7 +17,7 @@ const buildTransferDocument = (transfer, summary, reviewNotes = [], decimal = 2)
     }
     return {
         variant: 'voucher', panelLayout: reception ? 'three-columns' : 'two-columns', title: reception ? 'GUÍA DE RECEPCIÓN' : 'GUÍA DE TRASLADO', reference: transfer.cod,
-        date: moment(reception ? transfer.date_received : transfer.date_send).format('DD/MM/YYYY HH:mm:ss'), company: { branchName: transfer.sucursal_send?.name },
+        date: moment(reception ? transfer.date_received : transfer.date_send).format('DD/MM/YYYY HH:mm:ss'), company: companyData(transfer.sucursal_send),
         paper: details.length <= 6 ? 'HALF_LETTER' : 'LETTER', orientation: reception ? 'landscape' : 'portrait',
         panels: [
             { title: 'ORIGEN', fields: [field('Sucursal', transfer.sucursal_send?.name), field('Almacén', transfer.storage_send?.name), field('Fecha envío', moment(transfer.date_send).format('DD/MM/YYYY HH:mm:ss'))] },

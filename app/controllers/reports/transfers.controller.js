@@ -2,7 +2,7 @@ const { buildTransferDocument } = require('../../helpers/generator-pdf/transfer-
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
-const { Transfers, TransferReviewNote } = require('../../database/config');
+const { Transfers, TransferReviewNote, Sucursal } = require('../../database/config');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -47,6 +47,7 @@ const generatePdfReports = async (req = request, res = response) => {
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE TRASLADOS', paper: 'A4', orientation: 'landscape',
+            company: await resolveReportCompany(req.query.id_sucursal_send),
             filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
@@ -56,6 +57,13 @@ const generatePdfReports = async (req = request, res = response) => {
         return res.status(500).json({ ok: false, msg: 'Error al generar el reporte PDF de traslados' });
     }
 }
+
+const resolveReportCompany = async idSucursal => {
+    const id = Number(idSucursal);
+    if (!Number.isInteger(id) || id <= 0) return { branchName: 'CASA MATRIZ' };
+    const branch = await Sucursal.findByPk(id, { include: [{ association: 'company', attributes: ['nit', 'email'] }] });
+    return branch ? { branchName: branch.name, city: branch.city, nit: branch.company?.nit, email: branch.email || branch.company?.email } : { branchName: 'CASA MATRIZ' };
+};
 
 const dataPdfReturn = (auth) => [
     ...buildStandardReportHeader({ title: 'REPORTE DE TRASLADOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
@@ -172,7 +180,7 @@ const returnDataTransfer = async (params) => {
             ]
         },
         include: [
-            {association: 'sucursal_send', attributes: ['name']},
+            {association: 'sucursal_send', attributes: ['name', 'city', 'email', 'cellphone'], include: [{ association: 'company', attributes: ['nit', 'email'] }]},
             {association: 'sucursal_received', attributes: ['name']},
             {association: 'storage_send', attributes: ['name']},
             {association: 'storage_received', attributes: ['name']},
@@ -184,7 +192,7 @@ const returnDataTransfer = async (params) => {
 }
 
 const transferVoucherIncludes = [
-    {association: 'sucursal_send', attributes: ['name']},
+    {association: 'sucursal_send', attributes: ['name', 'city', 'email', 'cellphone'], include: [{ association: 'company', attributes: ['nit', 'email'] }]},
     {association: 'sucursal_received', attributes: ['name']},
     {association: 'storage_send', attributes: ['name']},
     {association: 'storage_received', attributes: ['name']},
