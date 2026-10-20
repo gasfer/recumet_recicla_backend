@@ -103,9 +103,25 @@ const getValidateCreateChauffeur = [
     validatedResponse
 ];
 
+const getValidateUpdateChauffeur = [
+    checkSchema({
+        id: { in: ['params'], custom: { options: idExistChauffeur } },
+        ...validationSchemaChauffeur,
+    }),
+    validatedResponse,
+];
+
 const getValidateCreateCargoTruck = [
     checkSchema(validationSchemaCargoTruck),
     validatedResponse
+];
+
+const getValidateUpdateCargoTruck = [
+    checkSchema({
+        id: { in: ['params'], custom: { options: idExistCargoTruck } },
+        ...validationSchemaCargoTruck,
+    }),
+    validatedResponse,
 ];
 
 const getValidateUpdate= [
@@ -151,7 +167,9 @@ module.exports = {
     validateDelete,
     validateDeleteChauffeur,
     getValidateCreateChauffeur,
+    getValidateUpdateChauffeur,
     getValidateCreateCargoTruck,
+    getValidateUpdateCargoTruck,
     validateDeleteCargoTruck
 }
 

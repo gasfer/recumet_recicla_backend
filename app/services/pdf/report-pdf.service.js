@@ -27,7 +27,9 @@ function createPdfRenderer({ launch = options => puppeteer.launch(options), conc
         if (!browserPromise) {
             const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH;
             if (executablePath && !fs.existsSync(executablePath)) throw new Error('Ejecutable Chromium no encontrado');
-            browserPromise = launch({ headless: true, timeout, ...(executablePath ? { executablePath } : {}), args: process.env.PDF_DISABLE_SANDBOX === 'true' ? ['--no-sandbox', '--disable-setuid-sandbox'] : [] }).then(instance => {
+            const args = ['--disable-dev-shm-usage'];
+            if (process.env.PDF_DISABLE_SANDBOX === 'true') args.push('--no-sandbox', '--disable-setuid-sandbox');
+            browserPromise = launch({ headless: true, timeout, ...(executablePath ? { executablePath } : {}), args }).then(instance => {
                 instance.once('disconnected', () => { browserPromise = undefined; });
                 return instance;
             }).catch(error => { browserPromise = undefined; throw error; });

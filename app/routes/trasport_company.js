@@ -1,8 +1,8 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getTrasportCompanyPaginate, newTrasportCompany, updateTrasportCompany, newChauffeur, deleteChauffeur, activeInactiveTrasportCompany, newCargoTrucks, deleteCargoTrucks } = require('../controllers/trasport_company');
-const { validateDelete, getValidateUpdate, getValidateCreate, validateDeleteChauffeur, getValidateCreateChauffeur, getValidateCreateCargoTruck, validateDeleteCargoTruck } = require('../middlewares/validators/trasport_company');
+const { getTrasportCompanyPaginate, newTrasportCompany, updateTrasportCompany, newChauffeur, updateChauffeur, deleteChauffeur, activeInactiveTrasportCompany, newCargoTrucks, updateCargoTruck, deleteCargoTrucks } = require('../controllers/trasport_company');
+const { validateDelete, getValidateUpdate, getValidateCreate, validateDeleteChauffeur, getValidateCreateChauffeur, getValidateUpdateChauffeur, getValidateCreateCargoTruck, getValidateUpdateCargoTruck, validateDeleteCargoTruck } = require('../middlewares/validators/trasport_company');
 
 const router = Router();
 
@@ -103,6 +103,12 @@ router.post('/chauffeur', [
     getValidateCreateChauffeur
 ], newChauffeur);
 
+router.put('/chauffeur/:id', [
+    validarJWT,
+    toUpperCaseConvert,
+    getValidateUpdateChauffeur
+], updateChauffeur);
+
 /**
  * @swagger
  * /transport_company/chauffeur/{id}:
@@ -139,6 +145,12 @@ router.post('/cargo_truck', [
     toUpperCaseConvert,
     getValidateCreateCargoTruck
 ], newCargoTrucks);
+
+router.put('/cargo_truck/:id', [
+    validarJWT,
+    toUpperCaseConvert,
+    getValidateUpdateCargoTruck
+], updateCargoTruck);
 
 /**
  * @swagger

@@ -99,6 +99,18 @@ const newChauffeur = async (req = request, res = response ) => {
     }
 }
 
+const updateChauffeur = async (req = request, res = response) => {
+    try {
+        const chauffeur = await Chauffeurs.findByPk(req.params.id);
+        if (!chauffeur) return res.status(404).json({ ok: false, errors: [{ msg: 'El conductor no existe' }] });
+        await chauffeur.update(req.body);
+        return res.status(200).json({ ok: true, chauffeur });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ ok: false, errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }] });
+    }
+}
+
 const deleteChauffeur = async (req = request, res = response ) => {
     try {
         const { id } = req.params;
@@ -134,6 +146,18 @@ const newCargoTrucks = async (req = request, res = response ) => {
     }
 }
 
+const updateCargoTruck = async (req = request, res = response) => {
+    try {
+        const cargo_truck = await Cargo_truck.findByPk(req.params.id);
+        if (!cargo_truck) return res.status(404).json({ ok: false, errors: [{ msg: 'El camión no existe' }] });
+        await cargo_truck.update(req.body);
+        return res.status(200).json({ ok: true, cargo_truck });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ ok: false, errors: [{ msg: 'Ocurrió un imprevisto interno | hable con soporte' }] });
+    }
+}
+
 const deleteCargoTrucks = async (req = request, res = response ) => {
     try {
         const { id } = req.params;
@@ -158,7 +182,9 @@ module.exports = {
     updateTrasportCompany,
     activeInactiveTrasportCompany,
     newChauffeur,
+    updateChauffeur,
     deleteChauffeur,
     newCargoTrucks,
+    updateCargoTruck,
     deleteCargoTrucks
 };

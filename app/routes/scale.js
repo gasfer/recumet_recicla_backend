@@ -1,10 +1,24 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getScalePaginate, newScale, updateScale, activeInactiveScale } = require('../controllers/scalas.controller');
+const { readHardwareWeight, getScalePaginate, newScale, updateScale, activeInactiveScale } = require('../controllers/scalas.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete } = require('../middlewares/validators/scala');
 
 const router = Router();
+
+/**
+ * @swagger
+ * /scale/read-weight:
+ *   get:
+ *     summary: Leer el peso actual de la balanza camionera configurada en el servidor
+ *     tags: [Scales]
+ *     responses:
+ *       200:
+ *         description: Peso actual en kilogramos
+ *       503:
+ *         description: Balanza sin configurar o sin conexión
+ */
+router.get('/read-weight', [validarJWT], readHardwareWeight);
 
 
 /**

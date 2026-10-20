@@ -1,6 +1,15 @@
 const { response, request } = require('express');
-const { Sucursal } = require('../database/config');
+const { Sucursal, Storage, sequelize } = require('../database/config');
 const paginate = require('../helpers/paginate');
+
+const createStoragesForBranch = async (names, branchId, transaction) => {
+    if (!Array.isArray(names) || names.length === 0) return [];
+    return Storage.bulkCreate(names.map(name => ({
+        name: String(name).trim(),
+        id_sucursal: branchId,
+        status: true,
+    })), { transaction });
+};
 
 const getSucursalPaginate = async (req = request, res = response) => {
     try {
@@ -26,9 +35,13 @@ const getSucursalPaginate = async (req = request, res = response) => {
 
 const newSucursal = async (req = request, res = response ) => {
     try {
-        let body = req.body;
+        const { storageNames = [], ...body } = req.body;
         body.id_company = 1;
-        const sucursal = await Sucursal.create(body);
+        const sucursal = await sequelize.transaction(async transaction => {
+            const branch = await Sucursal.create(body, { transaction });
+            await createStoragesForBranch(storageNames, branch.id, transaction);
+            return branch;
+        });
         return res.status(201).json({
             ok: true,
             sucursal
@@ -45,9 +58,15 @@ const newSucursal = async (req = request, res = response ) => {
 const updateSucursal = async (req = request, res = response) => {
     try {
         const { id } = req.params;
-        const body = req.body;
-        const sucursal = await Sucursal.findByPk(id);
-        await sucursal.update(body);
+        const { storageNames = [], ...body } = req.body;
+        const sucursal = await sequelize.transaction(async transaction => {
+            const branch = await Sucursal.findByPk(id, { transaction });
+            if (!branch) return null;
+            await branch.update(body, { transaction });
+            await createStoragesForBranch(storageNames, branch.id, transaction);
+            return branch;
+        });
+        if (!sucursal) return res.status(404).json({ ok: false, errors: [{ msg: 'La sucursal no existe' }] });
         return res.status(201).json({
             ok: true,
             msg: 'Sucursal modificada exitosamente'

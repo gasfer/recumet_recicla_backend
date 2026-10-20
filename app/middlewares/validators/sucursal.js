@@ -1,6 +1,44 @@
 const { validatedResponse } = require('../validated-response');
 const { checkSchema } = require('express-validator');
 const { nameExistSucursal, idExistSucursal } = require('./database');
+const { Storage } = require('../../database/config');
+
+const storageNamesSchema = {
+    storageNames: {
+        optional: { options: { nullable: true } },
+        isArray: {
+            options: { max: 20 },
+            errorMessage: 'Puede agregar hasta 20 almacenes por sucursal',
+        },
+        custom: {
+            options: async (names, { req }) => {
+                if (!Array.isArray(names)) return true;
+                if (names.some(name => typeof name !== 'string' || name.trim().length < 4 || name.trim().length > 174)) {
+                    throw new Error('Cada almacén debe tener entre 4 y 174 caracteres');
+                }
+
+                const normalized = names.map(name => name.trim().toLocaleUpperCase());
+                if (new Set(normalized).size !== normalized.length) {
+                    throw new Error('No puede repetir nombres de almacén en la misma solicitud');
+                }
+
+                if (req.params.id && normalized.length) {
+                    const existingStorages = await Storage.findAll({
+                        where: { id_sucursal: req.params.id },
+                        attributes: ['name'],
+                        raw: true,
+                    });
+                    const existingNames = new Set(existingStorages.map(storage => String(storage.name || '').trim().toLocaleUpperCase()));
+                    if (normalized.some(name => existingNames.has(name))) {
+                        throw new Error('El nombre de un almacén ya existe en esta sucursal');
+                    }
+                }
+
+                return true;
+            },
+        },
+    },
+};
 
 const validationSchema =  {
     name: {
@@ -62,7 +100,7 @@ const validationSchema =  {
 };
 
 const getValidateCreate = [
-    checkSchema(validationSchema),
+    checkSchema({ ...validationSchema, ...storageNamesSchema }),
     validatedResponse
 ];
 
@@ -71,7 +109,8 @@ const getValidateUpdate= [
         id: {
             custom: { options: idExistSucursal},
         },
-        ...validationSchema
+        ...validationSchema,
+        ...storageNamesSchema,
     }),
     validatedResponse
 ];

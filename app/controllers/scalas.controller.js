@@ -1,6 +1,20 @@
 const { response, request } = require('express');
 const { Scale } = require('../database/config');
 const paginate = require('../helpers/paginate');
+const { readTruckScaleWeight } = require('../services/truck-scale-reader.service');
+
+const readHardwareWeight = async (req = request, res = response) => {
+    try {
+        const reading = await readTruckScaleWeight();
+        return res.status(200).json({ ok: true, ...reading, unit: 'kg' });
+    } catch (error) {
+        const statusCode = Number.isInteger(error.statusCode) ? error.statusCode : 503;
+        return res.status(statusCode).json({
+            ok: false,
+            errors: [{ msg: error.message || 'No se pudo leer el peso de la balanza.' }],
+        });
+    }
+};
 
 const getScalePaginate = async (req = request, res = response) => {
     try {
@@ -79,6 +93,7 @@ const activeInactiveScale = async (req = request, res = response) => {
 }
 
 module.exports = {
+    readHardwareWeight,
     getScalePaginate,
     newScale,
     updateScale,

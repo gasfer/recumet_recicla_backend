@@ -1,6 +1,6 @@
 const moment = require('moment');
 const { decimalAdd, formatDecimalEsBo } = require('../number-formatter');
-const { field } = require('./operation-voucher.document');
+const { companyData, field } = require('./operation-voucher.document');
 const quantity = (value, decimal) => value === '-' ? '-' : formatDecimalEsBo(value || 0, decimal);
 const buildTransferDocument = (transfer, summary, reviewNotes = [], decimal = 2) => {
     const reception = Boolean(summary);
