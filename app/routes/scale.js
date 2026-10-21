@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { readHardwareWeight, getScalePaginate, newScale, updateScale, activeInactiveScale } = require('../controllers/scalas.controller');
+const { readHardwareWeight, listTruckWeighings, createFirstTruckWeight, updateTruckWeighing, completeTruckWeight, deleteTruckWeighing, getScalePaginate, newScale, updateScale, activeInactiveScale } = require('../controllers/scalas.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete } = require('../middlewares/validators/scala');
 
 const router = Router();
@@ -19,6 +19,11 @@ const router = Router();
  *         description: Balanza sin configurar o sin conexión
  */
 router.get('/read-weight', [validarJWT], readHardwareWeight);
+router.get('/truck-weighings', [validarJWT], listTruckWeighings);
+router.post('/truck-weighings', [validarJWT], createFirstTruckWeight);
+router.put('/truck-weighings/:id', [validarJWT], updateTruckWeighing);
+router.put('/truck-weighings/:id/second-weight', [validarJWT], completeTruckWeight);
+router.delete('/truck-weighings/:id', [validarJWT], deleteTruckWeighing);
 
 
 /**

@@ -112,6 +112,15 @@ const exactDivide = (left, right, scale = 4) => {
 const exactMin = (left, right) => exactAdd(exactCompare(left, right) <= 0 ? left : right, 0);
 const exactMax = (left, right) => exactAdd(exactCompare(left, right) >= 0 ? left : right, 0);
 const exactAbs = (value) => exactCompare(value, 0) < 0 ? exactSubtract(0, value) : exactAdd(value, 0);
+const exactCeil = (value, scale = getDecimalPlaces()) => {
+  normalizeScale(scale);
+  const parsed = parseExact(value);
+  if (parsed.scale <= scale) return scaledToString(parsed.units * 10n ** BigInt(scale - parsed.scale), scale);
+  const divisor = 10n ** BigInt(parsed.scale - scale);
+  let units = parsed.units / divisor;
+  if (parsed.units % divisor > 0n) units += 1n;
+  return scaledToString(units, scale);
+};
 const inventoryQuantity = (value) => decimalToString(value, getDecimalPlaces());
 
 const formatDecimalEsBo = (value, scale = getDecimalPlaces()) => new Intl.NumberFormat('es-BO', {
@@ -141,6 +150,7 @@ module.exports = {
     exactAdd,
     exactSubtract,
     exactCompare,
+    exactCeil,
     inventoryQuantity,
     exactMin, exactMax, exactAbs,
     exactMultiply, exactDivide,

@@ -1,14 +1,13 @@
 const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
-const { getDecimalPlaces } = require('./decimals-value');
-const { exactAdd, exactSubtract, exactCompare, exactMin, exactAbs } = require('./number-formatter');
+const { exactAdd, exactSubtract, exactCompare, exactMin, exactAbs, exactCeil } = require('./number-formatter');
 const { evaluateReceiptTolerance } = require('../services/transfer-reception-tolerance.service');
 
 const isValidReceivedQuantity = (value) => {
     if (value === null || value === undefined || value === '') return false;
     const str = String(value).trim();
+    if (!/^\d+(?:\.\d+)?$/.test(str)) return false;
     try {
-        const normalized = require('./number-formatter').inventoryQuantity(str);
-        return exactCompare(str, 0) >= 0 && exactCompare(normalized, 0) > 0;
+        return exactCompare(str, 0) >= 0;
     } catch (_) {
         return false;
     }
@@ -28,11 +27,11 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
         }
 
         if (!isValidReceivedQuantity(incomingDetail.quantity_received)) {
-            return { errors: [`La cantidad recibida del detalle ${detailId} debe ser un número no negativo de hasta ${getDecimalPlaces()} decimales.`] };
+            return { errors: [`La cantidad recibida del detalle ${detailId} debe ser un número no negativo válido.`] };
         }
 
         detailsById.set(detailId, {
-            quantityReceived: require('./number-formatter').inventoryQuantity(incomingDetail.quantity_received),
+            quantityReceived: exactCeil(incomingDetail.quantity_received),
             observation: incomingDetail.observation ?? null,
         });
     }
