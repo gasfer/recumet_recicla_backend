@@ -46,7 +46,7 @@ module.exports = {
           LOOP
             EXECUTE format('DROP INDEX %I', item_name);
           END LOOP;
-        END
+        END;
         $migration$;
       `, { transaction });
 
