@@ -21,7 +21,7 @@ const fileMoveAndRemoveOld = (file, fileOldName, idFrom, directory = 'imgs', ext
 
         const uploadPath = path.join(targetDirectory, nameFileTempo);
         file.mv(uploadPath, (err) => {
-            if (err) { reject(err); }
+            if (err) return reject(err);
             if (fileOldName && fileOldName !== 'NONE') {
                 deleteFile(
                     path.join(targetDirectory, fileOldName)

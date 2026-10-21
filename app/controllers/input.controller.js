@@ -691,19 +691,22 @@ const anularInput = async (req = request, res = response) => {
 
 const uploadFileVoucher = async (req, res) => {
     const { idInput } = req.query;
-    const { keyFile, file } = req;
-
-    // Ensure uploads/vouchers directory exists
-    const baseUploads = process.env.RESOURCES_PATH
-        ? path.resolve(process.env.RESOURCES_PATH)
-        : path.join(__dirname, '../../uploads');
-    const uploadDirectory = path.join(baseUploads, 'vouchers');
-    if (!fs.existsSync(uploadDirectory)) {
-        fs.mkdirSync(uploadDirectory, { recursive: true });
-    }
+    const { file } = req;
 
     try {
-        let inputDB = await Input.findByPk(idInput);
+        if (!Number.isInteger(Number(idInput)) || Number(idInput) <= 0) {
+            return res.status(422).json({ ok: false, errors: [{ msg: 'El identificador de la compra no es válido.' }] });
+        }
+
+        const baseUploads = process.env.RESOURCES_PATH
+            ? path.resolve(process.env.RESOURCES_PATH)
+            : path.join(__dirname, '../../uploads');
+        const uploadDirectory = path.join(baseUploads, 'vouchers');
+        if (!fs.existsSync(uploadDirectory)) {
+            fs.mkdirSync(uploadDirectory, { recursive: true });
+        }
+
+        const inputDB = await Input.findByPk(Number(idInput));
         if (!inputDB) {
             return res.status(404).json({
                 ok: false,
