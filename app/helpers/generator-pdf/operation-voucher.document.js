@@ -25,7 +25,7 @@ const buildOperationVoucher = (operation, { kind, decimal = 2, format } = {}) =>
     ] }] : [
         { title: purchase ? 'DATOS PROVEEDOR' : 'DATOS CLIENTE', fields: [field('Nombre', entity.full_names), field('NIT/CI', entity.number_document), field('Teléfono', entity.cellphone), field('Dirección', entity.direction)] },
     ];
-    const operationFields = [field('Registro', `${operation.type_registry || ''} NRO: ${operation.registry_number || operation.number_registry || ''}`), field('Balanza', operation.scale?.name), field('Almacén', operation.storage?.name), ...(classified ? [field('Clasificado por', operation.user?.full_names || 'No registrado')] : []), ...(!classified ? [field('Tipo', purchase ? operation.type : operation.type_output)] : [])];
+    const operationFields = [field('Registro', `${operation.type_registry || ''} NRO: ${operation.registry_number || operation.number_registry || ''}`), field('Balanza', operation.scale?.name), ...(!purchase ? [field('Almacén', operation.storage?.name)] : []), ...(classified ? [field('Clasificado por', operation.user?.full_names || 'No registrado')] : []), ...(!classified ? [field('Tipo', purchase ? operation.type : operation.type_output)] : [])];
     panels.push({ title: 'DATOS OPERACIÓN', fields: operationFields });
     if (!purchase && !classified) {
         const paymentFields = [field('Pago', operation.type_payment), ...(operation.type_payment !== 'EFECTIVO' ? [field('Cuenta', operation.account_output), field('Banco', operation.bank?.name)] : [])];
@@ -43,11 +43,7 @@ const buildOperationVoucher = (operation, { kind, decimal = 2, format } = {}) =>
     const columns = thermal ? [{ label: 'CÓDIGO / PRODUCTO', width: 150 }, { label: 'CANT.', width: 70, align: 'right' }] : classified ? classifiedColumns : detailColumns;
     const rows = details.map(detail => thermal ? [`${detail.product?.cod || ''} - ${detail.product?.name || ''}`, `${money(detail.quantity, decimal)} ${detail.product?.unit?.siglas || ''}`] : [detail.product?.cod || '', detail.product?.name || '', money(detail.quantity, decimal), detail.product?.unit?.siglas || '', ...(classified ? [detail.stock_before == null ? '—' : money(detail.stock_before, decimal), detail.stock_after == null ? '—' : money(detail.stock_after, decimal)] : [money(detail.cost ?? detail.price, decimal), money(detail.total, decimal)])]);
     rows.push({ kind: 'total', cells: thermal ? ['TOTAL CANTIDAD', money(quantity, decimal)] : purchase ? [{ text: 'CANTIDAD TOTAL', span: 2 }, '', money(quantity, decimal), units, { text: 'TOTAL IMPORTE', align: 'right' }, { text: money(operation.total, decimal), align: 'right' }] : [{ text: 'CANTIDAD TOTAL', span: 2 }, '', money(quantity, decimal), units, ...(!classified ? ['', ''] : ['', ''])] });
-    if (purchase && !thermal) rows.push({ kind: 'purchase-summary', cells: [
-        { text: 'Resumen de pesaje verificado en recepción', span: 3 }, '',
-        { text: `Total Peso Bruto: ${money(operation.total_gross_weight ?? operation.gross_weight ?? quantity, decimal)} ${units}`.trim(), span: 3, align: 'right' },
-    ] });
-    const sections = [{ title: 'DETALLE DE PRODUCTOS', columns, rows }];
+    const sections = [{ ...(!purchase ? { title: 'DETALLE DE PRODUCTOS' } : {}), columns, rows }];
     const accounts = operation[purchase ? 'accounts_payable' : 'accounts_receivable'];
     if (!classified && !thermal && !(purchase && operation.type === 'CREDITO')) sections.push({
         title: 'TOTALES', variant: 'summary',
@@ -72,7 +68,7 @@ const buildOperationVoucher = (operation, { kind, decimal = 2, format } = {}) =>
         variant: thermal ? 'thermal' : 'voucher',
         title: operation.status === 'ANULADO' ? 'ANULADO · ' + (purchase ? 'NOTA DE COMPRA' : 'NOTA DE VENTA') : thermal ? 'COMPROBANTE DE PESAJE' : purchase ? 'NOTA DE COMPRA' : classified ? 'NOTA DE CLASIFICACIÓN' : operation.voucher === 'MENOR' ? 'NOTA DE VENTA' : 'NOTA DE DESPACHO',
         reference: operation.cod, date: moment(operation[purchase ? 'date_voucher' : classified ? 'date_classified' : 'date_output']).format('DD/MM/YYYY HH:mm:ss'),
-        company: companyData(operation.sucursal), paper: thermal ? { width: 226.77, height: 'auto' } : details.length <= 6 ? 'HALF_LETTER' : 'LETTER',
+        company: companyData(operation.sucursal), paper: thermal ? { width: 226.77, height: 'auto' } : details.length <= (purchase ? 5 : 6) ? 'HALF_LETTER' : 'LETTER',
         panels, sections, observations: operation.comments,
         signatures: thermal ? [] : [{ role: 'Recibí conforme', name: purchase ? `PROVEEDOR: ${entity.full_names || ''}` : classified ? '' : 'Responsable de almacén' }, { role: 'Entregue conforme', name: purchase ? 'RESPONSABLE CAJA' : classified ? 'Responsable de almacén' : 'Cliente' }],
     };
