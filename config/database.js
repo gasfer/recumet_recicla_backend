@@ -6,7 +6,7 @@ module.exports = {
     database: process.env.DB_DATABASE,
     host:     process.env.DB_HOST,
     port:     Number(process.env.DB_PORT || 5432),
-    dialect:  process.env.DB_DIALECT,
+    dialect:  process.env.DB_DIALECT?.trim(),
     logging:  process.env.DB_LOGGING === 'true' ? console.log : false,
     dialectOptions:{
         useUTC:false,
