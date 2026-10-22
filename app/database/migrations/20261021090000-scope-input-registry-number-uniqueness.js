@@ -2,6 +2,7 @@
 
 const GLOBAL_REGISTRY_INDEX = 'inputs_registry_number_unique';
 const SCOPED_REGISTRY_INDEX = 'inputs_sucursal_type_registry_number_unique';
+const SCOPED_REGISTRY_LOOKUP_INDEX = 'inputs_sucursal_type_registry_number_idx';
 
 module.exports = {
   async up(queryInterface) {
@@ -51,16 +52,41 @@ module.exports = {
       `, { transaction });
 
       await queryInterface.sequelize.query(`DROP INDEX IF EXISTS ${GLOBAL_REGISTRY_INDEX}`, { transaction });
-      await queryInterface.sequelize.query(
-        `CREATE UNIQUE INDEX IF NOT EXISTS ${SCOPED_REGISTRY_INDEX} ON inputs (id_sucursal, type_registry, registry_number)`,
-        { transaction },
-      );
+
+      const [duplicateGroups] = await queryInterface.sequelize.query(`
+        SELECT EXISTS (
+          SELECT 1
+          FROM inputs
+          WHERE id_sucursal IS NOT NULL
+            AND type_registry IS NOT NULL
+            AND registry_number IS NOT NULL
+          GROUP BY id_sucursal, type_registry, registry_number
+          HAVING COUNT(*) > 1
+        ) AS has_duplicates
+      `, { transaction });
+
+      if (duplicateGroups[0]?.has_duplicates) {
+        console.warn(
+          `No se creó ${SCOPED_REGISTRY_INDEX}: existen números de registro duplicados históricos. ` +
+          'Se conserva la validación de la API y se crea un índice de búsqueda hasta depurar esos registros.',
+        );
+        await queryInterface.sequelize.query(
+          `CREATE INDEX IF NOT EXISTS ${SCOPED_REGISTRY_LOOKUP_INDEX} ON inputs (id_sucursal, type_registry, registry_number)`,
+          { transaction },
+        );
+      } else {
+        await queryInterface.sequelize.query(
+          `CREATE UNIQUE INDEX IF NOT EXISTS ${SCOPED_REGISTRY_INDEX} ON inputs (id_sucursal, type_registry, registry_number)`,
+          { transaction },
+        );
+      }
     });
   },
 
   async down(queryInterface) {
     await queryInterface.sequelize.transaction(async transaction => {
       await queryInterface.sequelize.query(`DROP INDEX IF EXISTS ${SCOPED_REGISTRY_INDEX}`, { transaction });
+      await queryInterface.sequelize.query(`DROP INDEX IF EXISTS ${SCOPED_REGISTRY_LOOKUP_INDEX}`, { transaction });
       await queryInterface.sequelize.query(
         `CREATE UNIQUE INDEX IF NOT EXISTS ${GLOBAL_REGISTRY_INDEX} ON inputs (registry_number)`,
         { transaction },

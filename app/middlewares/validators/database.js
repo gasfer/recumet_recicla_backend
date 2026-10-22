@@ -298,7 +298,16 @@ const registryNumberExist = async (registry_number = "",{req}) => {
   if(!registry_number) return;
   const { id_input } = req.params;
   const { id_sucursal, type_registry } = req.body.input_data;
-  const existDB = await Input.findOne({ where: { registry_number, id_sucursal, type_registry } });
+  if (id_input) {
+    const currentInput = await Input.findByPk(id_input);
+    if (
+      currentInput &&
+      String(currentInput.registry_number || '').trim() === String(registry_number).trim() &&
+      Number(currentInput.id_sucursal) === Number(id_sucursal) &&
+      currentInput.type_registry === type_registry
+    ) return;
+  }
+  const existDB = await Input.findOne({ where: { registry_number: String(registry_number).trim(), id_sucursal, type_registry } });
   if(!existDB) return;
   if (existDB.id != id_input) {
     throw new Error(`El Nro. Pesaje: ${registry_number}, ya existe`);
@@ -315,8 +324,17 @@ const idExistOutput = async (id = "") => {
 
 const registryNumberExistOutput = async (number_registry = "",{req}) => {
   const { id_output } = req.params;
-  const { id_sucursal } = req.body.output_data;
-  const existDB = await Output.findOne({ where: { number_registry, id_sucursal } });
+  const { id_sucursal, type_registry } = req.body.output_data;
+  if (id_output) {
+    const currentOutput = await Output.findByPk(id_output);
+    if (
+      currentOutput &&
+      String(currentOutput.number_registry || '').trim() === String(number_registry).trim() &&
+      Number(currentOutput.id_sucursal) === Number(id_sucursal) &&
+      currentOutput.type_registry === type_registry
+    ) return;
+  }
+  const existDB = await Output.findOne({ where: { number_registry: String(number_registry).trim(), id_sucursal, type_registry } });
   if(!existDB) return;
   if (existDB.id != id_output) {
     throw new Error(`El Nro. Pesaje: ${number_registry}, ya existe`);
@@ -333,8 +351,8 @@ const idExistClassified = async (id = "") => {
 
 const registryNumberExistClassified = async (number_registry = "",{req}) => {
   const { id_classified } = req.params;
-  const { id_sucursal } = req.body.classified_data;
-  const existDB = await Classified.findOne({ where: { number_registry, id_sucursal } });
+  const { id_sucursal, type_registry } = req.body.classified_data;
+  const existDB = await Classified.findOne({ where: { number_registry: String(number_registry).trim(), id_sucursal, type_registry } });
   if(!existDB) return;
   if (existDB.id != id_classified) {
     throw new Error(`El Nro. Pesaje: ${number_registry}, ya existe`);
@@ -403,8 +421,8 @@ const idExistTransfer = async (id = "") => {
 const registryNumberExistTransfer = async (registry_number = "",{req}) => {
   if(!registry_number) return;
   const { id_transfer } = req.params;
-  const { id_sucursal_send } = req.body.transfer_data;
-  const existDB = await Transfers.findOne({ where: { registry_number, id_sucursal_send } });
+  const { id_sucursal_send, type_registry } = req.body.transfer_data;
+  const existDB = await Transfers.findOne({ where: { registry_number: String(registry_number).trim(), id_sucursal_send, type_registry } });
   if(!existDB) return;
   if (existDB.id != id_transfer) {
     throw new Error(`El Nro. Pesaje: ${registry_number}, ya existe`);
