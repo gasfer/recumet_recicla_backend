@@ -19,6 +19,7 @@ FROM node:20.11.1-bookworm-slim
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=3001
 ENV TZ=America/La_Paz
 ENV PUPPETEER_CACHE_DIR=/opt/puppeteer
 ENV PDF_DISABLE_SANDBOX=true
