@@ -1,5 +1,6 @@
 const { sequelize } = require('../database/config');
 const { QueryTypes } = require('sequelize');
+const ANALYSIS_WINDOW_DAYS = 90;
 
 const FREQUENCY_MAP = {
   WEEKLY: { code: 'WEEKLY', label: 'Semanal', minDays: 1, maxDays: 10 },
@@ -31,7 +32,12 @@ class ProviderFrequencyService {
    * Analiza el historial real de entregas/compras por PROVEEDOR + PRODUCTO/MATERIAL + SUCURSAL
    */
   analyzePurchases(purchases, today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/La_Paz', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())) {
-    const sorted = purchases.filter(purchase => /^\d{4}-\d{2}-\d{2}$/.test(purchase.purchase_date)).sort((a, b) => a.purchase_date.localeCompare(b.purchase_date) || Number(a.id) - Number(b.id));
+    const todayTime = Date.parse(today + 'T00:00:00Z');
+    const windowStart = new Date(todayTime - ANALYSIS_WINDOW_DAYS * 86400000).toISOString().slice(0, 10);
+    const sorted = purchases
+      .filter(purchase => /^\d{4}-\d{2}-\d{2}$/.test(purchase.purchase_date)
+        && purchase.purchase_date >= windowStart && purchase.purchase_date <= today)
+      .sort((a, b) => a.purchase_date.localeCompare(b.purchase_date) || Number(a.id) - Number(b.id));
     const dates = [...new Set(sorted.map(purchase => purchase.purchase_date))];
     const first = dates[0] || null;
     const last = dates[dates.length - 1] || null;
@@ -47,6 +53,7 @@ class ProviderFrequencyService {
     return {
       hasSufficientHistory: averageDays !== null, totalDeliveries: dates.length, totalPurchases: sorted.length,
       firstDeliveryDate: first, lastDeliveryDate: last, elapsedDays,
+      windowDays: ANALYSIS_WINDOW_DAYS,
       intervalsCount: Math.max(0, dates.length - 1), averageDays: averageDays !== null ? Number(averageDays.toFixed(2)) : null,
       frequencyCode: classification?.code || 'UNDETERMINED', frequencyLabel: classification?.label || 'Sin determinar',
       totalKg: Number(totalKg.toFixed(3)), estimatedVolume: estimatedVolume !== null ? Number(estimatedVolume.toFixed(3)) : null,
@@ -69,6 +76,8 @@ class ProviderFrequencyService {
       LEFT JOIN products p ON p.id = d.id_product
       LEFT JOIN units u ON u.id = p.id_unit
       WHERE i.id_provider = :provider AND i.status = 'ACTIVE'
+        AND (COALESCE(i.date_voucher, i."createdAt") AT TIME ZONE 'America/La_Paz')::date >= ((CURRENT_TIMESTAMP AT TIME ZONE 'America/La_Paz')::date - INTERVAL '90 days')
+        AND (COALESCE(i.date_voucher, i."createdAt") AT TIME ZONE 'America/La_Paz')::date <= (CURRENT_TIMESTAMP AT TIME ZONE 'America/La_Paz')::date
         ${branchId ? 'AND i.id_sucursal = :branch' : ''}
         ${productId ? 'AND d.id_product = :product' : ''}
       GROUP BY i.id, i.cod, i.date_voucher, i."createdAt"

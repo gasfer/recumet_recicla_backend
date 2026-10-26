@@ -12,7 +12,6 @@ module.exports = (sequelize, DataTypes) => {
     id_provider: DataTypes.INTEGER,
     branch_name: DataTypes.STRING,
     department: DataTypes.STRING,
-    province: DataTypes.STRING,
     city: DataTypes.STRING,
     zone: DataTypes.STRING,
     address: DataTypes.STRING,

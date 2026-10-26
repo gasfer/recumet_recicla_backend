@@ -86,6 +86,22 @@ const generatePdfReports = async (req = request, res = response) => {
         return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
 };
+const isAllProductsKardexRequest = ({ category_types } = {}) => {
+    if (!category_types) return true;
+    if (Array.isArray(category_types)) {
+        return category_types.every((categoryType) => !String(categoryType ?? '').trim());
+    }
+    return !String(category_types).trim();
+};
+
+const shouldIncludeKardexRowNumber = ({ category_types } = {}) => {
+    if (isAllProductsKardexRequest({ category_types })) return true;
+    const categoryTypes = (Array.isArray(category_types) ? category_types : [category_types])
+        .map((categoryType) => String(categoryType ?? '').trim())
+        .filter(Boolean);
+    return categoryTypes.length === 1 && ['RAW_MATERIAL', 'FINISHED_PRODUCT'].includes(categoryTypes[0]);
+};
+
 //TODO:
 const generatePdfReportsKardexFisico = async (
     req = request,
@@ -93,6 +109,7 @@ const generatePdfReportsKardexFisico = async (
 ) => {
     try {
         const { id_sucursal, id_storage, filterBy, date1, date2 } = req.query;
+        const includeRowNumber = shouldIncludeKardexRowNumber(req.query);
         const decimal = await getNumberDecimal();
         const kardexes = await returnDataInputKardexFisico(req.query);
 
@@ -150,8 +167,13 @@ const generatePdfReportsKardexFisico = async (
 
         let dataPdf = dataPdfReturnKardexFisicoVerticalOnlyReciclen(
             req.userAuth,
-            filteredKardexes
+            filteredKardexes,
+            includeRowNumber,
+            Math.max(22, String(Math.max(filteredKardexes.length, 1)).length * 5 + 10)
         ); //PDF
+
+        const columnCount = includeRowNumber ? 7 : 6;
+        const labelColumnSpan = includeRowNumber ? 4 : 3;
 
         let currentCategory = null;
         let categoryInput = 0;
@@ -169,11 +191,10 @@ const generatePdfReportsKardexFisico = async (
                     fontSize: 8,
                     bold: true,
                     fillColor: "#E2E8F0",
-                    colSpan: 3,
+                    colSpan: labelColumnSpan,
                     margin: [5, 2, 5, 2]
                 },
-                {},
-                {},
+                ...Array(labelColumnSpan - 1).fill({}),
                 {
                     text: formatEuro(categoryInput, decimal),
                     fontSize: 8,
@@ -199,19 +220,15 @@ const generatePdfReportsKardexFisico = async (
             dataPdf[5].table.body.push(subtotalRow);
         };
 
-        filteredKardexes.forEach((kardex) => {
+        filteredKardexes.forEach((kardex, index) => {
             const categoryName = kardex.product.category.name;
             if (categoryName !== currentCategory) {
                 if (currentCategory !== null) {
                     addCategorySubtotalRow(currentCategory);
                     // Add spacing row in pdf
                     dataPdf[5].table.body.push([
-                        { text: "", colSpan: 6, border: [false, false, false, false] },
-                        {},
-                        {},
-                        {},
-                        {},
-                        {}
+                        { text: "", colSpan: columnCount, border: [false, false, false, false] },
+                        ...Array(columnCount - 1).fill({})
                     ]);
                 }
 
@@ -227,19 +244,16 @@ const generatePdfReportsKardexFisico = async (
                         bold: true,
                         fillColor: "#2D3748",
                         color: "#ffffff",
-                        colSpan: 6,
+                        colSpan: columnCount,
                         margin: [5, 2, 5, 2]
                     },
-                    {},
-                    {},
-                    {},
-                    {},
-                    {}
+                    ...Array(columnCount - 1).fill({})
                 ];
                 dataPdf[5].table.body.push(categoryRow);
             }
 
             const tableData = [
+                ...(includeRowNumber ? [{ text: index + 1, fontSize: 8, alignment: "center" }] : []),
                 { text: kardex?.product.cod, fontSize: 8 },
                 { text: kardex?.product.name, fontSize: 8 },
                 { text: kardex?.product.unit.siglas, fontSize: 8 },
@@ -279,12 +293,8 @@ const generatePdfReportsKardexFisico = async (
 
         // Add spacing and final totals row
         dataPdf[5].table.body.push([
-            { text: "", colSpan: 6, border: [false, false, false, false] },
-            {},
-            {},
-            {},
-            {},
-            {}
+            { text: "", colSpan: columnCount, border: [false, false, false, false] },
+            ...Array(columnCount - 1).fill({})
         ]);
 
         const totalsRow = [
@@ -293,11 +303,10 @@ const generatePdfReportsKardexFisico = async (
                 fontSize: 9,
                 bold: true,
                 fillColor: "#eeeeee",
-                colSpan: 3,
+                colSpan: labelColumnSpan,
                 margin: [5, 2, 5, 2]
             },
-            {},
-            {},
+            ...Array(labelColumnSpan - 1).fill({}),
             {
                 text: formatEuro(totalInput, decimal),
                 fontSize: 9,
@@ -668,7 +677,7 @@ const dataPdfReturnKardexExistencia = (auth, kardex) => [
     },
 ];
 
-const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth, kardexes) => [
+const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth, kardexes, includeRowNumber = false, rowNumberColumnWidth = 22) => [
     ...buildStandardReportHeader({
         title: 'REPORTE DE KARDEX FÍSICO',
         auth,
@@ -679,9 +688,19 @@ const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth, kardexes) => [
         absolutePosition: { x: 20, y: 95 },
         table: {
             headerRows: 2,
-            widths: ["auto", "*", "auto", "auto", "auto", "auto"],
+            widths: includeRowNumber
+                ? [rowNumberColumnWidth, "auto", "*", "auto", "auto", "auto", "auto"]
+                : ["auto", "*", "auto", "auto", "auto", "auto"],
             body: [
                 [
+                    ...(includeRowNumber ? [{
+                        text: "N°",
+                        fontSize: 8,
+                        fillColor: "#eeeeee",
+                        bold: true,
+                        rowSpan: 2,
+                        alignment: "center",
+                    }] : []),
                     {
                         text: "CÓDIGO",
                         fontSize: 8,
@@ -716,6 +735,7 @@ const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth, kardexes) => [
                     // {text:'ALMACÉN',alignment: 'center', fontSize:7,fillColor: '#eeeeee', bold:true, rowSpan: 2},
                 ],
                 [
+                    ...(includeRowNumber ? [{}] : []),
                     {},
                     {},
                     {},
@@ -815,6 +835,10 @@ const generateExcelReportsKardexFisico = async (req, res) => {
         const kardexes = await returnDataInputKardexFisico(req.query);
         const decimal = await getNumberDecimal();
         const { id_sucursal, id_storage, filterBy, date1, date2 } = req.query;
+        const includeRowNumber = shouldIncludeKardexRowNumber(req.query);
+        const labelColumnCount = includeRowNumber ? 4 : 3;
+        const firstQuantityColumn = labelColumnCount + 1;
+        const lastColumnLetter = includeRowNumber ? 'G' : 'F';
 
         // Calculate initial balances for the products
         const whereDate = whereDateForType(
@@ -871,6 +895,7 @@ const generateExcelReportsKardexFisico = async (req, res) => {
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Kardex Físico");
         const headers = [
+            ...(includeRowNumber ? ["N°"] : []),
             "Código",
             "Detalle",
             "Unidad",
@@ -903,13 +928,12 @@ const generateExcelReportsKardexFisico = async (req, res) => {
         const addCategorySubtotalRow = (categoryName) => {
             const subtotalRow = worksheet.addRow([
                 `TOTAL ${categoryName.toUpperCase()}`,
-                "",
-                "",
+                ...Array(labelColumnCount - 1).fill(""),
                 categoryInput,
                 categoryOutput,
                 categorySaldo
             ]);
-            worksheet.mergeCells(`A${subtotalRow.number}:C${subtotalRow.number}`);
+            worksheet.mergeCells(`A${subtotalRow.number}:${String.fromCharCode(64 + labelColumnCount)}${subtotalRow.number}`);
             
             const subtotalCell = subtotalRow.getCell(1);
             subtotalCell.font = { name: 'Arial', size: 10, bold: true };
@@ -920,7 +944,7 @@ const generateExcelReportsKardexFisico = async (req, res) => {
                 fgColor: { argb: 'FFE2E8F0' } // Light slate/gray
             };
             
-            [4, 5, 6].forEach((i) => {
+            [firstQuantityColumn, firstQuantityColumn + 1, firstQuantityColumn + 2].forEach((i) => {
                 const cell = subtotalRow.getCell(i);
                 cell.font = { name: 'Arial', size: 10, bold: true };
                 cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
@@ -934,7 +958,7 @@ const generateExcelReportsKardexFisico = async (req, res) => {
             subtotalRow.height = 20;
         };
 
-        filteredKardexes.forEach((kardex) => {
+        filteredKardexes.forEach((kardex, index) => {
             const categoryName = kardex.product.category.name;
             if (categoryName !== currentCategory) {
                 if (currentCategory !== null) {
@@ -948,7 +972,7 @@ const generateExcelReportsKardexFisico = async (req, res) => {
                 categorySaldo = 0;
                 
                 const categoryRow = worksheet.addRow([categoryName.toUpperCase()]);
-                worksheet.mergeCells(`A${categoryRow.number}:F${categoryRow.number}`);
+                worksheet.mergeCells(`A${categoryRow.number}:${lastColumnLetter}${categoryRow.number}`);
                 const categoryCell = categoryRow.getCell(1);
                 categoryCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
                 categoryCell.fill = {
@@ -961,6 +985,7 @@ const generateExcelReportsKardexFisico = async (req, res) => {
             }
 
             const row = worksheet.addRow([
+                ...(includeRowNumber ? [index + 1] : []),
                 kardex.product.cod,
                 kardex.product.name,
                 kardex.product.unit.siglas,
@@ -968,6 +993,9 @@ const generateExcelReportsKardexFisico = async (req, res) => {
                 Number(kardex.quantity_output),
                 Number(kardex.dataValues.quantity_saldo),
             ]);
+            if (includeRowNumber) {
+                row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+            }
             
             categoryInput += Number(kardex.quantity_input);
             categoryOutput += Number(kardex.quantity_output);
@@ -977,7 +1005,7 @@ const generateExcelReportsKardexFisico = async (req, res) => {
             totalOutput += Number(kardex.quantity_output);
             totalSaldo += Number(kardex.dataValues.quantity_saldo);
 
-            [4, 5, 6].forEach((i) => {
+            [firstQuantityColumn, firstQuantityColumn + 1, firstQuantityColumn + 2].forEach((i) => {
                 const cell = row.getCell(i);
                 cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
                 cell.alignment = { horizontal: 'right' };
@@ -993,19 +1021,18 @@ const generateExcelReportsKardexFisico = async (req, res) => {
         worksheet.addRow([]);
         const totalsRow = worksheet.addRow([
             "TOTALES",
-            "",
-            "",
+            ...Array(labelColumnCount - 1).fill(""),
             totalInput,
             totalOutput,
             totalSaldo
         ]);
-        worksheet.mergeCells(`A${totalsRow.number}:C${totalsRow.number}`);
+        worksheet.mergeCells(`A${totalsRow.number}:${String.fromCharCode(64 + labelColumnCount)}${totalsRow.number}`);
         
         const totalsLabelCell = totalsRow.getCell(1);
         totalsLabelCell.font = { name: 'Arial', size: 11, bold: true };
         totalsLabelCell.alignment = { vertical: 'middle', horizontal: 'left' };
         
-        [4, 5, 6].forEach((i) => {
+        [firstQuantityColumn, firstQuantityColumn + 1, firstQuantityColumn + 2].forEach((i) => {
             const cell = totalsRow.getCell(i);
             cell.font = { name: 'Arial', size: 11, bold: true };
             cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
@@ -1026,6 +1053,9 @@ const generateExcelReportsKardexFisico = async (req, res) => {
             });
             column.width = i === 1 ? Math.min(maxLength + 2, 40) : maxLength + 2;
         });
+        if (includeRowNumber) {
+            worksheet.getColumn(1).width = Math.max(3, String(Math.max(filteredKardexes.length, 1)).length + 1);
+        }
 
         res.setHeader(
             "Content-Type",
@@ -1184,35 +1214,28 @@ const returnDataInputKardexFisico = async ({
         '"ViewKardex"."date"'
     );
 
-    let whereProduct = {};
-    if (category_ids) {
-        let ids = category_ids;
-        if (!Array.isArray(category_ids)) {
-            ids = [category_ids];
-        }
-        if (ids.length > 0) {
-            whereProduct = {
-                id_category: {
-                    [Op.in]: ids
-                }
-            }
-        }
-    }
+    const parseFilterValues = (value) => (Array.isArray(value) ? value : [value])
+        .flatMap((item) => String(item ?? '').split(','))
+        .map((item) => item.trim())
+        .filter(Boolean);
+    const isAllProductsModule = isAllProductsKardexRequest({ category_types });
+    const categoryIdValues = isAllProductsModule
+        ? parseFilterValues(category_ids)
+        : (Array.isArray(category_ids) ? category_ids : (category_ids ? [category_ids] : []));
+    const categoryIds = isAllProductsModule
+        ? [...new Set(categoryIdValues.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
+        : categoryIdValues;
+    const categoryTypes = (Array.isArray(category_types) ? category_types : (category_types ? [category_types] : []))
+        .map((categoryType) => String(categoryType ?? '').trim())
+        .filter(Boolean);
 
-    let whereCategory = {};
-    if (category_types) {
-        let types = category_types;
-        if (!Array.isArray(category_types)) {
-            types = [category_types];
-        }
-        if (types.length > 0) {
-            whereCategory = {
-                type: {
-                    [Op.in]: types
-                }
-            }
-        }
-    }
+    // Keep an invalid non-empty ID filter restrictive instead of silently exporting every category.
+    const whereProduct = categoryIdValues.length
+        ? { id_category: { [Op.in]: categoryIds } }
+        : {};
+    const whereCategory = categoryTypes.length
+        ? { type: { [Op.in]: categoryTypes } }
+        : {};
 
     return ViewKardex.findAll({
         order: [

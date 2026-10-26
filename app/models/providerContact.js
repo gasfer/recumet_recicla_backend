@@ -14,6 +14,8 @@ module.exports = (sequelize, DataTypes) => {
     position_area: DataTypes.STRING,
     cellphone: DataTypes.STRING,
     email: DataTypes.STRING,
+    department: DataTypes.STRING,
+    comments: DataTypes.STRING(500),
     is_main_contact: DataTypes.BOOLEAN,
     status: DataTypes.BOOLEAN,
   }, { sequelize, modelName: 'ProviderContact', tableName: 'provider_contacts' });

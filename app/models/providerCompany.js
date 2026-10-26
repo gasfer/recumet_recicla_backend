@@ -14,11 +14,13 @@ module.exports = (sequelize, DataTypes) => {
     corporate_email: DataTypes.STRING, website: DataTypes.STRING,
     entity_type: DataTypes.STRING, id_type_provider: DataTypes.INTEGER, origin_channel: DataTypes.STRING,
     relationship_status: DataTypes.STRING, negotiation_condition: DataTypes.TEXT,
-    commercial_observations: DataTypes.TEXT, requires_certificate: DataTypes.BOOLEAN,
+    commercial_observations: DataTypes.TEXT, contact_priority: DataTypes.STRING,
+    contact_observations: DataTypes.TEXT, requires_certificate: DataTypes.BOOLEAN,
     requires_traceability_report: DataTypes.BOOLEAN, general_observations: DataTypes.TEXT,
     id_commercial_user: DataTypes.INTEGER,
     operational_type: DataTypes.STRING,
     has_branches: DataTypes.BOOLEAN, status: DataTypes.BOOLEAN,
+    operating_departments: DataTypes.JSONB,
   }, { sequelize, modelName: 'ProviderCompany', tableName: 'provider_companies' });
   return ProviderCompany;
 };

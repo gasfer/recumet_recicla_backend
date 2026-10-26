@@ -115,9 +115,17 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
 
         let whereProduct = {};
         if (category_ids) {
-            let ids = category_ids;
-            if (!Array.isArray(category_ids)) {
-                ids = [category_ids];
+            const isAllProductsView = !category_types ||
+                (typeof category_types === 'string' && !category_types.trim()) ||
+                (Array.isArray(category_types) && category_types.every(categoryType => !String(categoryType).trim()));
+            let ids;
+            if (isAllProductsView) {
+                const categoryIdValues = Array.isArray(category_ids) ? category_ids : [category_ids];
+                ids = categoryIdValues.flatMap(categoryId => String(categoryId).split(','))
+                    .map(categoryId => categoryId.trim())
+                    .filter(Boolean);
+            } else {
+                ids = Array.isArray(category_ids) ? category_ids : [category_ids];
             }
             if (ids.length > 0) {
                 whereProduct = {

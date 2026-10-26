@@ -105,7 +105,6 @@ const getValidateUpdate= [
         general_observations: { optional: { options: { nullable: true } }, isLength: { options: { max: 2000 }, errorMessage: 'Las observaciones generales deben tener máximo 2000 caracteres' } },
         contact_email: { optional: { options: { nullable: true, checkFalsy: true } }, isEmail: { errorMessage: 'El correo de contacto no es válido' } },
         department: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'El departamento debe tener máximo 120 caracteres' } },
-        province: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'La provincia debe tener máximo 120 caracteres' } },
         city: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'La ciudad debe tener máximo 120 caracteres' } },
         zone: { optional: { options: { nullable: true } }, isLength: { options: { max: 120 }, errorMessage: 'La zona debe tener máximo 120 caracteres' } },
         latitude: { optional: { options: { nullable: true, checkFalsy: true } }, isFloat: { options: { min: -90, max: 90 }, errorMessage: 'La latitud no es válida' } },

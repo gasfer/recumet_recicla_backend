@@ -51,7 +51,7 @@ async function catalogs(user) {
     db.Storage.findAll(options(['id', 'name', 'id_sucursal'], storageWhere)),
     db.Category.findAll(options(['id', 'name'])), db.Product.findAll(options(['id', 'name', 'id_category'])),
     db.TypesProvider.findAll({ attributes: ['id', 'name', 'code'], where: { status: true }, order: [['id', 'ASC']], raw: true }),
-    db.User.findAll(options(['id', 'full_names'])),
+    db.User.findAll(options(['id', 'full_names', 'role'])),
     db.ProviderBranch.findAll(options(['id', 'department', 'city'])),
     db.Provider.findAll(options(['id', 'department'])),
   ]);

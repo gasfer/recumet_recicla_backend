@@ -226,8 +226,9 @@ const getAllTypesProvider = async (req = request, res = response) => {
 
 const getProviderAutocomplete = async (req = request, res = response) => {
     try {
-        const { query = '' } = req.query;
-        const providers = await providerService.findAutocompleteProviders(query);
+        const { query = '', id_sucursal } = req.query;
+        const branchId = id_sucursal && /^[1-9]\d*$/.test(String(id_sucursal)) ? Number(id_sucursal) : null;
+        const providers = await providerService.findAutocompleteProviders(String(query).slice(0, 150), branchId);
         return res.status(200).json({
             ok: true,
             providers
@@ -316,6 +317,7 @@ const getProviderFrequencyAnalysis = async (req = request, res = response) => {
                 ...analysis,
                 has_sufficient_history: analysis.hasSufficientHistory,
                 total_deliveries: analysis.totalDeliveries,
+                window_days: analysis.windowDays,
                 average_days: analysis.averageDays,
                 frequency: analysis.frequencyCode,
                 frequency_mode: analysis.hasSufficientHistory ? 'automatic' : 'manual',

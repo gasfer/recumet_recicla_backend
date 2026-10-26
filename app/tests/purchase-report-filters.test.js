@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('../services/purchase-report-filters.service');
 const { Op } = require('sequelize');
 const { restrictToAuthorizedBranches, reportFilterSummary, buildPurchaseReportPdfBody } = require('../controllers/purchase-report.controller');
+const db = require('../database/config');
+const { queryPurchaseReportPage, queryPurchaseReportExport } = require('../services/purchase-report-query.service');
 
 test('el reporte normaliza filtros y descarta ordenamientos no admitidos', () => {
   const filters = normalizePurchaseReportFilters({
@@ -53,4 +55,61 @@ test('el PDF conserva las columnas y agrupación del Excel sin exceder la carta 
   assert.equal(body[0].length, 10);
   assert.match(body[1][0].text, /PROVEEDOR: Proveedor A/);
   assert.equal(body.at(-1)[0].text, 'TOTAL GENERAL');
+});
+
+test('la página del reporte proyecta sólo campos visibles y del modal de detalle', async (t) => {
+  const inputAttributes = [];
+  t.mock.method(db.Input, 'count', async () => 1);
+  t.mock.method(db.Input, 'findAll', async options => {
+    inputAttributes.push(options.attributes);
+    if (options.raw) return [{ id: 1 }];
+    if (options.attributes?.includes('payment_voucher')) return [{ dataValues: { id: 1 }, detailsInput: [] }];
+    return [{ dataValues: { id: 1 }, detailsInput: [] }];
+  });
+
+  const result = await queryPurchaseReportPage({ filterBy: 'MONTH', date1: '10', date2: '2026', status: 'ACTIVE', page: 1, limit: 50 });
+
+  assert.equal(result.data.length, 1);
+  assert.ok(inputAttributes.some(attributes => attributes.includes('payment_voucher') && attributes.includes('comments')));
+  assert.ok(inputAttributes.every(attributes => !attributes.includes('number_transaction')));
+});
+
+test('las exportaciones proyectan únicamente los campos de sus documentos', async (t) => {
+  let attributes;
+  t.mock.method(db.Input, 'findAll', async options => { attributes = options.attributes; return []; });
+
+  await queryPurchaseReportExport({ filterBy: 'MONTH', date1: '10', date2: '2026', status: 'ACTIVE' });
+
+  assert.deepEqual(attributes, [
+    'id', 'cod', 'date_voucher', 'type', 'type_registry', 'registry_number', 'total',
+    'referral_sources', 'old_customer', 'with_pickup', 'id_provider',
+  ]);
+});
+
+test('listado y exportación aplican los mismos filtros analíticos', async (t) => {
+  let pageWhere;
+  let exportWhere;
+  t.mock.method(db.Input, 'count', async options => { pageWhere = options.where; return 0; });
+  t.mock.method(db.Input, 'findAll', async options => {
+    if (options.attributes?.includes('id_provider')) exportWhere = options.where;
+    return [];
+  });
+  const filters = {
+    filterBy: 'MONTH', date1: '10', date2: '2026', id_sucursal: '1', id_storage: '2',
+    category_ids: '3', id_products: '4', status: 'ACTIVE', type_pay: 'CONTADO',
+    type: 'cod', query: 'COMP', field_sort: 'date_voucher', order: 'DESC',
+  };
+
+  await queryPurchaseReportPage({ ...filters, page: 1, limit: 50 });
+  await queryPurchaseReportExport(filters);
+
+  assert.deepEqual(exportWhere, pageWhere);
+  const criteria = pageWhere[Op.and];
+  assert.ok(criteria.some(item => item.id_sucursal?.[Op.in]?.includes(1)));
+  assert.ok(criteria.some(item => item.id_storage?.[Op.in]?.includes(2)));
+  const productSubquery = criteria.find(item => item.id)?.id?.[Op.in]?.val || '';
+  assert.match(productSubquery, /product\.id_category IN \(3\)/);
+  assert.match(productSubquery, /detail\.id_product IN \(4\)/);
+  assert.ok(criteria.some(item => item.type === 'CONTADO'));
+  assert.ok(criteria.some(item => item.cod?.[Op.iLike] === '%COMP%'));
 });

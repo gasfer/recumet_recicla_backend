@@ -13,8 +13,8 @@ function validateRegistrationFields(data) {
   const lengths = {
     full_names: 174, commercial_name: 174, number_document: 50, direction: 254,
     name_contact: 174, companyContacts: 254, workAreaOrPositionOrUnit: 254,
-    commercial_observations: 2000, general_observations: 2000,
-    department: 120, province: 120, city: 120, zone: 120, geolocation_text: 500,
+    commercial_observations: 2000, contact_observations: 2000, general_observations: 2000,
+    department: 120, city: 120, zone: 120, geolocation_text: 500,
   };
   for (const [field, max] of Object.entries(lengths)) {
     if (data[field] != null && (typeof data[field] !== 'string' || data[field].length > max)) fail(`El campo ${field} debe tener máximo ${max} caracteres`);

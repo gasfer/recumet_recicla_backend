@@ -2,7 +2,7 @@
 
 const {
   ProviderCompany, Provider, ProviderContact, ProviderMaterial, ProviderBankAccount,
-  Input, AccountsPayable, Product, sequelize,
+  Input, AccountsPayable, Product, ProviderCompanyDocument, sequelize,
 } = require('../database/config');
 const { Op } = require('sequelize');
 const providerService = require('./provider.service');
@@ -13,15 +13,16 @@ const COMPANY_FIELDS = Object.freeze([
   'full_names', 'number_document', 'commercial_name', 'corporate_phone', 'corporate_cellphone',
   'corporate_email', 'website', 'entity_type', 'id_type_provider',
   'id_commercial_user', 'origin_channel', 'relationship_status', 'negotiation_condition',
-  'commercial_observations', 'requires_certificate', 'requires_traceability_report',
+  'commercial_observations', 'contact_priority', 'contact_observations', 'requires_certificate', 'requires_traceability_report',
   'general_observations', 'has_branches', 'status',
-  'operational_type',
+  'operational_type', 'operating_departments',
 ]);
 
 const SITE_FIELDS = Object.freeze([
   'full_names', 'number_document', 'cellphone', 'direction', 'mayorista', 'name_contact',
   'companyContacts', 'workAreaOrPositionOrUnit', 'frequency', 'cellphone_contact',
   'id_category', 'id_type_provider', 'id_sucursal', 'status', 'service_mode', 'general_observations', 'frequency_mode',
+  'enabled_sucursal_ids', 'operating_departments',
 ]);
 
 const COLLECTION_MODELS = Object.freeze({
@@ -69,8 +70,9 @@ class ProviderCompanyService {
     return sequelize.transaction(async (transaction) => {
       const company = await this.requireCompany(id, transaction, true);
       await company.update(this.pick(payload, COMPANY_FIELDS), { transaction });
+      await this.validateRequiredDocuments(company, transaction);
       if (data.headquarters) {
-        this.validateSite(data.headquarters, false, company.operational_type);
+        await this.validateSite(data.headquarters, false, company.operational_type, transaction);
         const site = await this.requireCompanySite(company.id, data.headquarters.id, transaction, true);
         await site.update(this.pick(data.headquarters, SITE_FIELDS), { transaction });
         await this.syncSiteDetails(site, data.headquarters, transaction);
@@ -93,7 +95,7 @@ class ProviderCompanyService {
   async updateSite(companyId, providerId, data) {
     return sequelize.transaction(async (transaction) => {
       const company = await this.requireCompany(companyId, transaction, true);
-      this.validateSite(data, false, company.operational_type);
+      await this.validateSite(data, false, company.operational_type, transaction);
       const provider = await this.requireCompanySite(company.id, providerId, transaction, true);
       await provider.update(this.pick(data, SITE_FIELDS), { transaction });
       await this.syncSiteDetails(provider, data, transaction);
@@ -201,7 +203,7 @@ class ProviderCompanyService {
   }
 
   async createSiteRecord(company, data, transaction) {
-    this.validateSite(data, true, company.operational_type);
+    await this.validateSite(data, true, company.operational_type, transaction);
     const provider = await Provider.create({
       ...this.pick(data, SITE_FIELDS),
       full_names: data.full_names || company.commercial_name || company.full_names,
@@ -250,28 +252,48 @@ class ProviderCompanyService {
     if (this.hasValue(data.corporate_email) && !/^\S+@\S+\.\S+$/.test(data.corporate_email)) throw this.error('El correo corporativo no es válido', 400);
     if (this.hasValue(data.website) && !/^https?:\/\//i.test(data.website)) throw this.error('El sitio web debe incluir http:// o https://', 400);
     if (this.hasValue(data.negotiation_condition)) this.validateCatalog('negotiation_condition', data.negotiation_condition);
+    if (this.hasValue(data.contact_priority) && !['HIGH', 'MEDIUM', 'LOW'].includes(data.contact_priority)) {
+      throw this.error('La prioridad de contacto no es válida', 400);
+    }
   }
 
-  validateSite(data, creating, operationalType = 'RAW_MATERIAL') {
+  async validateRequiredDocuments(company, transaction) {
+    const requirements = [
+      ['requires_certificate', 'CERTIFICATE', 'certificado'],
+      ['requires_traceability_report', 'TRACEABILITY_REPORT', 'informe de trazabilidad'],
+    ].filter(([field]) => company[field]);
+    if (!requirements.length) return;
+    const documents = await ProviderCompanyDocument.findAll({
+      where: { id_provider_company: company.id, status: true },
+      attributes: ['document_type'], transaction, raw: true,
+    });
+    const available = new Set(documents.map(document => document.document_type));
+    const missing = requirements.filter(([, type]) => !available.has(type)).map(([, , label]) => label);
+    if (missing.length) throw this.error(`Falta adjuntar el ${missing.join(' y el ')} requerido antes de guardar`, 422);
+  }
+
+  async validateSite(data, creating, operationalType = 'RAW_MATERIAL', transaction) {
     if (creating && !Number.isInteger(Number(data.id_sucursal))) throw this.error('La sucursal operativa de RECUMET es obligatoria', 400);
     const location = data.location || (data.branches || []).find((item) => item.is_main !== false && item.status !== false);
-    if (!location || !this.hasValue(location.department) || !this.hasValue(location.city) || !this.hasValue(location.address || location.direction)) {
-      throw this.error('Departamento, ciudad/municipio y dirección son obligatorios para la sede', 400);
+    if (!location || !this.hasValue(location.department) || !this.hasValue(location.address || location.direction)) {
+      throw this.error('Departamento y dirección son obligatorios para la sede', 400);
     }
     this.validateCoordinates(location.latitude, location.longitude);
-    this.validateCollection('contacts', data.contacts || []);
+    this.validateCollection('contacts', data.contacts || [], operationalType, { requirePositionArea: false });
     this.validateCollection('materials', data.materials || [], operationalType);
     if (Array.isArray(data.bankAccounts)) this.validateCollection('bankAccounts', data.bankAccounts);
     validateRegistrationFields({ ...data, latitude: location.latitude, longitude: location.longitude });
   }
 
-  validateCollection(kind, items, operationalType = 'RAW_MATERIAL') {
+  validateCollection(kind, items, operationalType = 'RAW_MATERIAL', options = {}) {
     const active = items.filter((item) => item.status !== false);
     if (kind === 'contacts') {
       if (!active.length) throw this.error('Registre al menos un contacto para la sede', 400);
       active.forEach((item) => {
-        if (![item.full_name, item.position_area, item.cellphone].every((value) => this.hasValue(value))) {
-          throw this.error('Cada contacto requiere nombre, cargo/área y celular', 400);
+        const required = [item.full_name, item.cellphone];
+        if (options.requirePositionArea !== false) required.push(item.position_area);
+        if (!required.every((value) => this.hasValue(value))) {
+          throw this.error(options.requirePositionArea === false ? 'Cada contacto requiere nombre y celular' : 'Cada contacto requiere nombre, cargo/área y celular', 400);
         }
       });
       if (active.filter((item) => item.is_main_contact).length !== 1) throw this.error('Seleccione un único contacto principal', 400);

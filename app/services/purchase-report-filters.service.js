@@ -9,7 +9,7 @@ const parseIds = (value) => String(value || '').split(',').map(Number).filter((i
 const optionalBoolean = value => value === true || value === 'true' || value === 'SI' ? true : value === false || value === 'false' || value === 'NO' ? false : undefined;
 
 const normalizePurchaseReportFilters = (params = {}) => {
-    const filterBy = ['DAY', 'MONTH', 'YEAR', 'RANGE'].includes(params.filterBy) ? params.filterBy : 'MONTH';
+    const filterBy = ['ALL', 'DAY', 'MONTH', 'YEAR', 'RANGE'].includes(params.filterBy) ? params.filterBy : 'MONTH';
     const fieldSort = REPORT_SORT_FIELDS.has(params.field_sort) ? params.field_sort : 'date_voucher';
     return {
         providerId: params.id_provider || '',
@@ -52,6 +52,7 @@ const buildPurchaseReportWhere = (filters) => ({
 });
 
 const dateRangeFilter = (filters) => {
+    if (filters.filterBy === 'ALL') return {};
     let start;
     let end;
     if (filters.filterBy === 'MONTH') {

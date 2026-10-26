@@ -3,6 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const service = require('../services/provider-company.service');
+const providerService = require('../services/provider.service');
+const { TypesProvider } = require('../database/config');
 
 const validCompany = {
   full_names: 'RECICLADORA ANDINA S.R.L.',
@@ -28,13 +30,31 @@ test('valida el contrato corporativo y rechaza catálogos desconocidos', () => {
   assert.doesNotThrow(() => service.validateCompany(validCompany));
   assert.throws(() => service.validateCompany({ ...validCompany, entity_type: 'INVALID' }), /catálogo permitido/);
   assert.throws(() => service.validateCompany({ ...validCompany, full_names: '' }), /full_names/);
+  assert.throws(() => service.validateCompany({ ...validCompany, contact_priority: 'CRITICAL' }), /prioridad de contacto/);
 });
 
-test('la sede exige ubicación, contacto principal y materiales sin sector', () => {
-  assert.doesNotThrow(() => service.validateSite(validSite, true));
-  assert.doesNotThrow(() => service.validateSite({ ...validSite, id_sector: undefined }, true));
-  assert.throws(() => service.validateSite({ ...validSite, contacts: [] }, true), /contacto/);
-  assert.throws(() => service.validateSite({ ...validSite, location: { department: 'La Paz' } }, true), /dirección/);
+test('la sede exige departamento, dirección, contacto principal y materiales sin sector', async () => {
+  await assert.doesNotReject(() => service.validateSite(validSite, true));
+  await assert.doesNotReject(() => service.validateSite({ ...validSite, id_sector: undefined, location: { ...validSite.location, city: '' } }, true));
+  await assert.rejects(() => service.validateSite({ ...validSite, contacts: [] }, true), /contacto/);
+  await assert.rejects(() => service.validateSite({ ...validSite, location: { department: 'La Paz' } }, true), /dirección/);
+});
+
+test('para Tipo A permite contactos sin cargo/área, que queda oculto en el formulario', async t => {
+  t.mock.method(TypesProvider, 'findByPk', async () => ({ code: 'A' }));
+  const site = { ...validSite, id_type_provider: 1, contacts: [{ full_name: 'Ana Pérez', position_area: '', cellphone: '70000000', is_main_contact: true }] };
+  await assert.doesNotReject(() => service.validateSite(site, true));
+});
+
+test('el registro Tipo A no exige municipio ni cargo del contacto ocultos en el formulario', () => {
+  assert.doesNotThrow(() => providerService.validateTypeA({
+    full_names: 'Empresa Recicladora', number_document: '1234567890', entity_type: 'PRIVATE',
+    frequency: 'MONTHLY', service_mode: 'BOTH', origin_channel: 'DIRECT_CONTACT', relationship_status: 'ACTIVE',
+    requires_certificate: false, requires_traceability_report: false,
+    branches: [{ is_main: true, status: true, department: 'La Paz', address: 'Av. Principal 100' }],
+    contacts: [{ is_main_contact: true, status: true, full_name: 'Ana Pérez', cellphone: '70000000' }],
+    materials: [{ status: true, id_category: 1 }],
+  }));
 });
 
 test('rechaza principales y elementos duplicados en colecciones', () => {

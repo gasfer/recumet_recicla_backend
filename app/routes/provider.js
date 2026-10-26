@@ -12,6 +12,7 @@ const { authorizeProviderAccess } = require('../middlewares/authorize-provider-a
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 const management = require('../controllers/provider-management.controller');
 const drafts = require('../controllers/provider-draft.controller');
+const { getProviderPurchases } = require('../controllers/provider-purchase-history.controller');
 const draftPermission = (req, res, next) => authorizeProviderAccess(req.params.key === 'new' || req.params.key?.endsWith('-newbranch') ? 'create' : 'update')(req, res, next);
 router.get('/drafts/:key', [validarJWT, draftPermission], drafts.read);
 router.put('/drafts/:key', [validarJWT, draftPermission], drafts.save);
@@ -35,6 +36,7 @@ router.post('/registration-sheet', [validarJWT, authorizeProviderAccess('view')]
 
 router.get('/management/catalogs', [validarJWT, authorizeProviderAccess('view')], management.catalogs);
 router.get('/management', [validarJWT, authorizeProviderAccess('view')], management.search);
+router.get('/:id/purchases', [validarJWT, authorizeProviderAccess('view')], getProviderPurchases);
 
 
 /**

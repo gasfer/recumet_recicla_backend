@@ -8,9 +8,9 @@ const COMMERCIAL_FIELDS = [
   'commercial_name', 'entity_type', 'origin_channel', 'relationship_status', 'negotiation_condition',
   'commercial_observations', 'requires_certificate', 'requires_traceability_report', 'service_mode',
   'general_observations', 'frequency', 'id_commercial_user', 'department', 'zone',
-  'certificate_file_name', 'traceability_file_name', 'frequency_mode', ...WHOLESALE_FIELDS
+  'certificate_file_name', 'traceability_file_name', 'frequency_mode', 'enabled_sucursal_ids', 'operating_departments', 'has_branches', ...WHOLESALE_FIELDS
 ];
-const PROFILE_FIELDS = [...new Set([...COMMERCIAL_FIELDS, 'direction', 'mayorista', 'name_contact', 'companyContacts', 'workAreaOrPositionOrUnit', 'cellphone_contact', 'id_type_provider', 'status'])];
+const PROFILE_FIELDS = [...new Set([...COMMERCIAL_FIELDS, 'direction', 'mayorista', 'name_contact', 'companyContacts', 'workAreaOrPositionOrUnit', 'cellphone_contact', 'id_type_provider', 'status', 'enabled_sucursal_ids', 'operating_departments', 'has_branches'])];
 
 const DETAIL_MODELS = {
   branches: { model: ProviderBranch, primaryField: 'is_main', mirror: 'branch' },
@@ -35,10 +35,16 @@ class ProviderService {
     });
   }
 
-  async findAutocompleteProviders(query = '') {
+  async findAutocompleteProviders(query = '', branchId = null) {
+    const conditions = [];
+    if (query) conditions.push({ [Op.or]: [{ full_names: { [Op.iLike]: `%${query}%` } }, { number_document: { [Op.iLike]: `%${query}%` } }] });
+    if (branchId) conditions.push({ [Op.or]: [
+      { enabled_sucursal_ids: { [Op.contains]: [Number(branchId)] } },
+      { enabled_sucursal_ids: null, id_sucursal: Number(branchId) },
+    ] });
     return Provider.findAll({
       attributes: ['id', 'full_names', 'number_document', 'estado_registro'],
-      where: { status: true, [Op.or]: [{ full_names: { [Op.iLike]: `%${query}%` } }, { number_document: { [Op.iLike]: `%${query}%` } }] },
+      where: { status: true, ...(conditions.length ? { [Op.and]: conditions } : {}) },
       include: [{ association: 'type', attributes: ['code'] }],
       limit: 20,
     });
@@ -152,7 +158,8 @@ class ProviderService {
         { association: 'commercialUser', attributes: ['id', 'full_names'], required: false },
         { association: 'company', required: false, include: [{ association: 'operatingProviders', attributes: ['id', 'full_names', 'number_document', 'direction', 'site_role', 'status'], required: false }] },
         { association: 'branches', where: { status: true }, required: false },
-        { association: 'contacts', where: { status: true }, required: false },
+        // Incluye inactivos para que edición permita reactivarlos y conserve su estado.
+        { association: 'contacts', required: false },
         { association: 'bankAccounts', where: { status: true }, required: false, include: [{ association: 'bank' }] },
         { association: 'materials', where: { status: true }, required: false, include: [{ association: 'category' }, { association: 'product' }] },
       ], transaction,
@@ -216,13 +223,12 @@ class ProviderService {
   }
 
   async syncMainBranch(provider, data, transaction) {
-    const fields = ['department', 'province', 'city', 'zone', 'direction', 'latitude', 'longitude', 'geolocation_text', 'google_maps_url'];
+    const fields = ['department', 'city', 'zone', 'direction', 'latitude', 'longitude', 'geolocation_text', 'google_maps_url'];
     if (!fields.some((field) => this.hasValue(data[field]))) return;
     const branch = await ProviderBranch.findOne({ where: { id_provider: provider.id, is_main: true }, transaction });
     const values = {
       branch_name: branch?.branch_name || 'SEDE PRINCIPAL',
       department: this.blankToNull(data.department),
-      province: this.blankToNull(data.province),
       city: this.blankToNull(data.city),
       zone: this.blankToNull(data.zone),
       address: this.blankToNull(data.direction),
@@ -330,9 +336,9 @@ class ProviderService {
     if (typeof data.requires_certificate !== 'boolean') missing.push('requires_certificate');
     if (typeof data.requires_traceability_report !== 'boolean') missing.push('requires_traceability_report');
     const branch = (data.branches || []).find((item) => item.is_main && item.status !== false);
-    if (!branch || !branch.department || !branch.city || !branch.address) missing.push('sede_principal');
+    if (!branch || !branch.department || !branch.address) missing.push('sede_principal');
     const contact = (data.contacts || []).find((item) => item.is_main_contact && item.status !== false);
-    if (!contact || !contact.full_name || !contact.position_area || !contact.cellphone) missing.push('contacto_principal');
+    if (!contact || !contact.full_name || !contact.cellphone) missing.push('contacto_principal');
     if (!Array.isArray(data.materials) || !data.materials.some((item) => item.status !== false && item.id_category)) missing.push('materials');
     if (missing.length) throw new Error(`Faltan datos obligatorios de Tipo A: ${missing.join(', ')}`);
   }

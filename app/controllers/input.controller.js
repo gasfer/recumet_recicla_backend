@@ -1,8 +1,6 @@
-const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('../services/purchase-report-filters.service');
-const { queryPurchaseReportTotals } = require('../services/purchase-report-query.service');
 const { providerCommercialFilter } = require('../services/provider-commercial-filter');
 const { response, request } = require('express');
-const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
+const { Input, Provider, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
@@ -38,6 +36,20 @@ const getOperationalOrder = ({ field_sort, order, orderNew }) => {
 const auditRequestKey = (req, suffix) => {
     const supplied = req.get('Idempotency-Key');
     return supplied ? `purchase:${supplied}:${suffix}` : null;
+};
+
+const validateProviderSucursal = async (providerId, sucursalId, transaction) => {
+    if (!providerId || !sucursalId) return;
+    const provider = await Provider.findByPk(providerId, { attributes: ['id', 'id_sucursal', 'enabled_sucursal_ids'], transaction });
+    const enabled = provider?.enabled_sucursal_ids;
+    const allowed = Array.isArray(enabled)
+        ? enabled.map(Number).includes(Number(sucursalId))
+        : Number(provider?.id_sucursal) === Number(sucursalId);
+    if (!allowed) {
+        const error = new Error('Este proveedor no está habilitado para comprar en la sucursal seleccionada.');
+        error.status = 400;
+        throw error;
+    }
 };
 
 const getInputFindOne = async (req = request, res = response) => {
@@ -80,7 +92,36 @@ const getInputsPaginate = async (req = request, res = response) => {
             } = req.query;
         const sucursalIds = parseIds(id_sucursal);
         const storageIds = parseIds(id_storage);
-        const where = buildPurchaseReportWhere(normalizePurchaseReportFilters(req.query));
+        const whereDate = whereDateForType(filterBy, date1, date2, '"Input"."date_voucher"');
+        const whereDateSum = whereDateForType(filterBy, date1, date2, '"input"."date_voucher"');
+        const where = {
+            [Op.and]: [
+                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
+                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
+                type_pay ? { type: type_pay } : {},
+                type_registry ? { type_registry } : {},
+                id_provider ? { id_provider } : {},
+                { status: status || 'ACTIVE' },
+                { date_voucher: whereDate },
+                referral_sources ? { referral_sources } : {},
+                old_customer ? { old_customer: old_customer === 'SI' } : {},
+                with_pickup ? { with_pickup: with_pickup === 'SI' } : {},
+            ],
+        };
+        const whereSum = {
+            [Op.and]: [
+                sucursalIds.length ? { id_sucursal: { [Op.in]: sucursalIds } } : {},
+                storageIds.length ? { id_storage: { [Op.in]: storageIds } } : {},
+                type_pay ? { type: type_pay } : {},
+                type_registry ? { type_registry } : {},
+                id_provider ? { id_provider } : {},
+                { status: status || 'ACTIVE' },
+                { date_voucher: whereDateSum },
+                referral_sources ? { referral_sources } : {},
+                old_customer ? { old_customer: old_customer === 'SI' } : {},
+                with_pickup ? { with_pickup: with_pickup === 'SI' } : {},
+            ],
+        };
         const optionsDb = {
             order: [getOperationalOrder({ field_sort, order, orderNew })],
             where,
@@ -109,8 +150,11 @@ const getInputsPaginate = async (req = request, res = response) => {
         for (const input of inputs.data) {
             input.dataValues.total_quantity = input.detailsInput.reduce((acc, item) => acc + Number(item.quantity), 0);
         }
-        const totals = await queryPurchaseReportTotals({ ...req.query, type, query });
-        inputs.totals = { totalInput: totals.total_amount, totalQuantity: totals.kg_quantity };
+        const totalInput = await Input.sum('total', { where });
+        const totalQuantity = await DetailsInput.sum('quantity', {
+            include: [{ association: 'input', attributes: [], where: whereSum }],
+        });
+        inputs.totals = { totalInput, totalQuantity };
         return res.status(200).json({
             ok: true,
             inputs,
@@ -136,6 +180,7 @@ const newInput = async (req = request, res = response) => {
         }
         const correlationId = purchaseAudit.createCorrelationId();
         const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
+        await validateProviderSucursal(id_provider, id_sucursal, t);
         const integrityLocations = input_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage }));
         const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         //number default, not ficha
@@ -275,9 +320,9 @@ const newInput = async (req = request, res = response) => {
     } catch (error) {
         await t.rollback();
         console.log('ERROR COMPRA: ' + error);
-        return res.status(500).json({
+        return res.status(error.status || 500).json({
           ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+            errors: [{ msg: error.status ? error.message : `Ocurrió un imprevisto interno | hable con soporte`}],
         });
     }
 }
@@ -296,6 +341,7 @@ const updateInput = async (req = request, res = response) => {
         }
         const { input_data, input_details } = req.body;
         const { id_sucursal, id_provider, id_storage, registry_number, type_registry } = input_data;
+        await validateProviderSucursal(id_provider, id_sucursal, t);
         const reason = String(input_data.audit_reason || req.body.audit_reason || '').trim();
         const requestedAuthorizerId = input_data.id_authorizer_user || req.body.id_authorizer_user;
         delete input_data.id_user;

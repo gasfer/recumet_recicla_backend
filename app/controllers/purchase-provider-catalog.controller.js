@@ -11,14 +11,17 @@ async function purchaseProviderCatalog(req, res) {
   if (allowedBranches && !allowedBranches.includes(Number(branch))) return res.status(403).json({ ok: false, errors: [{ msg: 'No tiene acceso a esa sucursal.' }] });
   try {
     const query = String(req.query.query || '').trim().slice(0, 150);
-    const where = {
-      id_sucursal: Number(branch),
-      ...(id ? { id_type_provider: Number(id) } : {}),
-      ...(query ? { [Op.or]: [
+    const where = { [Op.and]: [
+      { [Op.or]: [
+        { enabled_sucursal_ids: { [Op.contains]: [Number(branch)] } },
+        { enabled_sucursal_ids: null, id_sucursal: Number(branch) },
+      ] },
+      ...(id ? [{ id_type_provider: Number(id) }] : []),
+      ...(query ? [{ [Op.or]: [
         { full_names: { [Op.iLike]: '%' + query + '%' } },
         { number_document: { [Op.iLike]: '%' + query + '%' } },
-      ] } : {}),
-    };
+      ] }] : []),
+    ] };
     const [providers, types] = await Promise.all([
       Provider.findAll({ attributes: ['id', 'full_names', 'number_document'], where, limit: 100, order: [['full_names', 'ASC'], ['id', 'ASC']], raw: true }),
       TypesProvider.findAll({ attributes: ['id', 'name', 'code'], order: [['id', 'ASC']], raw: true }),

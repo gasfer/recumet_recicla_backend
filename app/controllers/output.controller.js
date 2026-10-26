@@ -4,6 +4,7 @@ const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
+const { outputListOrder } = require('../services/output-report-query.service');
 const { validaOpenCajaSmall } = require("../middlewares/validators/caja_small");
 const { hasAvailableStock } = require('../services/stock-availability.service');
 const { ValuedKardexService } = require('../services/valued-kardex.service');
@@ -51,7 +52,7 @@ const getOutputFindOne = async (req = request, res = response) => {
 
 const getOutputsPaginate = async (req = request, res = response) => {
     try {
-        const {query, page, limit, type,type_registry,type_output,id_client,type_pay, id_sucursal, id_storage, status, filterBy, date1, date2,orderNew} = req.query;
+        const {query, page, limit, type,type_registry,type_output,id_client,type_pay, id_sucursal, id_storage, status, filterBy, date1, date2} = req.query;
         const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."date_output"');
         const whereDateSum = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
         const where = {
@@ -79,7 +80,7 @@ const getOutputsPaginate = async (req = request, res = response) => {
             ]
         }
         const optionsDb = {
-            order: [orderNew],
+            order: outputListOrder(req.query, sequelize),
             where,
             include: [ 
                 { association: 'client' },

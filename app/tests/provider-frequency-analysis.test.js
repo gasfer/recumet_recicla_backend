@@ -29,6 +29,22 @@ test('una sola fecha conserva kilos pero requiere frecuencia manual; sin kg no i
   assert.equal(service.analyzePurchases([]).totalPurchases, 0);
 });
 
+test('calcula la frecuencia con entregas de los últimos 90 días y excluye historial vencido o futuro', () => {
+  const result = service.analyzePurchases([
+    purchase(1, '2026-05-01', 100),
+    purchase(2, '2026-10-01', 10),
+    purchase(3, '2026-10-15', 20),
+    purchase(4, '2026-11-01', 30),
+  ], '2026-10-30');
+
+  assert.equal(result.windowDays, 90);
+  assert.equal(result.totalPurchases, 2);
+  assert.equal(result.totalDeliveries, 2);
+  assert.equal(result.averageDays, 14);
+  assert.equal(result.totalKg, 30);
+  assert.deepEqual(result.purchases.map(row => row.id), [2, 3]);
+});
+
 test('sin producto ni sucursal consulta todo el historial del proveedor y conserva filtros opcionales', async t => {
   const queries = [];
   t.mock.method(sequelize, 'query', async (sql, options) => { queries.push({ sql, options }); return [purchase(1, '2026-10-01', 10), purchase(2, '2026-10-08', 20)]; });

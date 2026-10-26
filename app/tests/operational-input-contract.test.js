@@ -80,12 +80,14 @@ test('el listado operativo aplica el orden seguro predeterminado ante valores no
 
 test('el listado operativo no consume filtros exclusivos del Reporte de compras', async (t) => {
   let receivedOptions;
+  let totalWhere;
+  let quantityOptions;
   t.mock.method(db.Input, 'findAndCountAll', async (options) => {
     receivedOptions = options;
     return { count: 0, rows: [] };
   });
-  t.mock.method(db.Input, 'sum', async () => 0);
-  t.mock.method(db.DetailsInput, 'sum', async () => 0);
+  t.mock.method(db.Input, 'sum', async (_field, options) => { totalWhere = options.where; return 0; });
+  t.mock.method(db.DetailsInput, 'sum', async (_field, options) => { quantityOptions = options; return 0; });
 
   await getInputsPaginate({
     query: {
@@ -100,4 +102,6 @@ test('el listado operativo no consume filtros exclusivos del Reporte de compras'
   assert.ok(!whereString.includes('category_ids'));
   assert.ok(!whereString.includes('id_products'));
   assert.ok(!whereString.includes('report_filters'));
+  assert.ok(!JSON.stringify(totalWhere).includes('category_ids'));
+  assert.ok(!JSON.stringify(quantityOptions.include[0].where).includes('id_products'));
 });

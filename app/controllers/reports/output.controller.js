@@ -1,30 +1,53 @@
 const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
-const { Op } = require("sequelize");
-const { Output, DetailsOutput, Sucursal, sequelize } = require('../../database/config');
-const path = require('path');
-const fs = require('fs');
+const { Output, DetailsOutput, Sucursal, Storage, Client, sequelize } = require('../../database/config');
 const moment = require('moment');
 const NumeroALetras = require("../../helpers/numeros-aletras");
-const { whereDateForType } = require("../../helpers/where_range");
-const { getReportLogoPath } = require('../../helpers/report-logo');
-const imagePath = getReportLogoPath();
-const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
-const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
-minute: "numeric",
-second: "numeric", };
-
+const { buildOutputSearch, buildOutputWhere, outputOrder, sortOutputQuantities } = require('../../services/output-report-query.service');
+const { excelNumberMask } = require('../../helpers/number-formatter');
+const { buildOutputReportExcel } = require('../../services/output-report-excel.service');
 moment.locale('es'); 
+
+async function outputReportContext(params = {}, auth = {}) {
+    const company = await resolveReportCompany(params.id_sucursal);
+    if (!params.id_sucursal) company.branchName = 'Todas las sucursales';
+    const filters = [];
+    let period = params.date1 || 'Todos';
+    if (params.filterBy === 'MONTH' && params.date1 && params.date2) {
+        period = moment(`${params.date2}-${params.date1}-01`, 'YYYY-MM-DD').locale('es').format('MMMM [de] YYYY');
+    } else if (params.filterBy === 'RANGE') {
+        period = [params.date1, params.date2].filter(Boolean).join(' al ') || 'Todos';
+    } else if (params.filterBy === 'YEAR') {
+        period = params.date1 || 'Todos';
+    }
+    filters.push(`Período: ${period}`);
+    filters.push(`Estado: ${params.status ? (params.status === 'INACTIVE' ? 'Anulados' : 'Activos') : 'Todos'}`);
+    if (params.id_sucursal) filters.push(`Sucursal: ${company.branchName}`);
+    if (params.id_storage) {
+        const storage = await Storage.findByPk(params.id_storage, { attributes: ['name'] });
+        filters.push(`Almacén: ${storage?.name || `ID ${params.id_storage}`}`);
+    }
+    if (params.id_client) {
+        const client = await Client.findByPk(params.id_client, { attributes: ['full_names'] });
+        filters.push(`Cliente: ${client?.full_names || `ID ${params.id_client}`}`);
+    }
+    if (params.type_registry) filters.push(`Tipo de documento: ${params.type_registry}`);
+    if (params.type_output) filters.push(`Tipo de venta: ${params.type_output}`);
+    if (params.type_pay) filters.push(`Forma de pago: ${params.type_pay}`);
+    if (params.type && params.query) filters.push(`Búsqueda (${params.type}): ${params.query}`);
+    if (auth.full_names) filters.push(`Emitido por: ${auth.full_names}`);
+    return { company, filters };
+}
 
 const generatePdfReports = async (req = request, res = response) => {
     try {
-        const { filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const outputs = await returnDataOutput(req.query);
+        const context = await outputReportContext(req.query, req.userAuth);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
         let total = 0;
         let total_quantity = 0;
@@ -38,25 +61,27 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:output?.number_registry, fontSize:9}, 
                 {text:output?.client?.full_names, fontSize:8}, 
                 {
-                    text: output.detailsOutput
+                    text: (output.detailsOutput || [])
                         .map(detail => {
-                            const productName = detail.product.name;
+                            const productName = detail.product?.name || '';
                             const quantity = detail.quantity;
-                            const unit = detail.product.unit.siglas;
+                            const unit = detail.product?.unit?.siglas || '';
                             return `${productName} [${quantity} ${unit}]`;
                         })
                         .join(', '), 
                     fontSize: 9,
                 }, 
                 {text:output?.comments, fontSize:9}, 
-                {text:output?.type_output, fontSize:9}, 
+                {text:output?.voucher, fontSize:9},
+                {text:output?.type_output, fontSize:9},
                 {text:Number(output?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
                 {text:Number(output.total).toFixed(decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
-        dataPdf[5].table.body.push([
-            {colSpan: 8, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10,},
+        if (outputs.length) dataPdf[5].table.body.push([
+            {colSpan: 9, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10,},
+            {text:''},
             {text:''},
             {text:''},
             {text:''},
@@ -67,12 +92,11 @@ const generatePdfReports = async (req = request, res = response) => {
             {text:`Kg. ${Number(total_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'},
             {text: `Bs. ${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
-        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
-        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE VENTAS', paper: 'A4', orientation: 'landscape',
-            company: await resolveReportCompany(req.query.id_sucursal),
-            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            reportTheme: 'recumet',
+            company: context.company,
+            filters: context.filters,
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'output-generatePdfReports.pdf');
@@ -89,7 +113,7 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,40,45,55,'*','*','*',45,60,60],
+            widths: [60,40,45,55,'*','*','*',55,45,60,60],
             body: [
                 [
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
@@ -99,7 +123,8 @@ const dataPdfReturn = (auth) => [
                     {text:'CLIENTE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'COMENTARIOS', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'TIPO DE VENTA', fontSize:9,fillColor: '#eeeeee', bold:true},
+                    {text:'FORMA DE PAGO', fontSize:9,fillColor: '#eeeeee', bold:true},
                     {text:'CANT. KG',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                     {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
                 ]
@@ -113,95 +138,46 @@ const generateExcelReports = async (req = request, res = response) => {
   try {
     const outputs = await returnDataOutput(req.query);
     const decimal = await getNumberDecimal();
-    let output_data = [];
-    if (outputs.length == 0) {
-      output_data.push({
-        CÓDIGO: '',
-        FECHA_VENTA: '',
-        TIPO_DOCUMENTO: '',
-        NRO_DOCUMENTO: '',
-        CLIENTE: '',
-        DETALLE: '',
-        COMENTARIOS: '',
-        TIPO: '',
-        TOTAL_KG: '',
-        TOTAL: '',
-      });
-    }
-    let total = 0;
-    let total_quantity = 0;
-    outputs.forEach(output => {
-      total +=Number(output.total);
-      total_quantity +=Number(output.total_quantity);
-      const tableData = {
-        CÓDIGO: output.cod,
-        FECHA_VENTA: moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'),
-        TIPO_DOCUMENTO: output.type_registry,
-        NRO_DOCUMENTO: output.number_registry,
-        CLIENTE: output?.client?.full_names ?? '',
-        DETALLE: output.detailsOutput
-            .map(detail => {
-                const productName = detail.product.name;
-                const quantity = detail.quantity;
-                const unit = detail.product.unit.siglas;
-                return `${productName} [${quantity} ${unit}]`;
-            })
-            .join(', \n '), 
-        COMENTARIOS: output.comments,
-        TIPO: output.type_output,
-        TOTAL_KG: Number(output.total_quantity).toFixed(decimal),
-        TOTAL: Number(output.total).toFixed(decimal),
-      }
-      output_data.push(tableData);
+    const context = await outputReportContext(req.query, req.userAuth);
+    const numberFormat = excelNumberMask(decimal);
+    const data = outputs.map(output => [
+      String(output.cod ?? ''),
+      output.date_output ? new Date(output.date_output) : null,
+      String(output.type_registry ?? ''),
+      String(output.number_registry ?? ''),
+      String(output.client?.full_names ?? ''),
+      String(output.voucher ?? ''),
+      String(output.type_output ?? ''),
+      (output.detailsOutput || []).map(detail => `${detail.product?.name ?? ''} [${detail.quantity} ${detail.product?.unit?.siglas ?? ''}]`).join('\n'),
+      String(output.comments ?? ''),
+      Number(output.total_quantity ?? 0),
+      Number(output.total ?? 0),
+    ]);
+    const totals = outputs.length ? {
+      total_quantity: outputs.reduce((sum, output) => sum + Number(output.total_quantity || 0), 0),
+      total: outputs.reduce((sum, output) => sum + Number(output.total || 0), 0),
+    } : {};
+    const workbook = buildOutputReportExcel({
+      title: 'REPORTE DE VENTAS', sheetName: 'Ventas', filters: context.filters, company: context.company,
+      rows: data, decimal, totals,
+      columns: [
+        { key: 'cod', header: 'Código', width: 16 },
+        { key: 'date_output', header: 'Fecha de venta', width: 22, numberFormat: 'dd/mm/yyyy hh:mm:ss' },
+        { key: 'type_registry', header: 'Tipo de documento', width: 20 },
+        { key: 'number_registry', header: 'N.º de documento', width: 20 },
+        { key: 'client', header: 'Cliente', width: 34 },
+        { key: 'voucher', header: 'Tipo de venta', width: 22 },
+        { key: 'type_output', header: 'Forma de pago', width: 18 },
+        { key: 'details', header: 'Detalle', width: 56 },
+        { key: 'comments', header: 'Observaciones', width: 36 },
+        { key: 'total_quantity', header: 'Cantidad total', width: 18, numberFormat },
+        { key: 'total', header: 'Total Bs', width: 18, numberFormat },
+      ],
     });
-    output_data.push({
-        CÓDIGO: '',
-        FECHA_VENTA: '',
-        TIPO_DOCUMENTO: '',
-        NRO_DOCUMENTO: '',
-        CLIENTE: '',
-        DETALLE: '',
-        COMENTARIOS: '',
-        TIPO: '',
-        TOTAL_KG:  Number(total_quantity).toFixed(decimal),
-        TOTAL: Number(total).toFixed(decimal),
-      });
-    const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet(`Ventas totales`);
-    // Agregar encabezados
-    const headers = Object.keys(output_data[0]);
-    worksheet.addRow(headers);
-    // Agregar datos
-    output_data.forEach(data => {
-      const row = [];
-      headers.forEach(header => {
-        row.push(data[header]);
-      });
-      worksheet.addRow(row);
-    });
-    worksheet.getColumn('A').width = 15; 
-    worksheet.getColumn('B').width = 20; 
-    worksheet.getColumn('C').width = 25; 
-    worksheet.getColumn('D').width = 20; 
-    worksheet.getColumn('E').width = 20; 
-    worksheet.getColumn('F').width = 100; 
-    worksheet.getColumn('F').alignment = { wrapText: true };
-    worksheet.getColumn('G').width = 50; 
-    worksheet.getColumn('H').width = 20; 
-    worksheet.getColumn('I').width = 15; 
-    worksheet.getColumn('J').width = 15; 
-    worksheet.getColumn('K').width = 15; 
-    worksheet.getColumn('L').width = 15; 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=ventas-report.xlsx`);
-    workbook.xlsx.write(res)
-      .then(() => {
-        res.end();
-      })
-      .catch(err => {
-        console.error('Error generar Excel:', err);
-        res.status(500).json({ error: 'Error al crear excel' });
-      })
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (error) {
     console.log(error);
     return res.status(500).json({
@@ -212,62 +188,46 @@ const generateExcelReports = async (req = request, res = response) => {
 }
 
 const returnDataOutput = async (params) => {
-    const {type_pay, type_registry, id_client,id_sucursal,id_storage, status, filterBy, date1, date2,orderNew} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"Output"."date_output"');
-    const orderList = (orderNew && Array.isArray(orderNew) && orderNew.length > 0 && orderNew[0])
-        ? [orderNew]
-        : [['date_output', 'DESC']];
+    const where = buildOutputWhere(params);
+    const search = buildOutputSearch(params);
+    const { order, sortByTotalQuantity } = outputOrder(params);
+    const includes = [
+        { association: 'client' },
+        { association: 'sucursal',attributes: ['name', 'city', 'email'], include: [{ association: 'company', attributes: ['nit', 'email'] }] },
+        { association: 'storage',attributes: ['name'] },
+        { association: 'scale', attributes: ['name']},
+        { association: 'user', attributes: ['full_names','number_document']},
+        { association: 'bank'},
+        {
+            association: 'detailsOutput',
+            attributes: ['quantity'],
+            include: [{ association: 'product', attributes: ['cod', 'name'], include: [{ association: 'unit', attributes: ['name', 'siglas'] }] }]
+        }
+    ];
+    if (search?.association) {
+        const searchInclude = includes.find(include => include.association === search.association);
+        if (searchInclude) {
+            searchInclude.where = search.condition;
+            searchInclude.required = true;
+        }
+    }
     const optionsDb = {
-        order: orderList,
-        where: {
-            [Op.and]: [
-                id_sucursal   ? { id_sucursal   } : {},
-                id_storage    ? { id_storage  } : {},
-                type_pay      ? { type_output:type_pay } : {},
-                type_registry ? { type_registry } : {},
-                id_client   ? { id_client   } : {},
-                status        ? { status } : {},
-                { date_output: whereDate }
-            ]
-        },
-        include: [ 
-            { association: 'client' },
-            { association: 'sucursal',attributes: ['name', 'city', 'email'], include: [{ association: 'company', attributes: ['nit', 'email'] }] },
-            { association: 'storage',attributes: ['name'] },
-            { association: 'scale', attributes: ['name']},
-            { association: 'user', attributes: ['full_names','number_document']},
-            { association: 'bank'},
-            { 
-                association: 'detailsOutput', 
-                attributes: ['quantity'],
-                include: [
-                    { 
-                        association: 'product', 
-                        attributes: ['cod', 'name'],
-                        include: [
-                            {
-                                association: 'unit', 
-                                attributes: ['name', 'siglas']
-                            }
-                        ]
-                    },
-                    
-                ]
-            }
-        ]
+        order,
+        where,
+        include: includes,
     };
     const outputs = await Output.findAll(optionsDb);
     for (const output of outputs) {
-        output.total_quantity = output.detailsOutput.reduce((acc, item) => acc + Number(item.quantity), 0);
+        output.total_quantity = (output.detailsOutput || []).reduce((acc, item) => acc + Number(item.quantity), 0);
     }
-    return outputs;
+    return sortOutputQuantities(outputs, sortByTotalQuantity);
 }
 
 const generatePdfDetailsReports = async (req = request, res = response) => {
     try {
-        const {filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const detailsOutput = await returnDataDetailsOutput(req.query);
+        const context = await outputReportContext(req.query, req.userAuth);
         let dataPdf = dataDetailsPdfReturn(req.userAuth); //PDF 
         let total = 0;
         detailsOutput.forEach(detail => {
@@ -281,19 +241,18 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
             ];
             dataPdf[5].table.body.push(tableData);
         });
-        dataPdf[5].table.body.push([
+        if (detailsOutput.length) dataPdf[5].table.body.push([
             {colSpan: 2, text:`TOTAL: ${NumeroALetras(total)}`},
             {text:''},
             {text:''},
             {text:''},
             {text: `${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
-        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
-        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE VENTAS DETALLADAS', paper: 'A4', orientation: 'landscape',
-            company: await resolveReportCompany(id_sucursal),
-            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            reportTheme: 'recumet',
+            company: context.company,
+            filters: context.filters,
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'output-generatePdfDetailsReports.pdf');
@@ -335,54 +294,35 @@ const dataDetailsPdfReturn = (auth) => [
 const generateExcelDetailsReports = async (req = request, res = response) => {
     try {
         const detailsOutput = await returnDataDetailsOutput(req.query)
-        let detailsOutput_data = [];
-        if (detailsOutput.length == 0) {
-            detailsOutput_data.push({
-                CÓDIGO: '',
-                PRODUCTO: '',
-                PRECIO: '',
-                CANTIDAD: '',
-                IMPORTE: '',
-            });
-        }
-        detailsOutput.forEach(detail => {
-            const tableData = {
-                CÓDIGO: detail?.product.cod,
-                PRODUCTO: detail?.product.name,
-                PRECIO: Number(detail?.price),
-                CANTIDAD:Number(detail?.dataValues.suma_quantity),
-                IMPORTE: Number(detail?.dataValues.suma_total),
-            }
-            detailsOutput_data.push(tableData);
+        const decimal = await getNumberDecimal();
+        const context = await outputReportContext(req.query, req.userAuth);
+        const numberFormat = excelNumberMask(decimal);
+        const data = detailsOutput.map(detail => [
+            String(detail.product?.cod ?? ''),
+            String(detail.product?.name ?? ''),
+            Number(detail.price ?? 0),
+            Number(detail.dataValues.suma_quantity ?? 0),
+            Number(detail.dataValues.suma_total ?? 0),
+        ]);
+        const totals = detailsOutput.length ? {
+            suma_quantity: detailsOutput.reduce((sum, detail) => sum + Number(detail.dataValues.suma_quantity || 0), 0),
+            suma_total: detailsOutput.reduce((sum, detail) => sum + Number(detail.dataValues.suma_total || 0), 0),
+        } : {};
+        const workbook = buildOutputReportExcel({
+            title: 'DETALLE DE VENTAS POR PRODUCTO', sheetName: 'Ventas detalle', filters: context.filters, company: context.company,
+            rows: data, decimal, totals,
+            columns: [
+                { key: 'cod', header: 'Código', width: 20 },
+                { key: 'product', header: 'Producto', width: 56 },
+                { key: 'price', header: 'Precio unitario Bs', width: 22, numberFormat },
+                { key: 'suma_quantity', header: 'Cantidad', width: 20, numberFormat },
+                { key: 'suma_total', header: 'Importe Bs', width: 22, numberFormat },
+            ],
         });
-        const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet(`Ventas detalladas`);
-        // Agregar encabezados
-        const headers = Object.keys(detailsOutput_data[0]);
-        worksheet.addRow(headers);
-        // Agregar datos
-        detailsOutput_data.forEach(data => {
-            const row = [];
-            headers.forEach(header => {
-                row.push(data[header]);
-            });
-            worksheet.addRow(row);
-        });
-        worksheet.getColumn('A').width = 15; 
-        worksheet.getColumn('B').width = 50; 
-        worksheet.getColumn('C').width = 20; 
-        worksheet.getColumn('D').width = 20; 
-        worksheet.getColumn('E').width = 20; 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename=ventas-detalle-report.xlsx`);
-        workbook.xlsx.write(res)
-            .then(() => {
-                res.end();
-            })
-            .catch(err => {
-                console.error('Error generar Excel:', err);
-                res.status(500).json({ error: 'Error al crear excel' });
-            })
+        await workbook.xlsx.write(res);
+        res.end();
     } catch (error) {
       console.log(error);
       return res.status(500).json({
@@ -393,8 +333,12 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
 }
 
 const returnDataDetailsOutput = async (params) => {
-    const {type_pay, type_registry, id_client,id_sucursal,id_storage, status, filterBy, date1, date2} = params;
-    const whereDate = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
+    const where = buildOutputWhere(params, '"output"."date_output"');
+    const search = buildOutputSearch(params);
+    const outputInclude = { association: 'output', attributes: [], where };
+    if (search?.association) {
+        outputInclude.include = [{ association: search.association, attributes: [], where: search.condition, required: true }];
+    }
     const optionsDb = {
         attributes: [
             'price',
@@ -406,21 +350,7 @@ const returnDataDetailsOutput = async (params) => {
                 association: 'product', 
                 attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']}, 
             },
-            {    
-                association: 'output',
-                attributes: [], //para no incluir, pero si usar el where
-                where: {
-                        [Op.and]: [
-                            id_sucursal   ? { id_sucursal   } : {},
-                            id_storage    ? { id_storage   } : {},
-                            type_pay      ? { type_output:type_pay } : {},
-                            type_registry ? { type_registry } : {},
-                            id_client   ? { id_client   } : {},
-                            status ? { status } : {},
-                            { date_output: whereDate }
-                        ]
-                }, 
-            }
+            outputInclude
         ],
         group: [ 'id_product','product.id','price']
     };

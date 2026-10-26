@@ -4,15 +4,24 @@ const { Op } = require('sequelize');
 const moment = require('moment');
 const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('./purchase-report-filters.service');
 
-const includesForReport = (filters) => [
-    { association: 'provider', attributes: ['full_names', 'id_type_provider'], ...(filters.providerTypeId || filters.providerCommercialUserId ? { where: { ...providerCommercialFilter(filters.providerCommercialUserId, filters.entityType), ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}) }, required: true } : {}), include: [{ association: 'type', attributes: ['name'] }] },
+const REPORT_EXPORT_INPUT_ATTRIBUTES = [
+    'id', 'cod', 'date_voucher', 'type', 'type_registry', 'registry_number', 'total',
+    'referral_sources', 'old_customer', 'with_pickup', 'id_provider',
+];
+const REPORT_PAGE_INPUT_ATTRIBUTES = [
+    ...REPORT_EXPORT_INPUT_ATTRIBUTES, 'createdAt', 'type_payment', 'account_input',
+    'comments', 'payment_voucher', 'sumas', 'discount',
+];
+
+const includesForReport = (filters, { includeDetailModal = false } = {}) => [
+    { association: 'provider', attributes: ['full_names', 'id_type_provider', ...(includeDetailModal ? ['number_document'] : [])], ...(filters.providerTypeId || filters.providerCommercialUserId ? { where: { ...providerCommercialFilter(filters.providerCommercialUserId, filters.entityType), ...(filters.providerTypeId ? { id_type_provider: filters.providerTypeId } : {}) }, required: true } : {}), include: [{ association: 'type', attributes: ['name'] }] },
     { association: 'sucursal', attributes: ['name'] },
     { association: 'storage', attributes: ['name'] },
     {
         association: 'detailsInput', attributes: ['quantity', 'total', 'cost'], where: { status: 'ACTIVE', removed_at: null },
         required: false,
         include: [{
-            association: 'product', attributes: ['id', 'cod', 'name'],
+            association: 'product', attributes: ['id', 'cod', 'name', ...(includeDetailModal ? ['description'] : [])],
             where: {
                 ...(filters.categoryIds.length ? { id_category: { [require('sequelize').Op.in]: filters.categoryIds } } : {}),
                 ...(filters.productIds.length ? { id: { [require('sequelize').Op.in]: filters.productIds } } : {}),
@@ -21,6 +30,11 @@ const includesForReport = (filters) => [
             include: [{ association: 'unit', attributes: ['id', 'siglas'] }],
         }],
     },
+    ...(includeDetailModal ? [
+        { association: 'bank', attributes: ['name'], required: false },
+        { association: 'scale', attributes: ['name'], required: false },
+        { association: 'user', attributes: ['full_names', 'number_document'], required: false },
+    ] : []),
 ];
 
 const addTotalQuantity = (inputs) => inputs.map((input) => {
@@ -125,8 +139,9 @@ const queryPurchaseReportPage = async (params) => {
     const ids = pageIds.map((row) => row.id);
     const rows = ids.length ? await Input.findAll({
         where: { id: { [Op.in]: ids } },
+        attributes: REPORT_PAGE_INPUT_ATTRIBUTES,
         order,
-        include: includesForReport(filters),
+        include: includesForReport(filters, { includeDetailModal: true }),
     }) : [];
     return {
         previousPage: page > 1 ? page - 1 : null,
@@ -147,6 +162,7 @@ const queryPurchaseReportExport = async (params) => {
     const options = applyDetailFilter(applyReportSearch({
         where: buildPurchaseReportWhere(filters),
         order: [['id_provider', 'ASC'], ['date_voucher', 'DESC'], [filters.fieldSort, filters.direction]],
+        attributes: REPORT_EXPORT_INPUT_ATTRIBUTES,
         include: includesForReport(filters),
     }, filters), filters);
     const inputs = await Input.findAll(options);
