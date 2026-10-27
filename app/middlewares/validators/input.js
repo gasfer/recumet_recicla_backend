@@ -28,7 +28,16 @@ const validationSchema =  {
         },
     },
     'input_data.registry_number': {
-        custom: { options: registryNumberExist },
+        custom: {
+            options: async (value, { req }) => {
+                const typeRegistry = req.body.input_data?.type_registry;
+                if (typeRegistry !== 'SIN FICHA' && !String(value ?? '').trim()) {
+                    throw new Error('El Nro. de Pesaje es obligatorio para compras con ficha o boleta');
+                }
+                if (typeRegistry !== 'SIN FICHA') await registryNumberExist(value, { req });
+                return true;
+            },
+        },
     },
     'input_data.account_input': {
         isLength: {
