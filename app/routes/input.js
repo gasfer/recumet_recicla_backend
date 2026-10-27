@@ -10,6 +10,7 @@ const { filesExist, filesValidateSize } = require('../middlewares/validators/val
 const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
 const { authorizeProductCategoryAccess, detailProductIds } = require('../middlewares/authorize-product-category-access');
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
+const { validatePurchaseCommandRequest } = require('../middlewares/validate-purchase-command');
 
 const router = Router();
 const { exportPurchaseProviderDetails } = require('../controllers/reports/purchase-provider-details.controller');
@@ -81,6 +82,7 @@ router.post('/', [
     authorizeModulePermission('COMPRAS', 'create'),
     toUpperCaseConvert,
     getValidateCreate,
+    validatePurchaseCommandRequest,
     authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.PURCHASES, action: 'create', extractProductIds: detailProductIds('input_details') })
 ], newInput);
 
@@ -105,6 +107,7 @@ router.put('/:id_input', [
     authorizeModulePermission('COMPRAS', 'update'),
     toUpperCaseConvert,
     getValidateUpdate,
+    validatePurchaseCommandRequest,
     authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.PURCHASES, action: 'update', extractProductIds: detailProductIds('input_details') }),
 ], updateInput);
 

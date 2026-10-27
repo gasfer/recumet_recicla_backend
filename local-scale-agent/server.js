@@ -7,7 +7,10 @@ const LOOPBACK_HOST = '127.0.0.1';
 const DEFAULT_AGENT_PORT = 4180;
 const DEFAULT_SCALE_HOST = '192.168.0.240';
 const DEFAULT_SCALE_PORT = 8000;
-const DEFAULT_ALLOWED_ORIGINS = ['https://recicladev.recumetbolivia.com'];
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://recicla.recumetbolivia.com',
+  'https://recicladev.recumetbolivia.com',
+];
 
 const allowedOrigins = new Set(
   String(process.env.TRUCK_SCALE_ALLOWED_ORIGINS || DEFAULT_ALLOWED_ORIGINS.join(','))

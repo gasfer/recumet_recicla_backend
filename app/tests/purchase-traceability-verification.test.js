@@ -5,43 +5,55 @@ process.env.NODE_ENV = 'test';
 process.env.DB_DIALECT = 'postgres';
 const db = require('../database/config');
 const audit = require('../services/purchase-audit.service');
+const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { newInput } = require('../controllers/input.controller');
 const { newAbonoAccountPayable, deleteAbonoAccountPayable } = require('../controllers/accounts_payables.controller');
 const { getPurchaseTraceability, getProviderTraceability } = require('../controllers/purchase_traceability.controller');
 const notificationService = require('../services/notification.service');
+const { withDecimalPolicy } = require('../helpers/decimal-operation-context');
 
 const response = () => ({ status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
-const tx = () => ({ LOCK: { UPDATE: 'UPDATE', SHARE: 'SHARE' }, committed: false, rolledBack: false,
+const tx = () => ({ uuid: 'test-transaction', LOCK: { UPDATE: 'UPDATE', SHARE: 'SHARE' }, committed: false, rolledBack: false,
   async commit() { this.committed = true; }, async rollback() { this.rolledBack = true; } });
 const plain = (data) => ({ ...data, async save() { return this; }, get() { return { ...this }; } });
 
 const prepareCreation = (t, credit) => {
   const transaction = tx();
   const events = [];
+  const movements = [];
+  const stock = { stock: 0, setDataValue(key, value) { this[key] = Number(value); }, async save() { return this; } };
   t.mock.method(db.sequelize, 'transaction', async () => transaction);
+  t.mock.method(db.sequelize, 'query', async sql => sql.includes('view_kardex_detalle')
+    ? [{ kardex_balance: stock.stock, physical_kardex_balance: stock.stock, duplicate_effects: 0, held_quantity: 0 }]
+    : []);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
   t.mock.method(audit, 'createCorrelationId', () => '39c8c6c2-f69d-4f4b-9d8a-d41466e81e65');
   t.mock.method(db.Input, 'findOne', async () => null);
   t.mock.method(db.Input, 'create', async data => plain({ id: 10, status: 'ACTIVE', ...data }));
   t.mock.method(db.Input, 'count', async () => 1);
+  t.mock.method(db.Sucursal, 'findByPk', async id => ({ id: Number(id), status: true }));
+  t.mock.method(db.Storage, 'findByPk', async id => ({ id: Number(id), id_sucursal: 2, status: true }));
+  t.mock.method(db.Provider, 'findByPk', async id => ({ id, id_sucursal: 2, enabled_sucursal_ids: [2] }));
   t.mock.method(db.DetailsInput, 'create', async data => plain({ id: 20, status: 'ACTIVE', ...data }));
-  t.mock.method(db.Stock, 'findOne', async () => null);
-  t.mock.method(db.Stock, 'create', async data => data);
+  t.mock.method(db.Stock, 'findOne', async () => stock);
+  t.mock.method(db.Stock, 'create', async () => stock);
+  t.mock.method(ValuedKardexService.prototype, 'recordMovement', async movement => { movements.push(movement); return movement; });
   t.mock.method(db.History, 'create', async data => data);
   t.mock.method(db.AccountsPayable, 'create', async data => plain({ id: 30, ...data }));
   t.mock.method(db.AccountsPayable, 'count', async () => 1);
   t.mock.method(db.AbonosAccountsPayable, 'create', async data => plain({ id: 40, ...data }));
   t.mock.method(audit, 'createEvent', async event => { events.push(event); return event; });
-  const req = { get: name => name === 'Idempotency-Key' ? `create-${credit}` : null, userAuth: { id: 7 }, body: {
+  const req = { get: name => name === 'Idempotency-Key' ? `create-${credit}` : null,
+    userAuth: { id: 7, role: 'ADMINISTRADOR' }, body: {
     input_data: { id_sucursal: 2, id_provider: 3, id_storage: 4, type_registry: 'CON FICHA', registry_number: 'B-1',
       total: 100, on_account: credit ? 20 : 0, pay_to_credit: credit, status: 'ACTIVE' },
     input_details: [{ id_product: 5, quantity: 2, cost: 50, total: 100, status: 'ACTIVE' }],
   } };
-  return { transaction, events, req };
+  return { transaction, events, movements, req };
 };
 
 test('7.1 creación al contado conserva registrador y confirma compra y detalle atómicamente', async t => {
-  const { transaction, events, req } = prepareCreation(t, false);
+  const { transaction, events, movements, req } = prepareCreation(t, false);
   const res = response();
   await newInput(req, res);
   assert.equal(res.code, 201);
@@ -49,6 +61,10 @@ test('7.1 creación al contado conserva registrador y confirma compra y detalle 
   assert.equal(req.body.input_data.id_user, 7);
   assert.deepEqual(events.map(event => event.eventType), ['PURCHASE_CREATED', 'DETAIL_ADDED']);
   assert.ok(events.every(event => event.transaction === transaction && event.actorUserId === 7));
+  assert.equal(movements[0].id_sucursal, 2);
+  assert.equal(movements[0].id_storage, 4);
+  assert.equal(movements[0].id_user, 7);
+  assert.equal(movements[0].sourceId, 10);
 });
 
 test('7.1 creación a crédito correlaciona compra detalle cuenta y cuota inicial', async t => {
@@ -78,16 +94,18 @@ test('7.3 registrar abono actualiza saldo y genera evento ligado a compra cuenta
   t.mock.method(db.sequelize, 'transaction', async () => transaction);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
   const account = plain({ id: 30, id_input: 10, id_sucursal: 2, total: 100, monto_abonado: 20, monto_restante: 80, status_account: 'PENDIENTE', description: 'Compra' });
+  account.save = async () => account;
   t.mock.method(db.AccountsPayable, 'findByPk', async () => account);
+  t.mock.method(db.Company, 'findAll', async () => [{ id: 1, decimals: 2 }]);
   t.mock.method(db.AbonosAccountsPayable, 'create', async data => plain({ id: 40, ...data }));
   t.mock.method(db.Input, 'findByPk', async () => plain({ id: 10, id_sucursal: 2 }));
   t.mock.method(db.History, 'create', async data => data);
   const events = [];
   t.mock.method(audit, 'createEvent', async event => { events.push(event); return event; });
   const res = response();
-  await newAbonoAccountPayable({ get: () => 'pay-1', userAuth: { id: 7 }, body: {
+  await withDecimalPolicy({ companyId: 1, places: 2, inventory: false }, () => newAbonoAccountPayable({ get: () => 'pay-1', userAuth: { id: 7 }, body: {
     id_account_payable: 30, monto_abono: 30, date_abono: new Date(), type_payment: 'EFECTIVO',
-  } }, res);
+  } }, res));
   assert.equal(res.code, 201);
   assert.equal(account.monto_abonado, 50);
   assert.equal(account.monto_restante, 50);

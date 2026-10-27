@@ -1,29 +1,17 @@
 'use strict';
 
-const INITIAL_PRICING_GRACE_HOURS = 24;
-const HOUR_IN_MS = 60 * 60 * 1000;
+const PRICE_EDIT_GRACE_DAYS = 7;
+const PURCHASE_EDIT_WINDOW_DAYS = 30;
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const PROTECTED_INPUT_FIELDS = Object.freeze([
-  'date_voucher',
-  'type',
-  'type_payment',
-  'type_registry',
-  'registry_number',
-  'account_input',
-  'comments',
-  'discount',
-  'is_paid',
-  'id_scales',
-  'id_storage',
-  'id_provider',
-  'id_bank',
-  'id_sucursal',
-  'referral_sources',
-  'old_customer',
-  'with_pickup',
-  'number_transaction',
-  'status',
+  'date_voucher', 'type', 'type_payment', 'type_registry', 'registry_number',
+  'account_input', 'comments', 'discount', 'is_paid', 'id_scales', 'id_storage',
+  'id_provider', 'id_bank', 'id_sucursal', 'referral_sources', 'old_customer',
+  'with_pickup', 'number_transaction', 'status',
 ]);
+const DERIVED_INPUT_FIELDS = new Set(['sumas', 'total']);
+const NON_PRICE_DETAIL_FIELDS = ['quantity', 'status', 'expiration_date', 'profit_margin'];
 
 const toPlain = value => value && typeof value.get === 'function'
   ? value.get({ plain: true })
@@ -43,118 +31,114 @@ const normalizeDate = value => {
   return Number.isNaN(timestamp) ? String(value) : timestamp;
 };
 
-const valuesEqual = (field, before, after) => {
-  if (field === 'date_voucher') return normalizeDate(before) === normalizeDate(after);
-  return JSON.stringify(normalize(before)) === JSON.stringify(normalize(after));
-};
+const valuesEqual = (field, before, after) => field === 'date_voucher'
+  ? normalizeDate(before) === normalizeDate(after)
+  : JSON.stringify(normalize(before)) === JSON.stringify(normalize(after));
 
-const isUnpriced = value => {
-  if (value === null || value === undefined || value === '') return true;
-  const amount = Number(value);
-  return Number.isFinite(amount) && amount === 0;
-};
-
-const isPositiveAmount = value => Number.isFinite(Number(value)) && Number(value) > 0;
-const nearlyEqual = (left, right) => Math.abs(Number(left) - Number(right)) <= 0.0001;
-
-const pricingWindowReason = (createdAt, now) => {
-  const createdAtTime = new Date(createdAt).getTime();
+const elapsedDays = (date, now) => {
+  const dateTime = new Date(date).getTime();
   const currentTime = new Date(now).getTime();
-  if (!Number.isFinite(createdAtTime) || !Number.isFinite(currentTime)) return 'invalid-pricing-window';
-  const elapsed = currentTime - createdAtTime;
-  if (elapsed < 0) return 'future-created-at';
-  return elapsed <= INITIAL_PRICING_GRACE_HOURS * HOUR_IN_MS ? null : 'pricing-window-expired';
+  if (!Number.isFinite(dateTime) || !Number.isFinite(currentTime) || dateTime > currentTime) return null;
+  return (currentTime - dateTime) / DAY_IN_MS;
 };
 
-const hasProtectedInputChanges = (originalInput, requestedInput) => {
+const detailsByProduct = details => {
+  const result = new Map();
+  for (const detail of details) {
+    const productId = Number(detail.id_product);
+    if (!Number.isInteger(productId) || result.has(productId)) return null;
+    result.set(productId, detail);
+  }
+  return result;
+};
+
+const inspectChanges = ({ originalInput, requestedInput, originalDetails, requestedDetails }) => {
   const original = toPlain(originalInput);
   const requested = toPlain(requestedInput);
-  return PROTECTED_INPUT_FIELDS.some(field => (
-    requested[field] !== undefined && !valuesEqual(field, original[field], requested[field])
-  ));
+  const before = detailsByProduct(originalDetails.map(toPlain));
+  const after = detailsByProduct(requestedDetails.map(toPlain));
+  if (!before || !after || before.size !== after.size) {
+    return { hasPriceChanges: false, hasNonPriceChanges: true, hasNonQuantityChanges: true };
+  }
+
+  let hasPriceChanges = false;
+  let hasNonPriceChanges = false;
+  let hasNonQuantityChanges = false;
+  for (const [productId, detail] of after) {
+    const previous = before.get(productId);
+    if (!previous) {
+      hasNonPriceChanges = true;
+      hasNonQuantityChanges = true;
+      continue;
+    }
+    if (detail.cost !== undefined && !valuesEqual('cost', previous.cost, detail.cost)) hasPriceChanges = true;
+    if (NON_PRICE_DETAIL_FIELDS.some(field => detail[field] !== undefined && !valuesEqual(field, previous[field], detail[field]))) {
+      hasNonPriceChanges = true;
+      if (NON_PRICE_DETAIL_FIELDS.some(field => field !== 'quantity' && detail[field] !== undefined && !valuesEqual(field, previous[field], detail[field]))) {
+        hasNonQuantityChanges = true;
+      }
+    }
+  }
+
+  for (const field of PROTECTED_INPUT_FIELDS) {
+    if (requested[field] !== undefined && !valuesEqual(field, original[field], requested[field])) {
+      hasNonPriceChanges = true;
+      hasNonQuantityChanges = true;
+    }
+  }
+  const originalAccount = toPlain(original.accounts_payable);
+  if (requested.on_account !== undefined
+    && !valuesEqual('on_account', originalAccount?.monto_abonado ?? 0, requested.on_account)) {
+    hasNonPriceChanges = true;
+    hasNonQuantityChanges = true;
+  }
+
+  return { hasPriceChanges, hasNonPriceChanges, hasNonQuantityChanges };
 };
 
-const hasChangedInitialPayment = (originalInput, requestedInput) => {
-  const requested = toPlain(requestedInput);
-  if (requested.on_account === undefined) return false;
-  const original = toPlain(originalInput);
-  const account = toPlain(original.accounts_payable);
-  return !valuesEqual('on_account', account.monto_abonado ?? 0, requested.on_account);
-};
-
-const classifyInitialPricing = ({
+const classifyPurchaseEdit = ({
   originalInput,
   originalDetails = [],
   requestedInput = {},
   requestedDetails = [],
+  actorRole,
   now = new Date(),
 }) => {
-  const before = originalDetails.map(toPlain);
-  const after = requestedDetails.map(toPlain);
+  const original = toPlain(originalInput);
+  const { hasPriceChanges, hasNonPriceChanges, hasNonQuantityChanges } = inspectChanges({
+    originalInput, requestedInput, originalDetails, requestedDetails,
+  });
+  const isPriceOnly = hasPriceChanges && !hasNonPriceChanges;
+  const createdAge = elapsedDays(original.createdAt, now);
+  const editAge = elapsedDays(original.date_voucher, now);
+  const editWindowExpired = editAge === null || editAge > PURCHASE_EDIT_WINDOW_DAYS;
+  const isAdmin = actorRole === 'ADMINISTRADOR';
+  const isWeighingOperator = actorRole === 'OPERADOR_BALANZA';
+  const withinCajaGrace = actorRole === 'LIQUIDACION_CAJA'
+    && createdAge !== null && createdAge <= PRICE_EDIT_GRACE_DAYS;
 
-  if (!before.length) return { requiresAuthorization: true, reason: 'missing-original-details' };
-  if (!before.some(detail => isUnpriced(detail.cost))) {
-    return { requiresAuthorization: true, reason: 'previously-priced' };
-  }
-  const windowReason = pricingWindowReason(toPlain(originalInput).createdAt, now);
-  if (windowReason) return { requiresAuthorization: true, reason: windowReason };
-  if (before.length !== after.length) {
-    return { requiresAuthorization: true, reason: 'details-changed' };
-  }
-  if (hasProtectedInputChanges(originalInput, requestedInput) || hasChangedInitialPayment(originalInput, requestedInput)) {
-    return { requiresAuthorization: true, reason: 'purchase-data-changed' };
-  }
-
-  const beforeByProduct = new Map(before.map(detail => [Number(detail.id_product), detail]));
-  const requestedProductIds = after.map(detail => Number(detail.id_product));
-  if (beforeByProduct.size !== before.length || new Set(requestedProductIds).size !== after.length) {
-    return { requiresAuthorization: true, reason: 'ambiguous-products' };
-  }
-
-  let derivedSum = 0;
-  let completedPrices = 0;
-  for (const requestedDetail of after) {
-    const originalDetail = beforeByProduct.get(Number(requestedDetail.id_product));
-    const quantity = Number(requestedDetail.quantity);
-    const cost = Number(requestedDetail.cost);
-    const total = Number(requestedDetail.total);
-    if (!originalDetail
-      || !valuesEqual('quantity', originalDetail.quantity, requestedDetail.quantity)
-      || !Number.isFinite(quantity)
-      || !Number.isFinite(cost)
-      || !Number.isFinite(total)
-      || !nearlyEqual(total, quantity * cost)) {
-      return { requiresAuthorization: true, reason: 'non-pricing-detail-change' };
-    }
-    if (isUnpriced(originalDetail.cost)) {
-      if (!isUnpriced(requestedDetail.cost) && !isPositiveAmount(requestedDetail.cost)) {
-        return { requiresAuthorization: true, reason: 'non-pricing-detail-change' };
-      }
-      if (isPositiveAmount(requestedDetail.cost)) completedPrices += 1;
-    } else if (!valuesEqual('cost', originalDetail.cost, requestedDetail.cost)) {
-      return { requiresAuthorization: true, reason: 'previous-price-changed' };
-    }
-    derivedSum += total;
-  }
-
-  if (!completedPrices) return { requiresAuthorization: true, reason: 'no-pending-price-completed' };
-
-  const requested = toPlain(requestedInput);
-  if (requested.sumas !== undefined && !nearlyEqual(requested.sumas, derivedSum)) {
-    return { requiresAuthorization: true, reason: 'invalid-derived-totals' };
-  }
-  const discount = Number(toPlain(originalInput).discount || 0);
-  if (requested.total !== undefined && !nearlyEqual(requested.total, derivedSum - discount)) {
-    return { requiresAuthorization: true, reason: 'invalid-derived-totals' };
-  }
-
-  return { requiresAuthorization: false, reason: 'initial-pricing' };
+  return {
+    hasPriceChanges,
+    hasNonPriceChanges,
+    isPriceOnly,
+    editWindowExpired,
+    forbiddenPriceChange: isWeighingOperator && hasPriceChanges,
+    forbiddenPurchaseChange: isWeighingOperator && hasNonQuantityChanges,
+    requiresAuthorization: hasPriceChanges && !isAdmin && !withinCajaGrace && !isWeighingOperator,
+    reason: !hasPriceChanges ? 'no-price-change'
+      : isAdmin ? 'administrator-price-edit'
+      : isWeighingOperator ? 'weighing-role-price-edit-forbidden'
+      : withinCajaGrace ? 'liquidation-price-edit-within-seven-days'
+      : createdAge === null ? 'invalid-pricing-age'
+      : createdAge > PRICE_EDIT_GRACE_DAYS ? 'pricing-window-expired'
+      : 'role-requires-price-authorization',
+  };
 };
 
 module.exports = {
-  INITIAL_PRICING_GRACE_HOURS,
+  PRICE_EDIT_GRACE_DAYS,
+  PURCHASE_EDIT_WINDOW_DAYS,
   PROTECTED_INPUT_FIELDS,
-  classifyInitialPricing,
-  isUnpriced,
-  pricingWindowReason,
+  classifyPurchaseEdit,
+  inspectChanges,
 };

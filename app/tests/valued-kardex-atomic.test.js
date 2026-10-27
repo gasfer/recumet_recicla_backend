@@ -118,3 +118,28 @@ test('la reversión de una salida registra una entrada al costo histórico, no a
   assert.equal(created.input_value, 36);
   assert.equal(created.original_entry_id, 45);
 });
+
+test('una edición revierte solo los movimientos de compra todavía vigentes', async () => {
+  const movements = [
+    { id: 10, source_detail_id: '3' },
+    { id: 11, source_detail_id: '4' },
+  ];
+  const calls = [];
+  const service = new ValuedKardexService({ repository: {
+    findEntriesForSource: async (type, id) => {
+      assert.equal(type, 'INPUT');
+      assert.equal(String(id), '7');
+      return movements;
+    },
+    findReversalsForSourcePrefix: async prefix => {
+      assert.equal(prefix, 'INPUT_UPDATE:7:');
+      return [{ original_entry_id: '10' }];
+    },
+  } });
+  service.recordReversal = async command => { calls.push(command.originalEntry.id); return command.originalEntry; };
+  const reversed = await service.reversePurchaseMovements({
+    purchaseId: 7, reversalSourceId: 'INPUT_UPDATE:7:request-1', id_user: 5, transaction: {},
+  });
+  assert.deepEqual(calls, [11]);
+  assert.deepEqual(reversed.map(entry => entry.id), [11]);
+});

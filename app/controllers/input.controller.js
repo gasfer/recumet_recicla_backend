@@ -15,7 +15,8 @@ const { applyDerivedStockEffect } = require('../services/inventory-posting.servi
 const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
 
 const { resolveAuthorizer } = require('../services/purchase-authorization.service');
-const { classifyInitialPricing } = require('../services/purchase-pricing-authorization-policy.service');
+const { classifyPurchaseEdit } = require('../services/purchase-pricing-authorization-policy.service');
+const { validatePurchaseLocation } = require('../services/purchase-location.service');
 
 const valuedKardex = new ValuedKardexService();
 const parseIds = (value) => String(value ?? '')
@@ -180,7 +181,15 @@ const newInput = async (req = request, res = response) => {
         }
         const correlationId = purchaseAudit.createCorrelationId();
         const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
-        await validateProviderSucursal(id_provider, id_sucursal, t);
+        await validatePurchaseLocation({ user: req.userAuth, branchId: id_sucursal, storageId: id_storage, transaction: t });
+        // Existing purchases may predate provider branch restrictions. Keep their
+        // current provider/branch pair editable; enforce the restriction when
+        // changing either side of that relationship.
+        const keepsExistingProviderLocation = Number(id_provider) === Number(input_old.id_provider)
+            && Number(id_sucursal) === Number(input_old.id_sucursal);
+        if (!keepsExistingProviderLocation) {
+            await validateProviderSucursal(id_provider, id_sucursal, t);
+        }
         const integrityLocations = input_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage }));
         const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         //number default, not ficha
@@ -270,6 +279,11 @@ const newInput = async (req = request, res = response) => {
                     total_abonado :input_data.on_account,
                     restante_credito :Number(input_data.total) - Number(input_data.on_account),
                     id_user :req.userAuth.id,
+                    type_payment: input_data.type_payment,
+                    comments: input_data.comments || null,
+                    account_output: input_data.account_input || null,
+                    id_bank: input_data.id_bank || null,
+                    number_transaction: input_data.number_transaction || null,
                     status : true,
                 }, { transaction: t });
             }
@@ -341,7 +355,6 @@ const updateInput = async (req = request, res = response) => {
         }
         const { input_data, input_details } = req.body;
         const { id_sucursal, id_provider, id_storage, registry_number, type_registry } = input_data;
-        await validateProviderSucursal(id_provider, id_sucursal, t);
         const reason = String(input_data.audit_reason || req.body.audit_reason || '').trim();
         const requestedAuthorizerId = input_data.id_authorizer_user || req.body.id_authorizer_user;
         delete input_data.id_user;
@@ -365,37 +378,89 @@ const updateInput = async (req = request, res = response) => {
             await t.rollback();
             return res.status(404).json({ ok: false, errors: [{ msg: 'La compra no existe.' }] });
         }
+        const beforeInput = purchaseAudit.pick(input_old, purchaseAudit.AUDITABLE_INPUT_FIELDS);
+        const beforeDetails = input_old.detailsInput.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
+        const requestedDetailsForDiff = input_details.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
+        const detailChanges = purchaseAudit.diffDetails(beforeDetails, requestedDetailsForDiff);
+        const pricingDecision = classifyPurchaseEdit({
+            originalInput: input_old,
+            originalDetails: input_old.detailsInput,
+            requestedInput: input_data,
+            requestedDetails: input_details,
+            actorRole: req.userAuth.role,
+        });
+        if (pricingDecision.forbiddenPriceChange || pricingDecision.forbiddenPurchaseChange) {
+            await t.rollback();
+            return res.status(403).json({
+                ok: false,
+                code: 'PURCHASE_WEIGHING_ROLE_PRICE_FORBIDDEN',
+                errors: [{ msg: 'El usuario de balanza solo puede modificar el pesaje de la compra.' }],
+            });
+        }
+        if (pricingDecision.editWindowExpired && pricingDecision.hasNonPriceChanges) {
+            await t.rollback();
+            return res.status(422).json({
+                ok: false,
+                code: 'PURCHASE_EDIT_DEADLINE_EXPIRED',
+                errors: [{ msg: 'Después de 30 días solo se permiten correcciones de precio, sin cambiar otros datos de la compra.' }],
+            });
+        }
+        let authorizer = null;
+        if (pricingDecision.requiresAuthorization) {
+            if (reason.length < 5) {
+                await t.rollback();
+                return res.status(422).json({
+                    ok: false,
+                    code: 'PURCHASE_EDIT_AUTHORIZATION_REQUIRED',
+                    errors: [{ msg: 'Esta edición de precio requiere un motivo de al menos 5 caracteres y un responsable de autorización.' }],
+                });
+            }
+            authorizer = await resolveAuthorizer(requestedAuthorizerId, t);
+        }
+        if (req.userAuth.role === 'OPERADOR_BALANZA') {
+            const persistedCosts = new Map(input_old.detailsInput.map(detail => [Number(detail.id_product), Number(detail.cost)]));
+            for (const detail of input_details) {
+                const cost = persistedCosts.get(Number(detail.id_product));
+                detail.cost = cost;
+                detail.total = Number(detail.quantity) * cost;
+            }
+            input_data.sumas = input_details.reduce((sum, detail) => sum + Number(detail.total), 0);
+            input_data.total = input_data.sumas - Number(input_data.discount || 0);
+        }
+        let recalculatedSum = 0;
+        for (const detail of input_details) {
+            const quantity = Number(detail.quantity);
+            const persistedDetail = input_old.detailsInput.find(item => Number(item.id_product) === Number(detail.id_product));
+            if (detail.cost === undefined && persistedDetail) detail.cost = Number(persistedDetail.cost);
+            const cost = Number(detail.cost);
+            if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(cost) || cost < 0) {
+                await t.rollback();
+                return res.status(422).json({
+                    ok: false,
+                    errors: [{ msg: 'Verifique que cada pesaje sea mayor a cero y que los costos sean válidos.' }],
+                });
+            }
+            detail.total = quantity * cost;
+            recalculatedSum += detail.total;
+        }
+        input_data.sumas = recalculatedSum;
+        input_data.total = recalculatedSum - Number(input_data.discount || 0);
+        await validatePurchaseLocation({ user: req.userAuth, branchId: input_old.id_sucursal, storageId: input_old.id_storage, transaction: t });
+        await validatePurchaseLocation({ user: req.userAuth, branchId: id_sucursal, storageId: id_storage, transaction: t });
+        await validateProviderSucursal(id_provider, id_sucursal, t);
         const integrityLocations = [
             ...input_old.detailsInput.map(({ id_product }) => ({ productId: id_product, sucursalId: input_old.id_sucursal, storageId: input_old.id_storage })),
             ...input_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage })),
         ];
         const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         const correlationId = purchaseAudit.createCorrelationId();
-        const beforeInput = purchaseAudit.pick(input_old, purchaseAudit.AUDITABLE_INPUT_FIELDS);
-        const beforeDetails = input_old.detailsInput.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
-        const requestedDetailsForDiff = input_details.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS));
-        const detailChanges = purchaseAudit.diffDetails(beforeDetails, requestedDetailsForDiff);
-        const pricingDecision = classifyInitialPricing({
-            originalInput: input_old,
-            originalDetails: input_old.detailsInput,
-            requestedInput: input_data,
-            requestedDetails: input_details,
+        await valuedKardex.reversePurchaseMovements({
+            purchaseId: input_old.id,
+            reversalSourceId: `INPUT_UPDATE:${input_old.id}:${correlationId}`,
+            id_user: req.userAuth.id,
+            movementDate: new Date(),
+            transaction: t,
         });
-        let authorizer = null;
-        if (pricingDecision.requiresAuthorization) {
-            if (reason.length < 5) {
-                await t.rollback();
-                const authorizationMessage = pricingDecision.reason === 'pricing-window-expired'
-                    ? 'La ventana de regularización de 24 horas venció. Indique un motivo y un responsable de autorización.'
-                    : 'Esta edición requiere un motivo de al menos 5 caracteres y un responsable de autorización.';
-                return res.status(422).json({
-                    ok: false,
-                    code: 'PURCHASE_EDIT_AUTHORIZATION_REQUIRED',
-                    errors: [{ msg: authorizationMessage }],
-                });
-            }
-            authorizer = await resolveAuthorizer(requestedAuthorizerId, t);
-        }
         if (type_registry === 'SIN FICHA') {
             if (!input_old.registry_number || input_old.type_registry != 'SIN FICHA') {
                 const lastInput = await Input.findOne({
@@ -476,6 +541,13 @@ const updateInput = async (req = request, res = response) => {
                 productId: detail.id_product, sucursalId: id_sucursal, storageId: id_storage,
                 quantity: detail.quantity, transaction: t,
             });
+            await valuedKardex.recordMovement({
+                sourceType: 'INPUT', sourceId: input_old.id, sourceDetailId: persistedDetail.id,
+                effectType: `UPD_${correlationId}`, id_product: detail.id_product,
+                id_sucursal, id_storage, id_user: req.userAuth.id, direction: 'INPUT',
+                quantity: detail.quantity, unitCost: detail.cost, movementDate: input_data.date_voucher,
+                transaction: t,
+            });
         }
         for (const removedDetail of remainingOldDetails.values()) {
             await removedDetail.update({ status: 'INACTIVE', removed_by: req.userAuth.id, removed_at: new Date(), removal_reason: reason || 'RETIRADO DURANTE LA EDICIÓN DE LA COMPRA' }, { transaction: t });
@@ -535,6 +607,11 @@ const updateInput = async (req = request, res = response) => {
                         total_abonado :input_data.on_account,
                         restante_credito :Number(input_data.total) - Number(input_data.on_account),
                         id_user :req.userAuth.id,
+                        type_payment: input_data.type_payment,
+                        comments: input_data.comments || null,
+                        account_output: input_data.account_input || null,
+                        id_bank: input_data.id_bank || null,
+                        number_transaction: input_data.number_transaction || null,
                         status : true,
                         voided_by: null, voided_at: null, void_reason: null,
                     };
@@ -552,13 +629,11 @@ const updateInput = async (req = request, res = response) => {
         const updatedInput = await Input.findByPk(id_input, { transaction: t });
         const afterInput = purchaseAudit.pick(updatedInput, purchaseAudit.AUDITABLE_INPUT_FIELDS);
         const inputChanges = purchaseAudit.diff(beforeInput, afterInput);
-        if (inputChanges.length || detailChanges.length) {
-            await purchaseAudit.createEvent({ transaction: t, correlationId, idempotencyKey: updateIdempotencyKey, input: updatedInput,
-                actorUserId: req.userAuth.id, authorizerUserId: authorizer?.id,
-                entityType: purchaseAudit.ENTITY_TYPES.PURCHASE, entityId: updatedInput.id,
-                eventType: purchaseAudit.EVENT_TYPES.PURCHASE_UPDATED, reason,
-                beforeData: beforeInput, afterData: afterInput, changedFields: inputChanges });
-        }
+        await purchaseAudit.createEvent({ transaction: t, correlationId, idempotencyKey: updateIdempotencyKey, input: updatedInput,
+            actorUserId: req.userAuth.id, authorizerUserId: authorizer?.id,
+            entityType: purchaseAudit.ENTITY_TYPES.PURCHASE, entityId: updatedInput.id,
+            eventType: purchaseAudit.EVENT_TYPES.PURCHASE_UPDATED, reason,
+            beforeData: beforeInput, afterData: afterInput, changedFields: inputChanges });
         const actualDetailChanges = purchaseAudit.diffDetails(beforeDetails, persistedDetails.map((item) => purchaseAudit.pick(item, purchaseAudit.AUDITABLE_DETAIL_FIELDS)));
         for (const change of actualDetailChanges) {
             const detailId = change.after?.id || change.before?.id;

@@ -139,6 +139,23 @@ class ValuedKardexService {
     });
     return this.recordReversal({ originalEntry, ...command });
   }
+
+  async reversePurchaseMovements({ purchaseId, reversalSourceId, id_user, movementDate = new Date(), transaction }) {
+    if (!transaction || !this.repository.findEntriesForSource || !this.repository.findReversalsForSourcePrefix) return [];
+    const movements = await this.repository.findEntriesForSource('INPUT', purchaseId, transaction);
+    const priorReversals = await this.repository.findReversalsForSourcePrefix(`INPUT_UPDATE:${purchaseId}:`, transaction);
+    const alreadyReversed = new Set(priorReversals.map((entry) => String(entry.original_entry_id)));
+    const activeMovements = movements.filter((entry) => !alreadyReversed.has(String(entry.id)));
+    const reversals = [];
+    for (const originalEntry of activeMovements) {
+      reversals.push(await this.recordReversal({
+        originalEntry, sourceType: 'REVERSAL', sourceId: reversalSourceId,
+        sourceDetailId: originalEntry.source_detail_id, effectType: 'REVERSE_UPDATE',
+        id_user, movementDate, transaction,
+      }));
+    }
+    return reversals;
+  }
 }
 
 module.exports = { ValuedKardexService };

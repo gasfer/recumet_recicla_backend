@@ -6,20 +6,28 @@ process.env.DB_DIALECT = 'postgres';
 const db = require('../database/config');
 const service = require('../services/purchase-authorization.service');
 const audit = require('../services/purchase-audit.service');
+const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { updateInput } = require('../controllers/input.controller');
 const transaction = { LOCK: { SHARE: 'SHARE', UPDATE: 'UPDATE' } };
 
-test('edición de precio conserva creador y guarda ejecutor autorizador y motivo en cada evento', async t => {
+test('edición de precio conserva creador y registra actor, motivo y autorizador en cada evento', async t => {
   let committed = false;
   const tx = { ...transaction, commit: async () => { committed = true; }, rollback: async () => {} };
   t.mock.method(db.sequelize, 'transaction', async () => tx);
   t.mock.method(db.sequelize, 'query', async (sql) => sql.includes('physical_kardex_balance') ? [{ kardex_balance: 50, physical_kardex_balance: 50, duplicate_effects: 0 }] : []);
+  t.mock.method(db.Sucursal, 'findByPk', async id => ({ id: Number(id), status: true }));
+  t.mock.method(db.Storage, 'findByPk', async id => ({ id: Number(id), id_sucursal: 3, status: true }));
+  t.mock.method(db.Provider, 'findByPk', async id => ({ id, id_sucursal: 3, enabled_sucursal_ids: [3] }));
+  t.mock.method(ValuedKardexService.prototype, 'reversePurchaseMovements', async () => []);
+  t.mock.method(ValuedKardexService.prototype, 'recordMovement', async () => null);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
   t.mock.method(db.User, 'findByPk', async () => ({ id: 9, status: true, role: 'ENCARGADO' }));
   const detail = { id: 11, id_product: 2, quantity: 50, cost: 14, total: 700, status: 'ACTIVE',
     async update(data) { Object.assign(this, data); return this; } };
-  const original = { id: 7, id_user: 1, cod: 'TEST', id_sucursal: 3, id_storage: 4, type: 'CONTADO',
-    type_registry: 'SIN FICHA', registry_number: 'SFC-7', total: 700, detailsInput: [detail] };
+  const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+  const original = { id: 7, id_user: 1, cod: 'TEST', id_sucursal: 3, id_storage: 4, id_provider: 6,
+    date_voucher: eightDaysAgo, createdAt: eightDaysAgo, type: 'CONTADO', type_payment: 'EFECTIVO',
+    type_registry: 'SIN FICHA', registry_number: 'SFC-7', discount: 0, total: 700, detailsInput: [detail] };
   let payload;
   let reads = 0;
   t.mock.method(db.Input, 'findByPk', async () => ++reads === 1 ? original : { ...original, ...payload });
@@ -30,7 +38,7 @@ test('edición de precio conserva creador y guarda ejecutor autorizador y motivo
   const events = [];
   t.mock.method(audit, 'createEvent', async event => { events.push(event); return event; });
   const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
-  await updateInput({ get: () => null, params: { id_input: 7 }, userAuth: { id: 5 }, body: {
+  await updateInput({ get: () => null, params: { id_input: 7 }, userAuth: { id: 5, role: 'ADMINISTRADOR' }, body: {
     input_data: { id_sucursal: 3, id_storage: 4, id_provider: 6, id_user: 999, total: 725,
       type_registry: 'SIN FICHA', pay_to_credit: false, audit_reason: 'Precio acordado corregido', id_authorizer_user: 9 },
     input_details: [{ id_product: 2, quantity: 50, cost: 14.5, total: 725, status: 'ACTIVE' }],
@@ -44,7 +52,7 @@ test('edición de precio conserva creador y guarda ejecutor autorizador y motivo
   assert.ok(events.some(event => event.eventType === 'PRICE_CHANGED'));
   for (const event of events) {
     assert.equal(event.actorUserId, 5);
-    assert.equal(event.authorizerUserId, 9);
+    assert.equal(event.authorizerUserId, undefined);
     assert.equal(event.reason, 'Precio acordado corregido');
   }
 });
@@ -54,6 +62,11 @@ test('asignación inicial guarda precios y trazabilidad sin motivo ni autorizado
   const tx = { ...transaction, commit: async () => { committed = true; }, rollback: async () => {} };
   t.mock.method(db.sequelize, 'transaction', async () => tx);
   t.mock.method(db.sequelize, 'query', async (sql) => sql.includes('physical_kardex_balance') ? [{ kardex_balance: 50, physical_kardex_balance: 50, duplicate_effects: 0 }] : []);
+  t.mock.method(db.Sucursal, 'findByPk', async id => ({ id: Number(id), status: true }));
+  t.mock.method(db.Storage, 'findByPk', async id => ({ id: Number(id), id_sucursal: 3, status: true }));
+  t.mock.method(db.Provider, 'findByPk', async id => ({ id, id_sucursal: 3, enabled_sucursal_ids: [3] }));
+  t.mock.method(ValuedKardexService.prototype, 'reversePurchaseMovements', async () => []);
+  t.mock.method(ValuedKardexService.prototype, 'recordMovement', async () => null);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
   const authorizerLookup = t.mock.method(db.User, 'findByPk', async () => { throw Error('No debe consultar autorizadores'); });
   const detail = { id: 11, id_product: 2, quantity: 50, cost: 0, total: 0, status: 'ACTIVE',
@@ -73,7 +86,7 @@ test('asignación inicial guarda precios y trazabilidad sin motivo ni autorizado
   t.mock.method(audit, 'createEvent', async event => { events.push(event); return event; });
   const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
 
-  await updateInput({ get: () => null, params: { id_input: 7 }, userAuth: { id: 5 }, body: {
+  await updateInput({ get: () => null, params: { id_input: 7 }, userAuth: { id: 5, role: 'ADMINISTRADOR' }, body: {
     input_data: { id_sucursal: 3, id_storage: 4, id_provider: 6, id_scales: 1, total: 700, sumas: 700,
       discount: 0, status: 'ACTIVE', type_payment: 'EFECTIVO', type_registry: 'SIN FICHA', pay_to_credit: false, on_account: 0 },
     input_details: [{ id_product: 2, quantity: 50, cost: 14, total: 700, status: 'ACTIVE' }],
@@ -113,8 +126,59 @@ test('regularización vencida sin motivo se rechaza antes de modificar', async t
 
   assert.equal(res.code, 422);
   assert.equal(res.body.code, 'PURCHASE_EDIT_AUTHORIZATION_REQUIRED');
-  assert.match(res.body.errors[0].msg, /24 horas/);
+  assert.match(res.body.errors[0].msg, /motivo/);
   assert.equal(update.mock.callCount(), 0);
+  assert.equal(rolledBack, true);
+});
+
+test('OPERADOR_BALANZA rechaza cambios de costo antes de cualquier efecto de inventario', async t => {
+  let rolledBack = false;
+  const tx = { ...transaction, rollback: async () => { rolledBack = true; } };
+  t.mock.method(db.sequelize, 'transaction', async () => tx);
+  t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
+  const detail = { id: 1, id_product: 2, quantity: 5, cost: 10, total: 50, status: 'ACTIVE' };
+  t.mock.method(db.Input, 'findByPk', async () => ({
+    id: 7, id_sucursal: 3, id_storage: 4, id_provider: 6, createdAt: new Date(),
+    date_voucher: new Date(), type: 'CONTADO', detailsInput: [detail],
+  }));
+  const write = t.mock.method(db.Input, 'update', async () => { throw Error('No debe modificar'); });
+  const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
+
+  await updateInput({ get: () => null, params: { id_input: 7 }, userAuth: { id: 8, role: 'OPERADOR_BALANZA' }, body: {
+    input_data: { pay_to_credit: false, discount: 0 },
+    input_details: [{ id_product: 2, quantity: 5, cost: 11, total: 55, status: 'ACTIVE' }],
+  } }, res);
+
+  assert.equal(res.code, 403);
+  assert.equal(res.body.code, 'PURCHASE_WEIGHING_ROLE_PRICE_FORBIDDEN');
+  assert.equal(write.mock.callCount(), 0);
+  assert.equal(rolledBack, true);
+});
+
+test('después de treinta días una edición mixta se revierte sin efectos', async t => {
+  let rolledBack = false;
+  const tx = { ...transaction, rollback: async () => { rolledBack = true; } };
+  t.mock.method(db.sequelize, 'transaction', async () => tx);
+  t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
+  const oldDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  t.mock.method(db.Input, 'findByPk', async () => ({
+    id: 7, id_sucursal: 3, id_storage: 4, id_provider: 6, createdAt: oldDate,
+    date_voucher: oldDate, type: 'CONTADO', type_payment: 'EFECTIVO', type_registry: 'SIN FICHA',
+    registry_number: 'SFC-7', discount: 0,
+    detailsInput: [{ id: 1, id_product: 2, quantity: 5, cost: 10, total: 50, status: 'ACTIVE' }],
+  }));
+  const write = t.mock.method(db.Input, 'update', async () => { throw Error('No debe modificar'); });
+  const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
+
+  await updateInput({ get: () => null, params: { id_input: 7 }, userAuth: { id: 1, role: 'ADMINISTRADOR' }, body: {
+    input_data: { pay_to_credit: false, id_sucursal: 3, id_storage: 4, id_provider: 6,
+      type_payment: 'EFECTIVO', type_registry: 'SIN FICHA', registry_number: 'SFC-7', discount: 0 },
+    input_details: [{ id_product: 2, quantity: 6, cost: 12, total: 72, status: 'ACTIVE' }],
+  } }, res);
+
+  assert.equal(res.code, 422);
+  assert.equal(res.body.code, 'PURCHASE_EDIT_DEADLINE_EXPIRED');
+  assert.equal(write.mock.callCount(), 0);
   assert.equal(rolledBack, true);
 });
 
@@ -159,13 +223,21 @@ for (const [reason, id, message] of [['', 1, /motivo/], ['Ajuste acordado', null
     t.mock.method(db.Input, 'findByPk', async (_id, options) => {
       assert.equal(options.lock.of, db.Input);
       assert.equal(options.lock.level, 'UPDATE');
-      return { id: 7, detailsInput: [] };
+      const createdAt = new Date();
+      return { id: 7, id_sucursal: 3, id_storage: 4, id_provider: 6, date_voucher: createdAt,
+        createdAt, type: 'CONTADO', type_payment: 'EFECTIVO', type_registry: 'SIN FICHA',
+        registry_number: 'SFC-7', discount: 0, detailsInput: [
+          { id: 1, id_product: 2, quantity: 5, cost: 1, total: 5, status: 'ACTIVE' },
+        ] };
     });
     const update = t.mock.method(db.Input, 'update', async () => { throw Error('No debe modificar'); });
     t.mock.method(console, 'log', () => {});
     const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
     await updateInput({ get: () => null, params: { id_input: 7 }, userAuth: { id: 3 },
-      body: { input_data: { audit_reason: reason, id_authorizer_user: id }, input_details: [] } }, res);
+      body: { input_data: { id_sucursal: 3, id_storage: 4, id_provider: 6, type: 'CONTADO',
+        type_registry: 'SIN FICHA', registry_number: 'SFC-7', discount: 0, total: 10, sumas: 10,
+        audit_reason: reason, id_authorizer_user: id },
+        input_details: [{ id_product: 2, quantity: 5, cost: 2, total: 10, status: 'ACTIVE' }] } }, res);
     assert.equal(res.code, 422);
     assert.match(res.body.errors[0].msg, message);
     assert.equal(update.mock.callCount(), 0);

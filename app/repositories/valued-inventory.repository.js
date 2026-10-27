@@ -1,6 +1,7 @@
 'use strict';
 
 const db = require('../database/config');
+const { Op } = require('sequelize');
 
 const locationWhere = ({ id_product, id_sucursal, id_storage }) => ({ id_product, id_sucursal, id_storage });
 
@@ -33,6 +34,19 @@ class ValuedInventoryRepository {
         effect_type: source.effect_type,
       },
       transaction,
+    });
+  }
+
+  async findEntriesForSource(sourceType, sourceId, transaction) {
+    if (!this.Entry?.findAll) return [];
+    return this.Entry.findAll({ where: { source_type: sourceType, source_id: String(sourceId) }, transaction, order: [['id', 'ASC']] });
+  }
+
+  async findReversalsForSourcePrefix(sourceIdPrefix, transaction) {
+    if (!this.Entry?.findAll) return [];
+    return this.Entry.findAll({
+      where: { source_type: 'REVERSAL', source_id: { [Op.like]: `${sourceIdPrefix}%` } },
+      attributes: ['original_entry_id'], transaction,
     });
   }
 
