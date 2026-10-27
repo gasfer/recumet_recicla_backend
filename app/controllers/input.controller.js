@@ -182,14 +182,7 @@ const newInput = async (req = request, res = response) => {
         const correlationId = purchaseAudit.createCorrelationId();
         const { id_sucursal, id_provider, id_storage,registry_number, type_registry } = input_data; //,registry_number(validar_ num boleta)
         await validatePurchaseLocation({ user: req.userAuth, branchId: id_sucursal, storageId: id_storage, transaction: t });
-        // Existing purchases may predate provider branch restrictions. Keep their
-        // current provider/branch pair editable; enforce the restriction when
-        // changing either side of that relationship.
-        const keepsExistingProviderLocation = Number(id_provider) === Number(input_old.id_provider)
-            && Number(id_sucursal) === Number(input_old.id_sucursal);
-        if (!keepsExistingProviderLocation) {
-            await validateProviderSucursal(id_provider, id_sucursal, t);
-        }
+        await validateProviderSucursal(id_provider, id_sucursal, t);
         const integrityLocations = input_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage }));
         const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         //number default, not ficha
@@ -447,7 +440,14 @@ const updateInput = async (req = request, res = response) => {
         input_data.total = recalculatedSum - Number(input_data.discount || 0);
         await validatePurchaseLocation({ user: req.userAuth, branchId: input_old.id_sucursal, storageId: input_old.id_storage, transaction: t });
         await validatePurchaseLocation({ user: req.userAuth, branchId: id_sucursal, storageId: id_storage, transaction: t });
-        await validateProviderSucursal(id_provider, id_sucursal, t);
+        // Existing purchases may predate provider branch restrictions. Keep their
+        // current provider/branch pair editable; enforce the restriction when
+        // changing either side of that relationship.
+        const keepsExistingProviderLocation = Number(id_provider) === Number(input_old.id_provider)
+            && Number(id_sucursal) === Number(input_old.id_sucursal);
+        if (!keepsExistingProviderLocation) {
+            await validateProviderSucursal(id_provider, id_sucursal, t);
+        }
         const integrityLocations = [
             ...input_old.detailsInput.map(({ id_product }) => ({ productId: id_product, sucursalId: input_old.id_sucursal, storageId: input_old.id_storage })),
             ...input_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage })),
