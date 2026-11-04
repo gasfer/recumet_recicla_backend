@@ -10,6 +10,7 @@ const { newInput } = require('../controllers/input.controller');
 const { newAbonoAccountPayable, deleteAbonoAccountPayable } = require('../controllers/accounts_payables.controller');
 const { getPurchaseTraceability, getProviderTraceability } = require('../controllers/purchase_traceability.controller');
 const notificationService = require('../services/notification.service');
+const providerAvailability = require('../services/provider-sucursal-availability.service');
 const { withDecimalPolicy } = require('../helpers/decimal-operation-context');
 
 const response = () => ({ status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
@@ -33,7 +34,7 @@ const prepareCreation = (t, credit) => {
   t.mock.method(db.Input, 'count', async () => 1);
   t.mock.method(db.Sucursal, 'findByPk', async id => ({ id: Number(id), status: true }));
   t.mock.method(db.Storage, 'findByPk', async id => ({ id: Number(id), id_sucursal: 2, status: true }));
-  t.mock.method(db.Provider, 'findByPk', async id => ({ id, id_sucursal: 2, enabled_sucursal_ids: [2] }));
+  t.mock.method(providerAvailability, 'isEnabled', async () => true);
   t.mock.method(db.DetailsInput, 'create', async data => plain({ id: 20, status: 'ACTIVE', ...data }));
   t.mock.method(db.Stock, 'findOne', async () => stock);
   t.mock.method(db.Stock, 'create', async () => stock);
@@ -54,17 +55,25 @@ const prepareCreation = (t, credit) => {
 
 test('7.1 creación al contado conserva registrador y confirma compra y detalle atómicamente', async t => {
   const { transaction, events, movements, req } = prepareCreation(t, false);
+  req.body.input_data.on_account = 20;
+  req.body.input_data.type_payment = 'TRANSFERENCIA';
+  req.body.input_data.account_input = 'CTA-1';
+  req.body.input_data.id_bank = 8;
+  req.body.input_data.number_transaction = 'TR-1';
   const res = response();
   await newInput(req, res);
   assert.equal(res.code, 201);
   assert.equal(transaction.committed, true);
   assert.equal(req.body.input_data.id_user, 7);
+  assert.equal(req.body.input_data.on_account, 0, 'contado no debe conservar un anticipo de crédito');
   assert.deepEqual(events.map(event => event.eventType), ['PURCHASE_CREATED', 'DETAIL_ADDED']);
   assert.ok(events.every(event => event.transaction === transaction && event.actorUserId === 7));
   assert.equal(movements[0].id_sucursal, 2);
   assert.equal(movements[0].id_storage, 4);
   assert.equal(movements[0].id_user, 7);
   assert.equal(movements[0].sourceId, 10);
+  assert.equal(req.body.input_data.type_payment, 'TRANSFERENCIA');
+  assert.equal(req.body.input_data.number_transaction, 'TR-1');
 });
 
 test('7.1 creación a crédito correlaciona compra detalle cuenta y cuota inicial', async t => {
@@ -73,9 +82,35 @@ test('7.1 creación a crédito correlaciona compra detalle cuenta y cuota inicia
   await newInput(req, res);
   assert.equal(res.code, 201);
   assert.equal(transaction.committed, true);
+  assert.equal(req.body.input_data.on_account, 20);
   assert.deepEqual(events.map(event => event.eventType),
     ['PURCHASE_CREATED', 'DETAIL_ADDED', 'ACCOUNT_PAYABLE_CREATED', 'PAYMENT_CREATED']);
   assert.equal(new Set(events.map(event => event.correlationId)).size, 1);
+});
+
+test('7.1 crédito sin anticipo descarta datos de pago residuales', async t => {
+  const { req } = prepareCreation(t, true);
+  req.body.input_data.on_account = 0;
+  req.body.input_data.type_payment = 'QR';
+  req.body.input_data.account_input = 'CTA-2';
+  req.body.input_data.id_bank = 9;
+  req.body.input_data.number_transaction = 'TR-2';
+  const res = response();
+  await newInput(req, res);
+  assert.equal(res.code, 201);
+  assert.equal(req.body.input_data.type_payment, 'EFECTIVO');
+  assert.equal(req.body.input_data.account_input, null);
+  assert.equal(req.body.input_data.id_bank, null);
+  assert.equal(req.body.input_data.number_transaction, null);
+});
+
+test('7.1 un error al iniciar la transacción llega al manejo de errores del controlador', async t => {
+  t.mock.method(db.sequelize, 'transaction', async () => { throw new Error('database unavailable'); });
+  t.mock.method(console, 'error', () => {});
+  const res = response();
+  await newInput({ body: {} }, res);
+  assert.equal(res.code, 500);
+  assert.equal(res.body.ok, false);
 });
 
 test('7.2 diferencias identifican precio cantidad alta y retiro conservando identificadores', () => {
@@ -157,7 +192,7 @@ test('7.4 una falla de auditoría revierte la creación completa', async t => {
   t.mock.restoreAll();
   const prepared = prepareCreation(t, false);
   t.mock.method(audit, 'createEvent', async () => { throw new Error('fallo de auditoría'); });
-  t.mock.method(console, 'log', () => {});
+  t.mock.method(console, 'error', () => {});
   const res = response();
   await newInput(prepared.req, res);
   assert.equal(res.code, 500);
@@ -168,8 +203,10 @@ test('7.4 una falla de auditoría revierte la creación completa', async t => {
 
 test('7.4 un reintento idempotente no vuelve a crear la compra', async t => {
   const transaction = tx();
+  const order = [];
   t.mock.method(db.sequelize, 'transaction', async () => transaction);
-  t.mock.method(audit, 'findEventByIdempotencyKey', async () => ({ id_input: 99 }));
+  t.mock.method(audit, 'lockIdempotencyKey', async key => { order.push(`lock:${key}`); });
+  t.mock.method(audit, 'findEventByIdempotencyKey', async () => { order.push('find'); return { id_input: 99 }; });
   const create = t.mock.method(db.Input, 'create', async () => { throw new Error('no debe crear'); });
   const res = response();
   await newInput({ get: () => 'same-key', userAuth: { id: 7 }, body: { input_data: {}, input_details: [] } }, res);
@@ -178,6 +215,16 @@ test('7.4 un reintento idempotente no vuelve a crear la compra', async t => {
   assert.equal(res.body.id_input, 99);
   assert.equal(transaction.rolledBack, true);
   assert.equal(create.mock.callCount(), 0);
+  assert.deepEqual(order, ['lock:purchase:same-key:create', 'find']);
+});
+
+test('7.4 el bloqueo de idempotencia usa una exclusión transaccional por clave', async t => {
+  const transaction = tx();
+  const query = t.mock.method(db.sequelize, 'query', async () => []);
+  await audit.lockIdempotencyKey('purchase:retry:create', transaction);
+  assert.match(query.mock.calls[0].arguments[0], /pg_advisory_xact_lock/);
+  assert.deepEqual(query.mock.calls[0].arguments[1].replacements, { idempotencyKey: 'purchase:retry:create' });
+  assert.equal(query.mock.calls[0].arguments[1].transaction, transaction);
 });
 
 test('7.5 consulta por boleta rechaza sucursales no asignadas antes de leer eventos', async t => {

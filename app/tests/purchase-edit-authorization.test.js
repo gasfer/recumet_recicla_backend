@@ -8,6 +8,7 @@ const service = require('../services/purchase-authorization.service');
 const audit = require('../services/purchase-audit.service');
 const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { updateInput } = require('../controllers/input.controller');
+const providerAvailability = require('../services/provider-sucursal-availability.service');
 const transaction = { LOCK: { SHARE: 'SHARE', UPDATE: 'UPDATE' } };
 
 test('edición de precio conserva creador y registra actor, motivo y autorizador en cada evento', async t => {
@@ -17,7 +18,7 @@ test('edición de precio conserva creador y registra actor, motivo y autorizador
   t.mock.method(db.sequelize, 'query', async (sql) => sql.includes('physical_kardex_balance') ? [{ kardex_balance: 50, physical_kardex_balance: 50, duplicate_effects: 0 }] : []);
   t.mock.method(db.Sucursal, 'findByPk', async id => ({ id: Number(id), status: true }));
   t.mock.method(db.Storage, 'findByPk', async id => ({ id: Number(id), id_sucursal: 3, status: true }));
-  t.mock.method(db.Provider, 'findByPk', async id => ({ id, id_sucursal: 3, enabled_sucursal_ids: [3] }));
+  t.mock.method(providerAvailability, 'isEnabled', async () => true);
   t.mock.method(ValuedKardexService.prototype, 'reversePurchaseMovements', async () => []);
   t.mock.method(ValuedKardexService.prototype, 'recordMovement', async () => null);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);
@@ -64,7 +65,7 @@ test('asignación inicial guarda precios y trazabilidad sin motivo ni autorizado
   t.mock.method(db.sequelize, 'query', async (sql) => sql.includes('physical_kardex_balance') ? [{ kardex_balance: 50, physical_kardex_balance: 50, duplicate_effects: 0 }] : []);
   t.mock.method(db.Sucursal, 'findByPk', async id => ({ id: Number(id), status: true }));
   t.mock.method(db.Storage, 'findByPk', async id => ({ id: Number(id), id_sucursal: 3, status: true }));
-  t.mock.method(db.Provider, 'findByPk', async id => ({ id, id_sucursal: 3, enabled_sucursal_ids: [3] }));
+  t.mock.method(providerAvailability, 'isEnabled', async () => true);
   t.mock.method(ValuedKardexService.prototype, 'reversePurchaseMovements', async () => []);
   t.mock.method(ValuedKardexService.prototype, 'recordMovement', async () => null);
   t.mock.method(audit, 'findEventByIdempotencyKey', async () => null);

@@ -1,6 +1,6 @@
 const { providerCommercialFilter } = require('../services/provider-commercial-filter');
 const { response, request } = require('express');
-const { Input, Provider, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
+const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
@@ -17,6 +17,7 @@ const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('
 const { resolveAuthorizer } = require('../services/purchase-authorization.service');
 const { classifyPurchaseEdit } = require('../services/purchase-pricing-authorization-policy.service');
 const { validatePurchaseLocation } = require('../services/purchase-location.service');
+const providerAvailability = require('../services/provider-sucursal-availability.service');
 
 const valuedKardex = new ValuedKardexService();
 const parseIds = (value) => String(value ?? '')
@@ -39,13 +40,24 @@ const auditRequestKey = (req, suffix) => {
     return supplied ? `purchase:${supplied}:${suffix}` : null;
 };
 
+const normalizePurchasePayment = (inputData) => {
+    const isCredit = Boolean(inputData.pay_to_credit);
+    const initialPayment = Number(inputData.on_account || 0);
+    inputData.on_account = isCredit ? initialPayment : 0;
+    if (isCredit && initialPayment <= 0) inputData.type_payment = 'EFECTIVO';
+    if (inputData.type_payment === 'EFECTIVO') {
+        inputData.account_input = null;
+        inputData.id_bank = null;
+        inputData.number_transaction = null;
+    } else if (inputData.type_payment === 'CHEQUE') {
+        inputData.number_transaction = null;
+    }
+    return inputData;
+};
+
 const validateProviderSucursal = async (providerId, sucursalId, transaction) => {
     if (!providerId || !sucursalId) return;
-    const provider = await Provider.findByPk(providerId, { attributes: ['id', 'id_sucursal', 'enabled_sucursal_ids'], transaction });
-    const enabled = provider?.enabled_sucursal_ids;
-    const allowed = Array.isArray(enabled)
-        ? enabled.map(Number).includes(Number(sucursalId))
-        : Number(provider?.id_sucursal) === Number(sucursalId);
+    const allowed = await providerAvailability.isEnabled(providerId, sucursalId, transaction);
     if (!allowed) {
         const error = new Error('Este proveedor no está habilitado para comprar en la sucursal seleccionada.');
         error.status = 400;
@@ -170,10 +182,12 @@ const getInputsPaginate = async (req = request, res = response) => {
 }
 
 const newInput = async (req = request, res = response) => {
-    const t = await sequelize.transaction();
+    let t;
     try {
+        t = await sequelize.transaction();
         const { input_data, input_details } = req.body;
         const createIdempotencyKey = auditRequestKey(req, 'create');
+        await purchaseAudit.lockIdempotencyKey(createIdempotencyKey, t);
         const repeatedCreate = await purchaseAudit.findEventByIdempotencyKey(createIdempotencyKey, t);
         if (repeatedCreate) {
             await t.rollback();
@@ -215,7 +229,8 @@ const newInput = async (req = request, res = response) => {
         }
 
         input_data.id_user = req.userAuth.id;
-        input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
+        input_data.type = input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
+        normalizePurchasePayment(input_data);
         const input = await Input.create(input_data, { transaction: t });
         const count_inputs = await Input.count({ where: {id_sucursal}, transaction: t });
         const cod = get_num_request('COMP',count_inputs,5);
@@ -325,8 +340,10 @@ const newInput = async (req = request, res = response) => {
             id_input,
         });
     } catch (error) {
-        await t.rollback();
-        console.log('ERROR COMPRA: ' + error);
+        if (t && !t.finished) {
+            try { await t.rollback(); } catch (rollbackError) { console.error('ERROR AL REVERTIR COMPRA:', rollbackError); }
+        }
+        console.error('ERROR COMPRA:', error);
         return res.status(error.status || 500).json({
           ok: false,
             errors: [{ msg: error.status ? error.message : `Ocurrió un imprevisto interno | hable con soporte`}],
@@ -335,12 +352,14 @@ const newInput = async (req = request, res = response) => {
 }
 
 const updateInput = async (req = request, res = response) => {
-    const t = await sequelize.transaction({
-        isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
-    });
+    let t;
     try {
+        t = await sequelize.transaction({
+            isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE,
+        });
         const { id_input } = req.params;
         const updateIdempotencyKey = auditRequestKey(req, 'update');
+        await purchaseAudit.lockIdempotencyKey(updateIdempotencyKey, t);
         const repeatedUpdate = await purchaseAudit.findEventByIdempotencyKey(updateIdempotencyKey, t);
         if (repeatedUpdate) {
             await t.rollback();
@@ -355,6 +374,7 @@ const updateInput = async (req = request, res = response) => {
         delete input_data.id_authorizer_user;
         input_data.updated_by = req.userAuth.id;
         input_data.type =  input_data.pay_to_credit ? 'CREDITO' : 'CONTADO';
+        normalizePurchasePayment(input_data);
         const input_old = await Input.findByPk(id_input,{
             include: [
                 { association: 'provider'},
@@ -673,8 +693,10 @@ const updateInput = async (req = request, res = response) => {
             id_input
         });
     } catch (error) {
-        await t.rollback();
-        console.log('ERROR UPDATE COMPRA: ' + error);
+        if (t && !t.finished) {
+            try { await t.rollback(); } catch (rollbackError) { console.error('ERROR AL REVERTIR ACTUALIZACIÓN DE COMPRA:', rollbackError); }
+        }
+        console.error('ERROR UPDATE COMPRA:', error);
         return res.status(error.status || 500).json({
           ok: false,
           ...(error.code ? { code: error.code } : {}),

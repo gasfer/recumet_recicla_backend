@@ -1,3 +1,4 @@
+const { formatDecimalEsBo } = require('../helpers/number-formatter');
 const { request, response } = require('express');
 const { sendReportPdf } = require('../services/pdf/report-pdf.service');
 const ExcelJS = require('exceljs');
@@ -69,19 +70,19 @@ const buildPurchaseReportPdfBody = (inputs, decimal) => {
                 pdfCell(input.cod), pdfCell(moment(input.date_voucher).format('DD/MM/YYYY\nHH:mm')),
                 pdfCell(input.type_registry), pdfCell(input.registry_number), pdfCell(provider), pdfCell(purchaseDetail(input)),
                 pdfCell(input.type), pdfCell(input.provider?.type?.name || '-'),
-                pdfCell(quantity.toFixed(decimal), { alignment: 'right' }), pdfCell(amount.toFixed(decimal), { alignment: 'right' }),
+                pdfCell(formatDecimalEsBo(quantity, decimal), { alignment: 'right' }), pdfCell(formatDecimalEsBo(amount, decimal), { alignment: 'right' }),
             ]);
         });
         body.push([
             pdfCell('SUBTOTAL PROVEEDOR', { colSpan: 8, bold: true, fillColor: '#F3F4F6' }), ...Array(7).fill({}),
-            pdfCell(providerKg.toFixed(decimal), { bold: true, fillColor: '#F3F4F6', alignment: 'right' }),
-            pdfCell(providerAmount.toFixed(decimal), { bold: true, fillColor: '#F3F4F6', alignment: 'right' }),
+            pdfCell(formatDecimalEsBo(providerKg, decimal), { bold: true, fillColor: '#F3F4F6', alignment: 'right' }),
+            pdfCell(formatDecimalEsBo(providerAmount, decimal), { bold: true, fillColor: '#F3F4F6', alignment: 'right' }),
         ]);
     }
     body.push([
         pdfCell('TOTAL GENERAL', { colSpan: 8, bold: true, fillColor: '#D1D5DB', fontSize: 7 }), ...Array(7).fill({}),
-        pdfCell(totalKg.toFixed(decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right', fontSize: 7 }),
-        pdfCell(totalAmount.toFixed(decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right', fontSize: 7 }),
+        pdfCell(formatDecimalEsBo(totalKg, decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right', fontSize: 7 }),
+        pdfCell(formatDecimalEsBo(totalAmount, decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right', fontSize: 7 }),
     ]);
     return body;
 };
@@ -222,13 +223,13 @@ const buildDetailedPdfBody = (inputs, decimal) => {
             pdfCell(index + 1, { alignment: 'center' }),
             pdfCell(row.cod),
             pdfCell(row.name),
-            pdfCell(Number(row.quantity).toFixed(decimal), { alignment: 'right' }),
+            pdfCell(formatDecimalEsBo(Number(row.quantity), decimal), { alignment: 'right' }),
         ]);
     });
     const total = summary.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
     body.push([
         pdfCell('TOTAL', { colSpan: 3, bold: true, fillColor: '#D1D5DB' }), ...Array(2).fill({}),
-        pdfCell(total.toFixed(decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right' }),
+        pdfCell(formatDecimalEsBo(total, decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right' }),
     ]);
     return body;
 };
@@ -249,17 +250,17 @@ const buildDetailedCppPdfBody = (inputs, decimal) => {
         body.push([
             pdfCell(row.cod),
             pdfCell(row.name),
-            pdfCell(cpp.toFixed(decimal), { alignment: 'right', bold: true, fillColor: '#DFF0D8' }),
-            pdfCell(quantity.toFixed(decimal), { alignment: 'right' }),
-            pdfCell(total.toFixed(decimal), { alignment: 'right' }),
+            pdfCell(formatDecimalEsBo(cpp, decimal), { alignment: 'right', bold: true, fillColor: '#DFF0D8' }),
+            pdfCell(formatDecimalEsBo(quantity, decimal), { alignment: 'right' }),
+            pdfCell(formatDecimalEsBo(total, decimal), { alignment: 'right' }),
         ]);
     });
     const totalQuantity = summary.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
     const totalAmount = summary.reduce((sum, row) => sum + Number(row.total || 0), 0);
     body.push([
         pdfCell('TOTAL', { colSpan: 3, bold: true, fillColor: '#D1D5DB' }), ...Array(2).fill({}),
-        pdfCell(totalQuantity.toFixed(decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right' }),
-        pdfCell(totalAmount.toFixed(decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right' }),
+        pdfCell(formatDecimalEsBo(totalQuantity, decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right' }),
+        pdfCell(formatDecimalEsBo(totalAmount, decimal), { bold: true, fillColor: '#D1D5DB', alignment: 'right' }),
     ]);
     return body;
 };

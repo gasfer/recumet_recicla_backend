@@ -17,6 +17,15 @@ test('comprobante de compra conserva datos completos, detalle y totales sin trun
     assert.equal(buildOperationVoucher({ detailsInput: [] }, { kind: 'purchase', format: 'rollo' }).paper.height, 'auto');
 });
 
+test('comprobante térmico mantiene tamaño de rollo y usa texto legible', () => {
+    const document = buildOperationVoucher({ cod: 'COMP-ROLLO', date_voucher: '2026-10-28', detailsInput: [] }, { kind: 'purchase', format: 'rollo' });
+    const html = renderReportHtml(document);
+    assert.match(html, /@page\{size:223\.937[^}]*margin:3pt 2pt\}/);
+    assert.match(html, /\.thermal table\{[^}]*font-size:8\.5pt;line-height:1\.2\}/);
+    assert.match(html, /\.thermal \.panel p\{[^}]*font-size:8pt/);
+    assert.match(html, /\.thermal table\{width:100%;font-size:8\.5pt/);
+});
+
 test('tabla de compra aplica resumen compacto, paleta sutil y una sola familia tipográfica', () => {
     const document = buildOperationVoucher({
         cod: 'COMP-10967', date_voucher: '2026-10-05', sumas: 0, discount: 0, total: 0,
@@ -25,7 +34,7 @@ test('tabla de compra aplica resumen compacto, paleta sutil y una sola familia t
     }, { kind: 'purchase', decimal: 2 });
     const html = renderReportHtml(document);
     assert.match(html, /table-summary/);
-    assert.match(html, /Resumen de pesaje verificado en recepción/);
+    assert.match(html, /Documento emitido conforme a las políticas de pesaje y control ambiental/);
     assert.match(html, /amount-summary/);
     assert.match(html, /IMPORTE EN LETRAS/);
     assert.match(html, /SON: CERO CON 00\/100/);
@@ -120,12 +129,37 @@ function fakeBrowser(pdf) {
     let closed = 0;
     instance.newPage = async () => Object.assign(new EventEmitter(), {
         setJavaScriptEnabled: async () => {}, setRequestInterception: async () => {}, setContent: async () => {},
+        setViewport: async () => {}, emulateMediaType: async () => {},
         evaluate: async () => {}, pdf, close: async () => { closed++; },
     });
     instance.close = async () => instance.emit('disconnected');
     instance.closedPages = () => closed;
     return instance;
 }
+
+test('comprobante térmico mide el contenido antes de activar impresión y calcula la altura final', async () => {
+    const sequence = [];
+    let evaluations = 0;
+    let pdfOptions;
+    const instance = fakeBrowser(async options => { pdfOptions = options; return Buffer.from('%PDF- thermal'); });
+    const createPage = instance.newPage;
+    instance.newPage = async () => {
+        const page = await createPage();
+        page.setViewport = async () => {};
+        page.evaluate = async () => {
+            evaluations++;
+            if (evaluations === 2) { sequence.push('measure'); return 400; }
+            return undefined;
+        };
+        page.emulateMediaType = async media => sequence.push(media);
+        return page;
+    };
+    const renderer = createPdfRenderer({ launch: async () => instance });
+    await renderer.render({ variant: 'thermal', paper: { width: 226.77, height: 'auto' }, title: 'Comprobante', columns: [{ label: 'Dato' }], rows: [['Prueba']] });
+    assert.deepEqual(sequence, ['measure', 'print']);
+    assert.ok(Math.abs(Number.parseFloat(pdfOptions.height) * 72 - 306) < 0.01);
+    await renderer.close();
+});
 
 test('cola acotada rechaza saturación y libera páginas después de fallo', async () => {
     let resolve;

@@ -2,15 +2,16 @@ const { Provider, ProviderBranch, ProviderContact, ProviderBankAccount, Provider
 const { Op } = require('sequelize');
 const { WHOLESALE_FIELDS, validateWholesaleProfile } = require('./provider-wholesale-profile');
 const { validateRegistrationFields } = require('./provider-registration-validation');
+const providerAvailability = require('./provider-sucursal-availability.service');
 
 const COMMERCIAL_FIELDS = [
   'full_names', 'number_document', 'cellphone', 'id_sector', 'id_category', 'id_sucursal',
   'commercial_name', 'entity_type', 'origin_channel', 'relationship_status', 'negotiation_condition',
   'commercial_observations', 'requires_certificate', 'requires_traceability_report', 'service_mode',
   'general_observations', 'frequency', 'id_commercial_user', 'department', 'zone',
-  'certificate_file_name', 'traceability_file_name', 'frequency_mode', 'enabled_sucursal_ids', 'operating_departments', 'has_branches', ...WHOLESALE_FIELDS
+  'certificate_file_name', 'traceability_file_name', 'frequency_mode', 'operating_departments', 'has_branches', ...WHOLESALE_FIELDS
 ];
-const PROFILE_FIELDS = [...new Set([...COMMERCIAL_FIELDS, 'direction', 'mayorista', 'name_contact', 'companyContacts', 'workAreaOrPositionOrUnit', 'cellphone_contact', 'id_type_provider', 'status', 'enabled_sucursal_ids', 'operating_departments', 'has_branches'])];
+const PROFILE_FIELDS = [...new Set([...COMMERCIAL_FIELDS, 'id_sucursal', 'direction', 'mayorista', 'name_contact', 'companyContacts', 'workAreaOrPositionOrUnit', 'cellphone_contact', 'id_type_provider', 'status', 'operating_departments', 'has_branches'])];
 
 const DETAIL_MODELS = {
   branches: { model: ProviderBranch, primaryField: 'is_main', mirror: 'branch' },
@@ -19,11 +20,15 @@ const DETAIL_MODELS = {
   materials: { model: ProviderMaterial, naturalKey: ['id_product'] },
 };
 
+const normalizeProviderDocument = value => String(value || '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
+
 class ProviderService {
-  async createProfile(data) {
+  async createProfile(data, user) {
     await this.validateProfile(data);
     return sequelize.transaction(async (transaction) => {
-      const provider = await Provider.create(this.pick(data, PROFILE_FIELDS), { transaction });
+      const registrationBranch = await providerAvailability.assertBranchAccess(data.id_sucursal, user, transaction);
+      const provider = await Provider.create({ ...this.pick(data, PROFILE_FIELDS), id_sucursal: registrationBranch }, { transaction });
+      await providerAvailability.enableInitial(provider.id, registrationBranch, user, transaction);
 
       await this.syncMainBranch(provider, data, transaction);
       await this.syncMainContact(provider, data, transaction);
@@ -35,19 +40,20 @@ class ProviderService {
     });
   }
 
-  async findAutocompleteProviders(query = '', branchId = null) {
-    const conditions = [];
-    if (query) conditions.push({ [Op.or]: [{ full_names: { [Op.iLike]: `%${query}%` } }, { number_document: { [Op.iLike]: `%${query}%` } }] });
-    if (branchId) conditions.push({ [Op.or]: [
-      { enabled_sucursal_ids: { [Op.contains]: [Number(branchId)] } },
-      { enabled_sucursal_ids: null, id_sucursal: Number(branchId) },
-    ] });
+  async findAutocompleteProviders(query = '') {
+    const conditions = query
+      ? [{ [Op.or]: [{ full_names: { [Op.iLike]: `%${query}%` } }, { number_document: { [Op.iLike]: `%${query}%` } }] }]
+      : [];
     return Provider.findAll({
       attributes: ['id', 'full_names', 'number_document', 'estado_registro'],
       where: { status: true, ...(conditions.length ? { [Op.and]: conditions } : {}) },
       include: [{ association: 'type', attributes: ['code'] }],
       limit: 20,
     });
+  }
+
+  async findAvailableProvidersForPurchase(query = '', branchId, user) {
+    return providerAvailability.findAvailableProviders(String(query).slice(0, 150), branchId, user);
   }
 
   async preRegisterProvider(data, idSucursal, user) {
@@ -63,8 +69,16 @@ class ProviderService {
       throw error;
     }
     return sequelize.transaction(async (transaction) => {
+      await this.lockProviderIdentity(data, transaction);
       const sucursal = await Sucursal.findByPk(branchId, { transaction });
       if (!sucursal || !sucursal.status) throw this.validationError('La sucursal seleccionada no existe o está inactiva');
+      const duplicate = await this.findDuplicate({ number_document: data.number_document, cellphone: data.cellphone }, transaction);
+      if (duplicate) {
+        throw Object.assign(new Error('Ya existe un proveedor con este CI/NIT o celular. Selecciónelo para continuar.'), {
+          statusCode: 409,
+          duplicateProvider: duplicate,
+        });
+      }
       const provider = await Provider.create({
       full_names: data.full_names,
       number_document: data.number_document || null,
@@ -77,39 +91,64 @@ class ProviderService {
       origin_channel: data.origin_channel || 'BALANZA',
       status: true,
       }, { transaction });
+      await providerAvailability.enableInitial(provider.id, sucursal.id, user, transaction);
       await this.syncMainBranch(provider, { city: sucursal.city }, transaction);
       return this.getProviderDetails(provider.id, transaction);
     });
   }
 
-  async findDuplicate({ number_document, cellphone }) {
+  async findDuplicate({ number_document, cellphone }, transaction) {
     const matches = [];
-    if (number_document) matches.push({ number_document });
+    const document = normalizeProviderDocument(number_document);
+    if (document) matches.push(sequelize.where(
+      sequelize.fn('UPPER', sequelize.fn('REGEXP_REPLACE', sequelize.fn('TRIM', sequelize.col('number_document')), '[^[:alnum:]]', '', 'g')),
+      document,
+    ));
     if (cellphone) matches.push({ cellphone: String(cellphone) });
     if (!matches.length) return null;
     return Provider.findOne({
       attributes: ['id', 'full_names', 'number_document', 'cellphone', 'estado_registro'],
-      where: { [Op.or]: matches }, order: [['id', 'ASC']],
+      where: { [Op.or]: matches }, order: [['id', 'ASC']], transaction,
     });
   }
 
-  async validateCommercial(providerId, data, commercialUserId) {
+  async lockProviderIdentity(data, transaction) {
+    const keys = [
+      normalizeProviderDocument(data.number_document) && `provider-document:${normalizeProviderDocument(data.number_document)}`,
+      data.cellphone && `provider-phone:${String(data.cellphone).replace(/\D/g, '')}`,
+    ].filter(Boolean).sort();
+    for (const key of keys) {
+      await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', {
+        replacements: { key }, transaction, logging: false,
+      });
+    }
+  }
+
+  async validateCommercial(providerId, data, user) {
     const typeId = Number(data.id_type_provider);
     if (!Number.isInteger(typeId) || typeId < 1 || typeId > 5) throw new Error('La clasificación comercial debe ser una categoría entre A y E');
     if (typeId === 1) this.validateTypeA(data);
     return sequelize.transaction(async (transaction) => {
       const provider = await this.requireProvider(providerId, transaction);
-      await provider.update({ ...this.pick(data, COMMERCIAL_FIELDS), id_type_provider: typeId, estado_registro: 'VALIDADO', id_commercial_user: commercialUserId }, { transaction });
+      await provider.update({ ...this.pick(data, COMMERCIAL_FIELDS), id_type_provider: typeId, estado_registro: 'VALIDADO', id_commercial_user: user?.id || user }, { transaction });
+      if (Array.isArray(data.enabled_sucursal_ids)) {
+        await providerAvailability.syncAuthorized(provider.id, data.enabled_sucursal_ids, user, transaction);
+      }
       await this.syncDetails(provider, data, transaction);
       return this.getProviderDetails(provider.id, transaction);
     });
   }
 
-  async updateProfile(providerId, data) {
+  async updateProfile(providerId, data, user) {
     return sequelize.transaction(async (transaction) => {
       const provider = await this.requireProvider(providerId, transaction);
       await this.validateProfile({ ...data, id_type_provider: data.id_type_provider ?? provider.id_type_provider }, transaction);
-      await provider.update(this.pick(data, PROFILE_FIELDS), { transaction });
+      const profileData = this.pick(data, PROFILE_FIELDS);
+      delete profileData.id_sucursal;
+      await provider.update(profileData, { transaction });
+      if (Array.isArray(data.enabled_sucursal_ids)) {
+        await providerAvailability.syncAuthorized(provider.id, data.enabled_sucursal_ids, user, transaction);
+      }
 
       await this.syncMainBranch(provider, data, transaction);
       await this.syncMainContact(provider, data, transaction);
@@ -149,7 +188,7 @@ class ProviderService {
   }
 
   async getProviderDetails(providerId, transaction) {
-    return Provider.findByPk(providerId, {
+    const provider = await Provider.findByPk(providerId, {
       include: [
         { association: 'sector', attributes: ['id', 'name'], required: false },
         { association: 'type', attributes: ['id', 'name', 'code'], required: false },
@@ -164,6 +203,9 @@ class ProviderService {
         { association: 'materials', where: { status: true }, required: false, include: [{ association: 'category' }, { association: 'product' }] },
       ], transaction,
     });
+    if (!provider) return null;
+    provider.setDataValue('enabled_sucursal_ids', await providerAvailability.enabledBranchIds(providerId, transaction));
+    return provider;
   }
 
   async syncDetails(provider, data, transaction) {

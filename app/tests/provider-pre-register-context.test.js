@@ -2,15 +2,19 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { Sucursal, Provider, sequelize } = require('../database/config');
+const { Sucursal, Provider, ProviderSucursalAvailability, sequelize } = require('../database/config');
 const service = require('../services/provider.service');
 
 test('preregistro usa la sucursal seleccionada y su ciudad, incluso para administradores sin asignaciones', async (t) => {
   const transaction = {};
   let saved;
   t.mock.method(sequelize, 'transaction', async (callback) => callback(transaction));
+  t.mock.method(sequelize, 'query', async () => [[], {}]);
   t.mock.method(Sucursal, 'findByPk', async (id) => ({ id, city: 'Santa Cruz', status: true }));
+  t.mock.method(Provider, 'findOne', async () => null);
   t.mock.method(Provider, 'create', async (data) => { saved = data; return { id: 100, ...data }; });
+  t.mock.method(ProviderSucursalAvailability, 'findOne', async () => null);
+  t.mock.method(ProviderSucursalAvailability, 'create', async data => data);
   t.mock.method(service, 'syncMainBranch', async (provider, location, tx) => {
     assert.equal(provider.id_sucursal, 2);
     assert.deepEqual(location, { city: 'Santa Cruz' });
@@ -35,7 +39,11 @@ test('rechaza selección ausente, no autorizada o inactiva antes de crear al pro
     role: 'OPERADOR', assign_sucursales: [{ id_sucursal: 1 }],
   }), { statusCode: 403 });
   t.mock.method(sequelize, 'transaction', async (callback) => callback({}));
+  t.mock.method(sequelize, 'query', async () => [[], {}]);
   t.mock.method(Sucursal, 'findByPk', async () => ({ id: 2, status: false }));
+  t.mock.method(Provider, 'findOne', async () => null);
+  t.mock.method(ProviderSucursalAvailability, 'findOne', async () => null);
+  t.mock.method(ProviderSucursalAvailability, 'create', async data => data);
   await assert.rejects(service.preRegisterProvider({}, 2, { role: 'ADMINISTRADOR' }), { statusCode: 400 });
   assert.equal(create.mock.callCount(), 0);
 });

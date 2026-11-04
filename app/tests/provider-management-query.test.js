@@ -14,6 +14,8 @@ test('Todos con año seleccionado exige compras activas del año, conservando al
   assert.deepEqual(replacements.id_storages, [2]);
   assert.equal(replacements.department, 'COCHABAMBA');
   assert.match(sql, /i.status = 'ACTIVE'/);
+  assert.match(sql, /EXISTS \(SELECT 1 FROM provider_sucursal_availability pa WHERE pa.id_provider = p.id AND pa.status = TRUE AND pa.id_sucursal IN \(:allowed_branches\)\)/);
+  assert.doesNotMatch(sql, /enabled_sucursal_ids|p\.\*/);
 });
 
 test('Sin compras usa cero compras del período y Todo el historial permite el directorio completo', () => {
@@ -64,4 +66,5 @@ test('buildQuery genera condiciones IN correctas para múltiples sucursales y al
   assert.ok(sql.includes('i.id_storage IN (:id_storages)'));
   assert.deepEqual(replacements.id_sucursales, [10, 20]);
   assert.deepEqual(replacements.id_storages, [100, 200]);
+  assert.match(sql, /pa\.id_sucursal IN \(:id_sucursales\)/);
 });

@@ -188,6 +188,71 @@ test('crear clasificación aplica salida e ingreso y conserva los correlativos o
   assert.equal(f.movements.mock.callCount(), 0);
 });
 
+test('clasificación rechaza cantidades de salida y entrada distintas antes de modificar inventario', async (t) => {
+  const f = fixture(t);
+  await classifications.newClassified({ userAuth: f.actor, body: {
+    classified_data: { id_product: 1, quantity_product: 6, id_sucursal: 2, id_storage: 3, type_registry: 'SIN FICHA' },
+    classified_details: [{ id_product: 4, quantity: 5 }],
+  } }, f.res);
+
+  assert.equal(f.res.code, 422);
+  assert.equal(f.res.body.code, 'CLASSIFIED_QUANTITY_MISMATCH');
+  assert.match(f.res.body.errors[0].msg, /debe ser igual/);
+  assert.deepEqual(f.stocks.map(({ stock }) => stock), [20, 10]);
+  assert.deepEqual(f.writes, ['rollback']);
+});
+
+test('clasificación normaliza decimales de JavaScript antes de comparar salida e ingresos', async (t) => {
+  const f = fixture(t);
+  let document;
+  t.mock.method(db.Classified, 'findOne', async () => ({ number_registry: 'SFCL-00008' }));
+  t.mock.method(db.Classified, 'count', async () => 3);
+  t.mock.method(db.Classified, 'create', async (data, options) => {
+    assert.equal(options.transaction, f.transaction);
+    return (document = f.record({ ...data, id: 12 }));
+  });
+  t.mock.method(db.DetailsClassified, 'create', async (data, options) => {
+    assert.equal(options.transaction, f.transaction);
+    return f.record(data);
+  });
+
+  await classifications.newClassified({ userAuth: f.actor, body: {
+    classified_data: { id_product: 1, quantity_product: 0.30000000000000004, id_sucursal: 2, id_storage: 3, type_registry: 'SIN FICHA' },
+    classified_details: [{ id_product: 4, quantity: 0.1 }, { id_product: 4, quantity: 0.2 }],
+  } }, f.res);
+
+  assert.equal(f.res.code, 201);
+  assert.equal(document.quantity_product, '0.30');
+  assert.deepEqual(f.stocks.map(({ stock }) => stock), [19.7, 10.3]);
+  assert.equal(f.writes.at(-1), 'commit');
+});
+
+test('clasificación identifica la diferencia Stock–Kardex que ya existía antes del intento', async (t) => {
+  const f = fixture(t);
+  f.kardexState.projectedBalance = () => 0;
+  t.mock.method(db.Classified, 'findOne', async () => ({ number_registry: 'SFCL-00008' }));
+  t.mock.method(db.Classified, 'count', async () => 3);
+  t.mock.method(db.Classified, 'create', async (data, options) => {
+    assert.equal(options.transaction, f.transaction);
+    return f.record({ ...data, id: 12 });
+  });
+  t.mock.method(db.DetailsClassified, 'create', async (data, options) => {
+    assert.equal(options.transaction, f.transaction);
+    return f.record(data);
+  });
+
+  await classifications.newClassified({ userAuth: f.actor, body: {
+    classified_data: { id_product: 1, quantity_product: 6, id_sucursal: 2, id_storage: 3, type_registry: 'SIN FICHA' },
+    classified_details: [{ id_product: 4, quantity: 6 }],
+  } }, f.res);
+
+  assert.equal(f.res.code, 409);
+  assert.equal(f.res.body.code, 'STOCK_KARDEX_PARITY_VIOLATION');
+  assert.ok(f.res.body.details.every((item) => item.inconsistent_before === true));
+  assert.equal(f.res.body.details.find((item) => item.product_id === 1).stock_before, '20.0000');
+  assert.equal(f.writes.at(-1), 'rollback');
+});
+
 test('anular clasificación restaura ambos productos sin insertar compensaciones adicionales', async (t) => {
   const f = fixture(t);
   const document = f.record({ id: 12, cod: 'CL00003', status: 'ACTIVE', id_product: 1,

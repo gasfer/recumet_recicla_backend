@@ -6,6 +6,7 @@ const {
 } = require('../database/config');
 const { Op } = require('sequelize');
 const providerService = require('./provider.service');
+const providerAvailability = require('./provider-sucursal-availability.service');
 const { validateRegistrationFields } = require('./provider-registration-validation');
 const { isProviderCatalogValue } = require('../constants/provider-commercial.constants');
 
@@ -22,7 +23,7 @@ const SITE_FIELDS = Object.freeze([
   'full_names', 'number_document', 'cellphone', 'direction', 'mayorista', 'name_contact',
   'companyContacts', 'workAreaOrPositionOrUnit', 'frequency', 'cellphone_contact',
   'id_category', 'id_type_provider', 'id_sucursal', 'status', 'service_mode', 'general_observations', 'frequency_mode',
-  'enabled_sucursal_ids', 'operating_departments',
+  'operating_departments',
 ]);
 
 const COLLECTION_MODELS = Object.freeze({
@@ -54,17 +55,17 @@ class ProviderCompanyService {
     return { companies, ungrouped };
   }
 
-  async create(data) {
+  async create(data, user) {
     const payload = data.company || data;
     this.validateCompany(payload);
     return sequelize.transaction(async (transaction) => {
       const company = await ProviderCompany.create(this.pick(payload, COMPANY_FIELDS), { transaction });
-      if (data.headquarters) await this.createSiteRecord(company, { ...data.headquarters, site_role: 'HEADQUARTERS' }, transaction);
+      if (data.headquarters) await this.createSiteRecord(company, { ...data.headquarters, site_role: 'HEADQUARTERS' }, transaction, user);
       return this.details(company.id, transaction);
     });
   }
 
-  async update(id, data) {
+  async update(id, data, user) {
     const payload = data.company || data;
     this.validateCompany(payload);
     return sequelize.transaction(async (transaction) => {
@@ -74,30 +75,40 @@ class ProviderCompanyService {
       if (data.headquarters) {
         await this.validateSite(data.headquarters, false, company.operational_type, transaction);
         const site = await this.requireCompanySite(company.id, data.headquarters.id, transaction, true);
-        await site.update(this.pick(data.headquarters, SITE_FIELDS), { transaction });
+        const siteData = this.pick(data.headquarters, SITE_FIELDS);
+        delete siteData.id_sucursal;
+        await site.update(siteData, { transaction });
+        if (Array.isArray(data.headquarters.enabled_sucursal_ids)) {
+          await providerAvailability.syncAuthorized(site.id, data.headquarters.enabled_sucursal_ids, user, transaction);
+        }
         await this.syncSiteDetails(site, data.headquarters, transaction);
       }
       return this.details(company.id, transaction);
     });
   }
 
-  async createSite(companyId, data) {
+  async createSite(companyId, data, user) {
     return sequelize.transaction(async (transaction) => {
       const company = await this.requireCompany(companyId, transaction, true);
       const role = data.site_role || 'BRANCH';
       if (role === 'HEADQUARTERS') await this.ensureNoHeadquarters(company.id, null, transaction);
-      await this.createSiteRecord(company, { ...data, site_role: role }, transaction);
+      await this.createSiteRecord(company, { ...data, site_role: role }, transaction, user);
       await company.update({ has_branches: await this.hasBranches(company.id, transaction) }, { transaction });
       return this.details(company.id, transaction);
     });
   }
 
-  async updateSite(companyId, providerId, data) {
+  async updateSite(companyId, providerId, data, user) {
     return sequelize.transaction(async (transaction) => {
       const company = await this.requireCompany(companyId, transaction, true);
       await this.validateSite(data, false, company.operational_type, transaction);
       const provider = await this.requireCompanySite(company.id, providerId, transaction, true);
-      await provider.update(this.pick(data, SITE_FIELDS), { transaction });
+      const siteData = this.pick(data, SITE_FIELDS);
+      delete siteData.id_sucursal;
+      await provider.update(siteData, { transaction });
+      if (Array.isArray(data.enabled_sucursal_ids)) {
+        await providerAvailability.syncAuthorized(provider.id, data.enabled_sucursal_ids, user, transaction);
+      }
       await this.syncSiteDetails(provider, data, transaction);
       return providerService.getProviderDetails(provider.id, transaction);
     });
@@ -180,8 +191,12 @@ class ProviderCompanyService {
     });
     if (!company) return null;
     const result = company.toJSON();
-    result.operatingProviders = (result.operatingProviders || [])
-      .map((site) => ({ ...site, location: (site.branches || []).find((branch) => branch.is_main) || site.branches?.[0] || null }))
+    result.operatingProviders = await Promise.all((result.operatingProviders || [])
+      .map(async (site) => ({
+        ...site,
+        enabled_sucursal_ids: await providerAvailability.enabledBranchIds(site.id, transaction),
+        location: (site.branches || []).find((branch) => branch.is_main) || site.branches?.[0] || null,
+      })))
       .sort((first, second) => (first.site_role === 'HEADQUARTERS' ? -1 : second.site_role === 'HEADQUARTERS' ? 1 : first.id - second.id));
     return result;
   }
@@ -202,10 +217,12 @@ class ProviderCompanyService {
     });
   }
 
-  async createSiteRecord(company, data, transaction) {
+  async createSiteRecord(company, data, transaction, user) {
     await this.validateSite(data, true, company.operational_type, transaction);
+    const registrationBranch = await providerAvailability.assertBranchAccess(data.id_sucursal, user, transaction);
     const provider = await Provider.create({
       ...this.pick(data, SITE_FIELDS),
+      id_sucursal: registrationBranch,
       full_names: data.full_names || company.commercial_name || company.full_names,
       number_document: data.number_document || company.number_document,
       id_type_provider: data.id_type_provider || company.id_type_provider,
@@ -214,6 +231,7 @@ class ProviderCompanyService {
       status: data.status !== false,
       estado_registro: 'VALIDADO',
     }, { transaction });
+    await providerAvailability.enableInitial(provider.id, registrationBranch, user, transaction);
     await this.syncSiteDetails(provider, data, transaction);
     return provider;
   }

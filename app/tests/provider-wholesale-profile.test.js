@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const { validateWholesaleProfile } = require('../services/provider-wholesale-profile');
 const { Provider, ProviderMaterial, Product, sequelize } = require('../database/config');
 const service = require('../services/provider.service');
+const availability = require('../services/provider-sucursal-availability.service');
 
 const profile = {
   commercialized_materials: 'Fierro y aluminio', contact_frequency: 'BIWEEKLY',
@@ -88,13 +89,16 @@ test('edición guarda condiciones comerciales y listas en la misma transacción'
 });
 
 test('creación conserva el perfil mayorista y sincroniza sus listas', async t => {
-  t.mock.method(sequelize, 'transaction', async callback => callback({}));
+  const transaction = {};
+  t.mock.method(sequelize, 'transaction', async callback => callback(transaction));
+  t.mock.method(availability, 'assertBranchAccess', async id => id);
+  t.mock.method(availability, 'enableInitial', async () => {});
   let saved;
   t.mock.method(Provider, 'create', async data => { saved = data; return { id: 7 }; });
   for (const name of ['syncMainBranch', 'syncMainContact', 'syncMainMaterial', 'syncMainBankAccount']) t.mock.method(service, name, async () => {});
   const sync = t.mock.method(service, 'syncDetails', async () => {});
   t.mock.method(service, 'getProviderDetails', async () => saved);
-  const result = await service.createProfile(profile);
+  const result = await service.createProfile({ ...profile, id_sucursal: 8 }, { role: 'ADMINISTRADOR' });
   assert.equal(result.logistics_condition, 'BY_VOLUME');
   assert.equal(sync.mock.callCount(), 1);
 });

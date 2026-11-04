@@ -60,11 +60,14 @@ function createPdfRenderer({ launch = options => puppeteer.launch(options), conc
             });
             const options = { printBackground: true, preferCSSPageSize: true, timeout: remaining, displayHeaderFooter: height !== 'auto', headerTemplate: '<span></span>', footerTemplate: '<div style="font-size:7px;width:100%;text-align:center;color:#64748b">RECUMET · <span class="pageNumber"></span> / <span class="totalPages"></span></div>' };
             if (height === 'auto') {
+                const horizontalMargin = document.variant === 'thermal' ? 2 : 6;
+                const verticalMargin = document.variant === 'thermal' ? 3 : 10;
+                await page.setViewport({ width: Math.floor((width - horizontalMargin * 2) * 96 / 72), height: 100 });
+                const pixels = await page.evaluate(() => Math.ceil(Array.from(document.body.children).reduce((bottom, element) => Math.max(bottom, element.getBoundingClientRect().bottom), 0)));
                 await page.emulateMediaType('print');
-                await page.setViewport({ width: Math.floor((width - 12) * 96 / 72), height: 100 });
-                const pixels = await page.evaluate(() => document.documentElement.scrollHeight);
-                Object.assign(options, { preferCSSPageSize: false, width: `${width / 72}in`, height: `${Math.max(128, pixels * 72 / 96 + 23) / 72}in`, margin: { top: `${10 / 72}in`, bottom: `${10 / 72}in`, left: `${6 / 72}in`, right: `${6 / 72}in` } });
+                Object.assign(options, { preferCSSPageSize: false, width: `${width / 72}in`, height: `${Math.max(100, pixels * 72 / 96 + verticalMargin * 2) / 72}in`, margin: { top: `${verticalMargin / 72}in`, bottom: `${verticalMargin / 72}in`, left: `${horizontalMargin / 72}in`, right: `${horizontalMargin / 72}in` } });
             } else {
+                await page.emulateMediaType('print');
                 await page.evaluate(maxHeight => {
                     document.querySelectorAll('tbody tr,.panel,.closing').forEach(element => {
                         if (element.getBoundingClientRect().height > maxHeight) { element.classList.add('oversized'); element.style.breakInside = 'auto'; }

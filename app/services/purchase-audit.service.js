@@ -1,7 +1,7 @@
 'use strict';
 
 const { v4: uuidv4 } = require('uuid');
-const { PurchaseAuditEvent } = require('../database/config');
+const { PurchaseAuditEvent, sequelize } = require('../database/config');
 
 const ENTITY_TYPES = Object.freeze({ PURCHASE: 'PURCHASE', DETAIL: 'PURCHASE_DETAIL', ACCOUNT: 'ACCOUNT_PAYABLE', PAYMENT: 'PAYMENT' });
 const EVENT_TYPES = Object.freeze({
@@ -69,6 +69,12 @@ const createEvent = async ({ transaction, correlationId = uuidv4(), idempotencyK
 module.exports = {
   ENTITY_TYPES, EVENT_TYPES, AUDITABLE_INPUT_FIELDS, AUDITABLE_DETAIL_FIELDS, AUDITABLE_ACCOUNT_FIELDS, AUDITABLE_PAYMENT_FIELDS,
   pick, diff, diffDetails, createEvent,
+  lockIdempotencyKey: async (idempotencyKey, transaction) => {
+    if (!idempotencyKey) return;
+    await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:idempotencyKey))', {
+      replacements: { idempotencyKey }, transaction,
+    });
+  },
   findEventByIdempotencyKey: (idempotencyKey, transaction) => idempotencyKey ? PurchaseAuditEvent.findOne({ where: { idempotency_key: idempotencyKey }, transaction }) : null,
   createCorrelationId: uuidv4,
 };

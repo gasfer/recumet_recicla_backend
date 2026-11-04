@@ -9,6 +9,7 @@ const detailColumns = [
     { label: 'CANT.', width: 45, align: 'center' }, { label: 'UND', width: 35, align: 'center' },
     { label: 'P.U.', width: 55, align: 'right' }, { label: 'IMPORTE', width: 60, align: 'right' },
 ];
+const thermalPaperWidth = 79 * 72 / 25.4;
 const buildOperationVoucher = (operation, { kind, decimal = 2, format } = {}) => {
     const purchase = kind === 'purchase';
     const classified = kind === 'classified';
@@ -68,7 +69,7 @@ const buildOperationVoucher = (operation, { kind, decimal = 2, format } = {}) =>
         variant: thermal ? 'thermal' : 'voucher',
         title: operation.status === 'ANULADO' ? 'ANULADO · ' + (purchase ? 'NOTA DE COMPRA' : 'NOTA DE VENTA') : thermal ? 'COMPROBANTE DE PESAJE' : purchase ? 'NOTA DE COMPRA' : classified ? 'NOTA DE CLASIFICACIÓN' : operation.voucher === 'MENOR' ? 'NOTA DE VENTA' : 'NOTA DE DESPACHO',
         reference: operation.cod, date: moment(operation[purchase ? 'date_voucher' : classified ? 'date_classified' : 'date_output']).format('DD/MM/YYYY HH:mm:ss'),
-        company: companyData(operation.sucursal), paper: thermal ? { width: 226.77, height: 'auto' } : details.length <= (purchase ? 5 : 6) ? 'HALF_LETTER' : 'LETTER',
+        company: companyData(operation.sucursal), paper: thermal ? { width: thermalPaperWidth, height: 'auto' } : details.length <= (purchase ? 5 : 6) ? 'HALF_LETTER' : 'LETTER',
         panels, sections, observations: operation.comments,
         signatures: thermal ? [] : [{ role: 'Recibí conforme', name: purchase ? `PROVEEDOR: ${entity.full_names || ''}` : classified ? '' : 'Responsable de almacén' }, { role: 'Entregue conforme', name: purchase ? 'RESPONSABLE CAJA' : classified ? 'Responsable de almacén' : 'Cliente' }],
     };

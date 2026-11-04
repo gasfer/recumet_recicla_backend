@@ -29,10 +29,11 @@ test('crear, editar y recuperar perfiles A a F en PostgreSQL sin conservar datos
       contacts: [{ full_name: 'CONTACTO PRUEBA', position_area: 'VENTAS', cellphone: '70000000', is_main_contact: true, status: true }],
       materials: [{ id_product: product.id, frequency: 'MONTHLY', service_mode: 'BOTH', status: true }], bankAccounts: [],
     };
-    const company = await companyService.create({ company: corporate, headquarters });
+    const administrator = { role: 'ADMINISTRADOR', assign_sucursales: [] };
+    const company = await companyService.create({ company: corporate, headquarters }, administrator);
     const site = company.operatingProviders[0];
     ids.push(site.id);
-    await companyService.update(company.id, { company: { ...corporate, commercial_name: 'EMPRESA EDITADA' }, headquarters: { ...headquarters, id: site.id, general_observations: 'SEDE EDITADA' } });
+    await companyService.update(company.id, { company: { ...corporate, commercial_name: 'EMPRESA EDITADA' }, headquarters: { ...headquarters, id: site.id, general_observations: 'SEDE EDITADA' } }, administrator);
     const reloadedA = await service.getProviderDetails(site.id, transaction);
     assert.equal(reloadedA.company.commercial_name, 'EMPRESA EDITADA');
     assert.equal(reloadedA.general_observations, 'SEDE EDITADA');
@@ -53,9 +54,9 @@ test('crear, editar y recuperar perfiles A a F en PostgreSQL sin conservar datos
         bankAccounts: [{ id_bank: bank.id, account_holder: 'TITULAR PRUEBA', account_number: `TEST-${code}`, account_type: 'CAJA_AHORRO', currency: 'BOB', is_main: true, status: true }],
         ...(code !== 'D' ? { contacts: [{ full_name: 'CONTACTO PRUEBA', position_area: 'VENTAS', cellphone: '70000000', is_main_contact: true, status: true }] } : {}),
       };
-      const created = await service.createProfile(structuredClone(payload));
+      const created = await service.createProfile(structuredClone(payload), administrator);
       ids.push(created.id);
-      const updated = await service.updateProfile(created.id, { ...structuredClone(payload), commercial_name: 'ACOPIADORA EDITADA', zone: '', general_observations: 'EDITADA', status: false });
+      const updated = await service.updateProfile(created.id, { ...structuredClone(payload), commercial_name: 'ACOPIADORA EDITADA', zone: '', general_observations: 'EDITADA', status: false }, administrator);
       assert.equal(updated.status, false);
       const restored = await service.getProviderDetails(created.id, transaction);
       assert.equal(restored.commercial_name, 'ACOPIADORA EDITADA');
@@ -66,7 +67,7 @@ test('crear, editar y recuperar perfiles A a F en PostgreSQL sin conservar datos
       assert.equal(Number(restored.materials[0].estimated_volume), 123.456);
       assert.equal(restored.bankAccounts[0].account_number, `TEST-${code}`);
       if (code !== 'D') assert.equal(restored.contacts[0].full_name, 'CONTACTO PRUEBA');
-      await service.updateProfile(created.id, { ...structuredClone(payload), bankAccounts: [] });
+      await service.updateProfile(created.id, { ...structuredClone(payload), bankAccounts: [] }, administrator);
       assert.equal((await service.getProviderDetails(created.id, transaction)).bankAccounts.length, 0);
     }
   } finally {

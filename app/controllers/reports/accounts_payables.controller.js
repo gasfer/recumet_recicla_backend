@@ -1,3 +1,4 @@
+const { formatDecimalEsBo } = require('../../helpers/number-formatter');
 const { buildFinancialVoucher } = require('../../helpers/generator-pdf/financial-voucher.document');
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
@@ -32,9 +33,9 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:moment(account_payable?.input.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:8}, 
                 {text:account_payable?.input?.type_registry, fontSize:8}, 
                 {text:account_payable?.input?.registry_number, fontSize:8}, 
-                {text:Number(account_payable?.monto_abonado).toFixed(decimal), fontSize:8}, 
-                {text:Number(account_payable?.monto_restante).toFixed(decimal), fontSize:8}, 
-                {text:Number(account_payable?.total).toFixed(decimal), fontSize:8}, 
+                {text:formatDecimalEsBo(Number(account_payable?.monto_abonado), decimal), fontSize:8}, 
+                {text:formatDecimalEsBo(Number(account_payable?.monto_restante), decimal), fontSize:8}, 
+                {text:formatDecimalEsBo(Number(account_payable?.total), decimal), fontSize:8}, 
             ];
             total_abonados+=Number(account_payable?.monto_abonado);
             total_restante+=Number(account_payable?.monto_restante);
@@ -47,9 +48,9 @@ const generatePdfReports = async (req = request, res = response) => {
             {},
             {},
             {},
-            {text: Number(total_abonados).toFixed(decimal),fontSize:9},
-            {text: Number(total_restante).toFixed(decimal),fontSize:9},
-            {text: Number(total_account).toFixed(decimal),fontSize:9},
+            {text: formatDecimalEsBo(Number(total_abonados), decimal),fontSize:9},
+            {text: formatDecimalEsBo(Number(total_restante), decimal),fontSize:9},
+            {text: formatDecimalEsBo(Number(total_account), decimal),fontSize:9},
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
@@ -116,9 +117,9 @@ const generateExcelReports = async (req = request, res = response) => {
                 FECHA_REGISTRO : moment(account_payable?.input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
                 TIPO_DE_REGISTRO : account_payable?.input?.type_registry,
                 NUMERO : account_payable?.input?.registry_number,
-                A_CUENTA :  Number(account_payable?.monto_abonado).toFixed(decimal),
-                SALDO : Number(account_payable?.monto_restante).toFixed(decimal),
-                TOTAL :   Number(account_payable?.total).toFixed(decimal),
+                A_CUENTA :  formatDecimalEsBo(Number(account_payable?.monto_abonado), decimal),
+                SALDO : formatDecimalEsBo(Number(account_payable?.monto_restante), decimal),
+                TOTAL :   formatDecimalEsBo(Number(account_payable?.total), decimal),
                 SUCURSAL : account_payable?.sucursal?.name, 
             }
             accounts_payables_data.push(tableData);
@@ -210,7 +211,7 @@ const generatePdfReportsAbonosAll = async (req = request, res = response) => {
                 {text:account_payable_abono?.codes_input?.join(' \n '), fontSize:8}, 
                 {text:account_payable_abono?.provider?.full_names, fontSize:8}, 
                 {text:account_payable_abono?.type_payment, fontSize:8}, 
-                {text:Number(account_payable_abono?.monto_abono).toFixed(decimal), fontSize:8}, 
+                {text:formatDecimalEsBo(Number(account_payable_abono?.monto_abono), decimal), fontSize:8}, 
                 {text:account_payable_abono?.comments, fontSize:8}, 
             ];
             total_abonados+=Number(account_payable_abono?.monto_abono);
@@ -221,7 +222,7 @@ const generatePdfReportsAbonosAll = async (req = request, res = response) => {
             {},
             {},
             {},
-            {text: Number(total_abonados).toFixed(decimal),fontSize:9},
+            {text: formatDecimalEsBo(Number(total_abonados), decimal),fontSize:9},
             {},
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
@@ -260,7 +261,7 @@ const generateExcelReportsAbonosAll = async (req = request, res = response) => {
                 COMPRAS : account_payable?.codes_input?.join(' \n '),
                 PROVEEDOR : account_payable.provider?.full_names,
                 TIPO : account_payable?.type_payment,
-                PAGO : Number(account_payable?.monto_abono).toFixed(decimal),
+                PAGO : formatDecimalEsBo(Number(account_payable?.monto_abono), decimal),
                 CONCEPTO :  account_payable.comments,
               }
               accounts_payables_data.push(tableData);

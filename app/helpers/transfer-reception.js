@@ -1,5 +1,5 @@
 const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
-const { exactAdd, exactSubtract, exactCompare, exactMin, exactAbs, exactCeil } = require('./number-formatter');
+const { exactAdd, exactSubtract, exactCompare, exactMin, exactAbs, exactCeil, formatDecimalEsBo } = require('./number-formatter');
 const { evaluateReceiptTolerance } = require('../services/transfer-reception-tolerance.service');
 
 const isValidReceivedQuantity = (value) => {
@@ -143,7 +143,7 @@ const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) 
             excess: Number(excess),
             shortage: Number(shortage),
             differencePercentage: received && exactCompare(sentQuantity, 0) > 0
-                ? `${evaluateReceiptTolerance(sentQuantity, receivedQuantity).differencePercentage.toFixed(2)}%`
+                ? `${formatDecimalEsBo(evaluateReceiptTolerance(sentQuantity, receivedQuantity).differencePercentage)}%`
                 : '-',
             observation: detail?.observation || '-',
         };
@@ -161,7 +161,7 @@ const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) 
             excess: Number(totals.excess),
             shortage: Number(totals.shortage),
             differencePercentage: received && exactCompare(totals.sent, 0) > 0
-                ? `${evaluateReceiptTolerance(totals.sent, totals.received).differencePercentage.toFixed(2)}%`
+                ? `${formatDecimalEsBo(evaluateReceiptTolerance(totals.sent, totals.received).differencePercentage)}%`
                 : '-',
         },
     };

@@ -1,3 +1,4 @@
+const { formatDecimalEsBo } = require('../../helpers/number-formatter');
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { ProductSucursals, Product, Sucursal } = require('../../database/config');
@@ -24,9 +25,9 @@ const generatePdfReports = async (req = request, res = response) => {
           const tableData = [
               {text:product.num, fontSize:8}, 
               {text:product.name, fontSize:8}, 
-              {text:Number(product.productCosts?.cost).toFixed(decimal), fontSize:8}, 
-              {text:Number(product.productCosts?.cost_two).toFixed(decimal), fontSize:8}, 
-              {text:Number(product.productCosts?.cost_tree).toFixed(decimal), fontSize:8}, 
+              {text:formatDecimalEsBo(Number(product.productCosts?.cost), decimal), fontSize:8}, 
+              {text:formatDecimalEsBo(Number(product.productCosts?.cost_two), decimal), fontSize:8}, 
+              {text:formatDecimalEsBo(Number(product.productCosts?.cost_tree), decimal), fontSize:8}, 
           ];
           dataPdf[5].table.body.push(tableData);
       });

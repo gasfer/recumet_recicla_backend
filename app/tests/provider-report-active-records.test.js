@@ -51,6 +51,41 @@ test('exportación excluye proveedores inactivos y conserva compras de responsab
   await management.exportRows({ status: false, purchase_status: 'INACTIVE', id_type_provider: 7 }, { role: 'ADMINISTRADOR' });
 });
 
+test('catálogos de sucursal y ciudad muestran solo proveedores activos habilitados en el ámbito del usuario', async t => {
+  t.mock.method(db.ProviderSucursalAvailability, 'findAll', async options => {
+    assert.equal(options.where.status, true);
+    assert.deepEqual(options.where.id_sucursal[Op.in], [8]);
+    assert.equal(options.include[0].association, 'provider');
+    assert.equal(options.include[0].where.status, true);
+    return [{ id_provider: 30, id_sucursal: 8 }];
+  });
+  t.mock.method(db.Sucursal, 'findAll', async options => {
+    assert.equal(options.where.status, true);
+    assert.deepEqual(options.where.id[Op.in], [8]);
+    return [{ id: 8, name: 'REPÚBLICA', city: 'Cochabamba' }];
+  });
+  t.mock.method(db.Storage, 'findAll', async () => []);
+  t.mock.method(db.Category, 'findAll', async () => []);
+  t.mock.method(db.Product, 'findAll', async () => []);
+  t.mock.method(db.TypesProvider, 'findAll', async () => []);
+  t.mock.method(db.User, 'findAll', async () => []);
+  t.mock.method(db.ProviderBranch, 'findAll', async options => {
+    assert.deepEqual(options.where.id_provider[Op.in], [30]);
+    return [{ id: 5, department: 'COCHABAMBA', city: 'Sacaba' }];
+  });
+  t.mock.method(db.Provider, 'findAll', async options => {
+    assert.deepEqual(options.where.id[Op.in], [30]);
+    return [{ id: 30, department: 'COCHABAMBA' }];
+  });
+
+  const catalogs = await management.catalogs({
+    role: 'OPERADOR', assign_sucursales: [{ id_sucursal: 8, status: true }],
+  });
+  assert.deepEqual(catalogs.branches.map(branch => branch.id), [8]);
+  assert.deepEqual(catalogs.cities.map(city => city.name), ['Sacaba']);
+  assert.deepEqual(catalogs.departments.map(department => department.name), ['COCHABAMBA']);
+});
+
 test('reporte por producto cuenta una boleta por producto y descarta líneas eliminadas', () => {
   const { sql } = buildPurchaseDetailQuery(normalizeQuery({ status: true, id_products: 3 }), [1], { providerManagement: true });
   assert.match(sql, /COUNT\(DISTINCT i.id\) AS purchase_count/);

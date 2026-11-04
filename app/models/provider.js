@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
       Provider.hasMany(models.Input,{as: 'input', foreignKey:'id_provider'});
       Provider.hasMany(models.AccountsPayable,{as: 'accounts_payable', foreignKey:'id_provider'});
       Provider.hasMany(models.ProviderBranch, { as: 'branches', foreignKey: 'id_provider' });
+      Provider.hasMany(models.ProviderSucursalAvailability, { as: 'branchAvailability', foreignKey: 'id_provider' });
       Provider.hasMany(models.ProviderContact, { as: 'contacts', foreignKey: 'id_provider' });
       Provider.hasMany(models.ProviderBankAccount, { as: 'bankAccounts', foreignKey: 'id_provider' });
       Provider.hasMany(models.ProviderMaterial, { as: 'materials', foreignKey: 'id_provider' });
@@ -35,7 +36,6 @@ module.exports = (sequelize, DataTypes) => {
     id_type_provider: DataTypes.INTEGER,
     id_sucursal: DataTypes.INTEGER,
     id_provider_company: DataTypes.INTEGER,
-    enabled_sucursal_ids: DataTypes.JSONB,
     operating_departments: DataTypes.JSONB,
     has_branches: DataTypes.BOOLEAN,
     site_role: DataTypes.ENUM('HEADQUARTERS', 'BRANCH'),

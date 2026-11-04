@@ -1,3 +1,4 @@
+const { formatDecimalEsBo } = require('../../helpers/number-formatter');
 const { classifiedReportContext, classifiedExcel, titleFor } = require('../../services/classified-report-presentation.service');
 const { classifiedMaterialFilter } = require('../../services/classified-material-filter');
 const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
@@ -150,8 +151,8 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
             const tableData = [
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
-                {text:Number(detail?.cost).toFixed(decimal), fontSize:9, alignment: 'right'},  
-                {text:Number(detail?.dataValues.suma_quantity).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+                {text:formatDecimalEsBo(Number(detail?.cost), decimal), fontSize:9, alignment: 'right'},  
+                {text:formatDecimalEsBo(Number(detail?.dataValues.suma_quantity), decimal), fontSize:9, alignment: 'right'}, 
             ];
             dataPdf[5].table.body.push(tableData);
         });
@@ -159,7 +160,7 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
             {colSpan: 2, text:`TOTAL: ${NumeroALetras(total)}`},
             {text:''},
             {text:''},
-            {text: `${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
+            {text: `${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';

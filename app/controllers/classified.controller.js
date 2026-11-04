@@ -10,6 +10,7 @@ const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { allocateByQuantity } = require('../services/weighted-average.service');
 const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
 const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
+const { exactAdd, exactCompare, inventoryQuantity } = require('../helpers/number-formatter');
 
 const valuedKardex = new ValuedKardexService();
 
@@ -113,14 +114,30 @@ const getClassifiedsPaginate = async (req = request, res = response) => {
 
 const newClassified = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
+    let beforeIntegrity = [];
     try {
         const { classified_data, classified_details } = req.body;
-        const { id_sucursal, id_storage, number_registry, id_product, cost_product,quantity_product, type_registry } = classified_data;
+        const sourceQuantity = inventoryQuantity(classified_data.quantity_product);
+        const classifiedDetails = classified_details.map((detail) => ({
+            ...detail,
+            quantity: inventoryQuantity(detail.quantity),
+        }));
+        const destinationQuantity = classifiedDetails.reduce((sum, detail) => exactAdd(sum, detail.quantity), '0.0000');
+        if (exactCompare(sourceQuantity, destinationQuantity) !== 0) {
+            await t.rollback();
+            return res.status(422).json({
+                ok: false,
+                code: 'CLASSIFIED_QUANTITY_MISMATCH',
+                errors: [{ msg: `La salida del producto de origen (${sourceQuantity}) debe ser igual a la cantidad total de productos clasificados (${destinationQuantity}).` }],
+            });
+        }
+        classified_data.quantity_product = sourceQuantity;
+        const { id_sucursal, id_storage, number_registry, id_product, cost_product, quantity_product, type_registry } = classified_data;
         const integrityLocations = [
             { productId: id_product, sucursalId: id_sucursal, storageId: id_storage },
-            ...classified_details.map(({ id_product: detailProductId }) => ({ productId: detailProductId, sucursalId: id_sucursal, storageId: id_storage })),
+            ...classifiedDetails.map(({ id_product: detailProductId }) => ({ productId: detailProductId, sucursalId: id_sucursal, storageId: id_storage })),
         ];
-        const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
+        beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
         classified_data.id_user = req.userAuth.id;
 
        if (type_registry === 'SIN FICHA') {
@@ -179,7 +196,7 @@ const newClassified = async (req = request, res = response ) => {
         await classified.save({ transaction: t });
         /* Ingreso de detalles de la clasificación */
         const createdDetails = [];
-        for (const detail of classified_details) {
+        for (const detail of classifiedDetails) {
             detail.id_classified = id_classified;
             const createdDetail = await DetailsClassified.create(detail, { transaction: t });
             const classifiedDetail = createdDetail || detail;
@@ -216,10 +233,23 @@ const newClassified = async (req = request, res = response ) => {
     } catch (error) {
         await t.rollback();
         if (!error.statusCode) console.error('Error al registrar clasificación:', error);
+        const details = Array.isArray(error.details) ? error.details.map((diagnostic) => {
+            const previous = beforeIntegrity.find((item) => item.productId === Number(diagnostic.product_id)
+                && item.sucursalId === Number(diagnostic.sucursal_id)
+                && item.storageId === Number(diagnostic.storage_id));
+            return {
+                ...diagnostic,
+                inconsistent_before: previous ? !previous.consistent : null,
+                stock_before: previous?.physicalStock ?? null,
+                kardex_before: previous?.kardexBalance ?? null,
+                difference_before: previous?.difference ?? null,
+            };
+        }) : undefined;
         return res.status(error.statusCode || 500).json({
           ok: false,
+          ...(error.code ? { code: error.code } : {}),
           errors: [{ msg: error.statusCode ? error.message : 'Ocurrió un imprevisto interno | hable con soporte' }],
-          ...(error.statusCode && Array.isArray(error.details) ? { details: error.details } : {}),
+          ...(error.statusCode && details ? { details } : {}),
         });
     }
 }

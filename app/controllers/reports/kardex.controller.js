@@ -8,6 +8,7 @@ const moment = require("moment");
 const { whereDateForType } = require("../../helpers/where_range");
 const ExcelJS = require("exceljs");
 const { getNumberDecimal } = require("../../helpers/company");
+const { REPORT_COLORS, solidFill, reportThinBorder } = require('../../constants/report-style.constants');
 const { enrichKardexHistory } = require("../../services/kardex-history-enrichment.service");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 moment.locale("es");
@@ -482,7 +483,7 @@ const generatePdfReportsExistencia = async (req = request, res = response) => {
         const tables = dataPdf.filter(node => node?.table?.body?.length && node.table.body[0].some(cell => String(cell?.text || cell || '').trim()));
         const sections = tables.map(table => tabularReport(table.table, {}));
         await sendReportPdf(res, {
-            title: 'KARDEX DE EXISTENCIAS', paper: 'A4', orientation: 'landscape', sections,
+            title: 'KARDEX DE EXISTENCIAS', paper: 'LETTER', orientation: 'landscape', sections,
             company: await resolveReportCompany(req.query.id_sucursal),
             filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
         }, 'generatePdfReportsExistencia.pdf');
@@ -558,7 +559,7 @@ const dataPdfReturn = (auth) => [
 //TODO:
 const dataPdfReturnKardexExistencia = (auth, kardex) => [
     ...buildStandardReportHeader({
-        title: 'REPORTE DE KARDEX DE EXISTENCIA',
+        title: 'KARDEX DE EXISTENCIAS',
         auth,
         details: `PRODUCTO: ${kardex[0]?.product?.name || 'Sin producto'}`,
     }),
@@ -1077,41 +1078,192 @@ const generateExcelReportsKardexFisico = async (req, res) => {
 const generateExcelReportsExistencia = async (req, res) => {
     try {
         const kardexes = await returnDataKardex(req.query);
+        await enrichKardexHistory(kardexes);
         const decimal = await getNumberDecimal();
 
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet("Kardex Existencia");
-        const headers = [
-            "FECHA",
-            "N°",
-            "DETALLE",
-            "ENTRADA_FISICO",
-            "SALIDA_FISICO",
-            "SALDO_FISICO",
-            "P.U.",
-            "ENTRADA_VALORADO",
-            "SALIDA_VALORADO",
-            "SALDO_VALORADO",
-        ];
-        worksheet.addRow(headers);
-
-        kardexes.forEach((kardex) => {
-            const row = worksheet.addRow([
-                moment(kardex.date).format("DD/MM/YYYY"),
-                kardex.registry_number,
-                kardex.detail,
-                Number(kardex.quantity_input),
-                Number(kardex.quantity_output),
-                Number(kardex.saldo),
-                Number(kardex.cost_unitario),
-                Number(kardex.cost_input),
-                Number(kardex.cost_output),
-                Number(kardex.cost_saldo),
-            ]);
-            [4, 5, 6, 7, 8, 9, 10].forEach(
-                (i) => (row.getCell(i).numFmt = `#,##0.${"0".repeat(decimal)}`)
-            );
+        workbook.creator = 'RECUMET S.R.L.';
+        workbook.subject = 'Kardex de existencias';
+        workbook.title = 'Kardex de existencias';
+        const worksheet = workbook.addWorksheet('Kardex de existencias', {
+            pageSetup: {
+                paperSize: 1,
+                orientation: 'landscape',
+                fitToPage: true,
+                fitToWidth: 1,
+                fitToHeight: 0,
+                horizontalDpi: 300,
+                verticalDpi: 300,
+                margins: { left: 0.25, right: 0.25, top: 0.35, bottom: 0.4, header: 0.15, footer: 0.2 },
+            },
+            views: [{ state: 'frozen', ySplit: 7, topLeftCell: 'A8' }],
         });
+        worksheet.properties.defaultRowHeight = 18;
+
+        worksheet.mergeCells('A1:A3');
+        worksheet.mergeCells('B1:J1');
+        worksheet.mergeCells('B2:J2');
+        worksheet.mergeCells('B3:J3');
+        worksheet.getCell('B1').value = 'RECUMET S.R.L.';
+        worksheet.getCell('B1').font = { name: 'Arial', size: 11, bold: true, color: { argb: REPORT_COLORS.header } };
+        worksheet.getCell('B1').alignment = { horizontal: 'center', vertical: 'middle' };
+        worksheet.getCell('B2').value = 'KARDEX DE EXISTENCIAS';
+        worksheet.getCell('B2').font = { name: 'Arial', size: 15, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
+        worksheet.getCell('B2').fill = solidFill(REPORT_COLORS.header);
+        worksheet.getCell('B2').alignment = { horizontal: 'center', vertical: 'middle' };
+
+        const firstMovement = kardexes[0];
+        const productLabel = firstMovement?.product
+            ? `PRODUCTO: ${firstMovement.product.cod || ''} · ${firstMovement.product.name || ''}`
+            : `PRODUCTO: ${req.query.id_product ? `ID ${req.query.id_product} · Sin movimientos` : 'Sin movimientos'}`;
+        worksheet.getCell('B3').value = productLabel;
+        worksheet.getCell('B3').font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.header } };
+        worksheet.getCell('B3').fill = solidFill(REPORT_COLORS.subheader);
+        worksheet.getCell('B3').alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        [1, 2, 3].forEach(rowNumber => {
+            for (let column = 1; column <= 10; column++) {
+                const cell = worksheet.getCell(rowNumber, column);
+                if (!cell.fill?.fgColor) cell.fill = solidFill(REPORT_COLORS.subheader);
+                cell.border = reportThinBorder;
+            }
+        });
+        worksheet.getRow(1).height = 22;
+        worksheet.getRow(2).height = 27;
+        worksheet.getRow(3).height = 25;
+        if (fs.existsSync(imagePath)) {
+            const extension = path.extname(imagePath).slice(1).toLowerCase() || 'png';
+            const logo = workbook.addImage({ filename: imagePath, extension });
+            worksheet.addImage(logo, { tl: { col: 0.12, row: 0.12 }, ext: { width: 54, height: 54 } });
+        }
+
+        const uniqueNames = values => [...new Set(values.filter(Boolean))];
+        const branchNames = uniqueNames(kardexes.map(({ sucursal }) => sucursal?.name));
+        const storageNames = uniqueNames(kardexes.map(({ storage }) => storage?.name));
+        const modeLabels = { DAY: 'Día', MONTH: 'Mes', YEAR: 'Año', RANGE: 'Rango' };
+        const dateRange = req.query.date1
+            ? `${req.query.date1}${req.query.date2 && req.query.date2 !== req.query.date1 ? ` al ${req.query.date2}` : ''}`
+            : 'Sin filtro de fecha';
+        const branchLabel = branchNames.length ? branchNames.join(', ') : (req.query.id_sucursal ? `Filtro ID ${req.query.id_sucursal}` : 'Todas');
+        const storageLabel = storageNames.length ? storageNames.join(', ') : (req.query.id_storage ? `Filtro ID ${req.query.id_storage}` : 'Todos');
+        worksheet.mergeCells('A4:J4');
+        worksheet.getCell('A4').value = `SUCURSAL: ${branchLabel}  ·  ALMACÉN: ${storageLabel}`;
+        worksheet.mergeCells('A5:J5');
+        worksheet.getCell('A5').value = `PERÍODO (${modeLabels[req.query.filterBy] || 'Filtro'}): ${dateRange}  ·  GENERADO: ${moment().utcOffset(-4).format('DD/MM/YYYY HH:mm')}`;
+        [4, 5].forEach(rowNumber => {
+            const cell = worksheet.getCell(rowNumber, 1);
+            cell.font = { name: 'Arial', size: 8, color: { argb: REPORT_COLORS.text } };
+            cell.fill = solidFill(REPORT_COLORS.alternateRow);
+            cell.border = reportThinBorder;
+            cell.alignment = { vertical: 'middle', wrapText: true };
+        });
+        worksheet.getRow(4).height = 23;
+        worksheet.getRow(5).height = 23;
+        worksheet.getRow(6).height = 20;
+        worksheet.mergeCells('A6:C6');
+        worksheet.mergeCells('D6:F6');
+        worksheet.mergeCells('H6:J6');
+        worksheet.getCell('A6').value = 'MOVIMIENTO';
+        worksheet.getCell('D6').value = 'FÍSICO';
+        worksheet.getCell('G6').value = 'PRECIO UNITARIO';
+        worksheet.getCell('H6').value = 'VALORADO';
+        [1, 4, 7, 8].forEach(column => {
+            const cell = worksheet.getCell(6, column);
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.header } };
+            cell.fill = solidFill(REPORT_COLORS.subheader);
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+            cell.border = reportThinBorder;
+        });
+        const headers = ['FECHA Y HORA', 'N° BOLETA', 'DETALLE', 'ENTRADA', 'SALIDA', 'SALDO', 'P.U. (Bs)', 'ENTRADA (Bs)', 'SALIDA (Bs)', 'SALDO (Bs)'];
+        const headerRow = worksheet.addRow(headers);
+        headerRow.height = 28;
+        headerRow.eachCell(cell => {
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
+            cell.fill = solidFill(REPORT_COLORS.header);
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+            cell.border = reportThinBorder;
+        });
+
+        const decimalFormat = decimal > 0 ? `#,##0.${'0'.repeat(decimal)}` : '#,##0';
+        const numeric = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+        let totalInput = 0;
+        let totalOutput = 0;
+        let totalValuedInput = 0;
+        let totalValuedOutput = 0;
+        const hasUnvaluedMovement = kardexes.some(kardex => kardex.valuation?.status !== 'VALUED');
+        kardexes.forEach((kardex, index) => {
+            const detailParts = [kardex.detail, kardex.sub_detail]
+                .map(value => String(value || '').trim())
+                .filter((value, position, values) => value && values.indexOf(value) === position);
+            const detail = detailParts.join(' · ') || '—';
+            const isValued = kardex.valuation?.status === 'VALUED';
+            const row = worksheet.addRow([
+                kardex.date ? moment(kardex.date).toDate() : null,
+                String(kardex.registry_number || '—'),
+                detail,
+                numeric(kardex.quantity_input),
+                numeric(kardex.quantity_output),
+                numeric(kardex.saldo),
+                isValued ? numeric(kardex.cost_unitario) : 'SIN VALORAR',
+                isValued ? numeric(kardex.cost_input) : 'SIN VALORAR',
+                isValued ? numeric(kardex.cost_output) : 'SIN VALORAR',
+                isValued ? numeric(kardex.cost_saldo) : 'SIN VALORAR',
+            ]);
+            row.height = Math.min(64, Math.max(22, Math.ceil(detail.length / 42) * 14));
+            row.eachCell((cell, column) => {
+                cell.font = { name: 'Arial', size: 9, color: { argb: REPORT_COLORS.text } };
+                cell.fill = solidFill(index % 2 ? REPORT_COLORS.alternateRow : REPORT_COLORS.row);
+                cell.border = reportThinBorder;
+                cell.alignment = {
+                    vertical: 'middle',
+                    horizontal: column >= 4 ? 'right' : 'left',
+                    wrapText: column === 2 || column === 3 || column >= 7,
+                };
+                if (column === 1) cell.numFmt = 'dd/mm/yyyy hh:mm';
+                if (column >= 4 && column <= 10 && typeof cell.value === 'number') cell.numFmt = decimalFormat;
+            });
+            totalInput += numeric(kardex.quantity_input);
+            totalOutput += numeric(kardex.quantity_output);
+            if (isValued) {
+                totalValuedInput += numeric(kardex.cost_input);
+                totalValuedOutput += numeric(kardex.cost_output);
+            }
+        });
+
+        if (kardexes.length) {
+            const lastMovement = kardexes[kardexes.length - 1];
+            const totals = worksheet.addRow([
+                'TOTALES DEL PERÍODO', '', '', totalInput, totalOutput, numeric(lastMovement.saldo), '',
+                hasUnvaluedMovement ? 'SIN VALORAR' : totalValuedInput,
+                hasUnvaluedMovement ? 'SIN VALORAR' : totalValuedOutput,
+                hasUnvaluedMovement ? 'SIN VALORAR' : numeric(lastMovement.cost_saldo),
+            ]);
+            totals.height = 24;
+            totals.eachCell(cell => {
+                cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.text } };
+                cell.fill = solidFill(REPORT_COLORS.grandTotal);
+                cell.border = reportThinBorder;
+                cell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
+                if (typeof cell.value === 'number') cell.numFmt = decimalFormat;
+            });
+            totals.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+        } else {
+            const emptyRow = worksheet.addRow(['Sin movimientos para los filtros seleccionados.']);
+            worksheet.mergeCells(emptyRow.number, 1, emptyRow.number, 10);
+            emptyRow.height = 26;
+            emptyRow.getCell(1).font = { name: 'Arial', size: 9, italic: true, color: { argb: REPORT_COLORS.text } };
+            emptyRow.getCell(1).fill = solidFill(REPORT_COLORS.alternateRow);
+            emptyRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            emptyRow.getCell(1).border = reportThinBorder;
+        }
+
+        [19, 18, 42, 13, 13, 13, 14, 15, 15, 15].forEach((width, index) => { worksheet.getColumn(index + 1).width = width; });
+        if (kardexes.length) {
+            worksheet.autoFilter = { from: { row: 7, column: 1 }, to: { row: 7 + kardexes.length, column: 10 } };
+        }
+        worksheet.pageSetup.printArea = `A1:J${worksheet.lastRow.number}`;
+        worksheet.pageSetup.printTitlesRow = '6:7';
+        worksheet.pageSetup.horizontalCentered = true;
+        worksheet.headerFooter.oddFooter = '&LRECUMET S.R.L. · Kardex de existencias&RPágina &P de &N';
 
         res.setHeader(
             "Content-Type",
@@ -1119,7 +1271,7 @@ const generateExcelReportsExistencia = async (req, res) => {
         );
         res.setHeader(
             "Content-Disposition",
-            "attachment; filename=kardex-existencia.xlsx"
+            'attachment; filename="KARDEX DE EXISTENCIAS.xlsx"'
         );
 
         await workbook.xlsx.write(res);

@@ -99,16 +99,17 @@ const getProviderByProductPaginate = async (req = request, res = response) => {
 
 const newProvider = async (req = request, res = response ) => {
     try {
-        const provider = await providerService.createProfile(req.body);
+        const provider = await providerService.createProfile(req.body, req.userAuth);
         return res.status(201).json({
             ok: true,
             provider
         });
     } catch (error) {
-        console.log(error);
-        return res.status(500).json({
+        const status = error.statusCode || 500;
+        if (status === 500) console.error(error);
+        return res.status(status).json({
           ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+          errors: [{ msg: status === 500 ? 'Ocurrió un imprevisto interno | hable con soporte' : error.message }],
         });
     }
 }
@@ -116,7 +117,7 @@ const newProvider = async (req = request, res = response ) => {
 const updateProvider = async (req = request, res = response) => {
     try {
         const { id } = req.params;
-        const provider = await providerService.updateProfile(id, req.body);
+        const provider = await providerService.updateProfile(id, req.body, req.userAuth);
         return res.status(200).json({
             ok: true,
             msg: 'Proveedor modificado exitosamente',
@@ -226,9 +227,8 @@ const getAllTypesProvider = async (req = request, res = response) => {
 
 const getProviderAutocomplete = async (req = request, res = response) => {
     try {
-        const { query = '', id_sucursal } = req.query;
-        const branchId = id_sucursal && /^[1-9]\d*$/.test(String(id_sucursal)) ? Number(id_sucursal) : null;
-        const providers = await providerService.findAutocompleteProviders(String(query).slice(0, 150), branchId);
+        const { query = '' } = req.query;
+        const providers = await providerService.findAutocompleteProviders(String(query).slice(0, 150));
         return res.status(200).json({
             ok: true,
             providers
@@ -242,13 +242,34 @@ const getProviderAutocomplete = async (req = request, res = response) => {
     }
 }
 
+const getPurchaseProviderAutocomplete = async (req = request, res = response) => {
+    try {
+        const { query = '', id_sucursal } = req.query;
+        const providers = await providerService.findAvailableProvidersForPurchase(
+            String(query).slice(0, 150), id_sucursal, req.userAuth,
+        );
+        return res.status(200).json({ ok: true, providers });
+    } catch (error) {
+        const status = error.statusCode || 500;
+        if (status === 500) console.error('No fue posible buscar proveedores habilitados para compras:', error.message);
+        return res.status(status).json({
+            ok: false,
+            errors: [{ msg: status === 500 ? 'No fue posible buscar proveedores para la compra' : error.message }],
+        });
+    }
+}
+
 const preRegisterProvider = async (req = request, res = response) => {
     try {
         const provider = await providerService.preRegisterProvider(req.body, req.body.id_sucursal, req.userAuth);
         return res.status(201).json({ ok: true, provider });
     } catch (error) {
         console.log(error);
-        return res.status(error.statusCode || 500).json({ ok: false, errors: [{ msg: error.statusCode ? error.message : 'No fue posible crear el pre-registro del proveedor' }] });
+        return res.status(error.statusCode || 500).json({
+            ok: false,
+            ...(error.duplicateProvider ? { provider: error.duplicateProvider } : {}),
+            errors: [{ msg: error.statusCode ? error.message : 'No fue posible crear el pre-registro del proveedor' }],
+        });
     }
 };
 
@@ -275,10 +296,10 @@ const getProviderCommercialDetails = async (req = request, res = response) => {
 
 const commercialValidationProvider = async (req = request, res = response) => {
     try {
-        const provider = await providerService.validateCommercial(req.params.id, req.body, req.userAuth.id);
+        const provider = await providerService.validateCommercial(req.params.id, req.body, req.userAuth);
         return res.status(200).json({ ok: true, provider, msg: 'Proveedor validado comercialmente' });
     } catch (error) {
-        const status = error.message.includes('clasificación') || error.message.includes('no existe') || error.message.includes('Faltan datos') ? 400 : 500;
+        const status = error.statusCode || (error.message.includes('clasificación') || error.message.includes('no existe') || error.message.includes('Faltan datos') ? 400 : 500);
         if (status === 500) console.log(error);
         return res.status(status).json({ ok: false, errors: [{ msg: error.message || 'No fue posible validar al proveedor' }] });
     }
@@ -352,6 +373,7 @@ module.exports = {
     getProviderByProductPaginate,
     getAllTypesProvider,
     getProviderAutocomplete,
+    getPurchaseProviderAutocomplete,
     preRegisterProvider,
     checkDuplicateProvider,
     getProviderCommercialDetails,

@@ -6,12 +6,14 @@ const db = require('../database/config');
 const { purchaseProviderCatalog } = require('../controllers/purchase-provider-catalog.controller');
 
 test('catálogo limita opciones y busca nombre/documento junto al tipo seleccionado', async t => {
+  t.mock.method(db.Sucursal, 'findByPk', async id => ({ id, status: true }));
   t.mock.method(db.Provider, 'findAll', async options => {
     assert.equal(options.limit, 100);
-    assert.equal(options.where.id_sucursal, 3);
-    assert.equal(options.where.id_type_provider, 2);
-    assert.equal(options.where[Op.or][0].full_names[Op.iLike], '%ANA%');
-    assert.equal(options.where[Op.or][1].number_document[Op.iLike], '%ANA%');
+    assert.equal(options.include[0].where.id_sucursal, 3);
+    assert.equal(options.include[0].where.status, true);
+    assert.equal(options.where[Op.and][0].id_type_provider, 2);
+    assert.equal(options.where[Op.and][1][Op.or][0].full_names[Op.iLike], '%ANA%');
+    assert.equal(options.where[Op.and][1][Op.or][1].number_document[Op.iLike], '%ANA%');
     return [{ id: 50, full_names: 'ANA' }];
   });
   t.mock.method(db.TypesProvider, 'findAll', async () => [{ id: 2, name: 'Empresa' }]);

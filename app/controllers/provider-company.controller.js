@@ -18,11 +18,11 @@ exports.printableProfile = async (req, res) => {
     return undefined;
   }
 };
-exports.create = async (req, res) => { try { res.status(201).json({ ok: true, company: await service.create(req.body) }); } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') error.statusCode = 400, error.message = 'El NIT ya está asociado a una empresa'; sendError(res, error); } };
-exports.update = async (req, res) => { try { res.json({ ok: true, company: await service.update(req.params.id, req.body) }); } catch (error) { sendError(res, error); } };
+exports.create = async (req, res) => { try { res.status(201).json({ ok: true, company: await service.create(req.body, req.userAuth) }); } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') error.statusCode = 400, error.message = 'El NIT ya está asociado a una empresa'; sendError(res, error); } };
+exports.update = async (req, res) => { try { res.json({ ok: true, company: await service.update(req.params.id, req.body, req.userAuth) }); } catch (error) { sendError(res, error); } };
 exports.setProviders = async (req, res) => { try { res.json({ ok: true, company: await service.setProviders(req.params.id, req.body.provider_ids) }); } catch (error) { sendError(res, error); } };
-exports.createSite = async (req, res) => { try { res.status(201).json({ ok: true, company: await service.createSite(req.params.id, req.body) }); } catch (error) { sendError(res, error); } };
-exports.updateSite = async (req, res) => { try { res.json({ ok: true, site: await service.updateSite(req.params.id, req.params.providerId, req.body) }); } catch (error) { sendError(res, error); } };
+exports.createSite = async (req, res) => { try { res.status(201).json({ ok: true, company: await service.createSite(req.params.id, req.body, req.userAuth) }); } catch (error) { sendError(res, error); } };
+exports.updateSite = async (req, res) => { try { res.json({ ok: true, site: await service.updateSite(req.params.id, req.params.providerId, req.body, req.userAuth) }); } catch (error) { sendError(res, error); } };
 exports.transferHeadquarters = async (req, res) => { try { res.json({ ok: true, company: await service.transferHeadquarters(req.params.id, req.params.providerId) }); } catch (error) { sendError(res, error); } };
 exports.pendingSummary = async (req, res) => { try { res.json({ ok: true, pending: await service.pendingSummary(req.params.id, req.params.providerId) }); } catch (error) { sendError(res, error); } };
 exports.deactivateSite = async (req, res) => { try { res.json({ ok: true, company: await service.deactivateSite(req.params.id, req.params.providerId, req.body.confirm === true) }); } catch (error) { sendError(res, error); } };

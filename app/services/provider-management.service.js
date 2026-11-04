@@ -43,17 +43,30 @@ async function search(raw, user) {
 
 async function catalogs(user) {
   const branches = assignedBranches(user);
-  const branchWhere = { status: true, ...(branches ? { id: { [Op.in]: branches } } : {}) };
   const storageWhere = { status: true, ...(branches ? { id_sucursal: { [Op.in]: branches } } : {}) };
   const options = (attributes, where = { status: true }) => ({ attributes, where, order: [['id', 'ASC']], raw: true });
+  const availabilityWhere = { status: true, ...(branches ? { id_sucursal: { [Op.in]: branches } } : {}) };
+  const activeAssignments = await db.ProviderSucursalAvailability.findAll({
+    attributes: ['id_provider', 'id_sucursal'],
+    where: availabilityWhere,
+    include: [{ association: 'provider', attributes: [], where: { status: true }, required: true }],
+    raw: true,
+  });
+  const activeProviderIds = [...new Set(activeAssignments.map(row => Number(row.id_provider)).filter(Number.isInteger))];
+  const activeBranchIds = [...new Set(activeAssignments.map(row => Number(row.id_sucursal)).filter(Number.isInteger))];
+  const branchWhere = { status: true, id: { [Op.in]: activeBranchIds } };
   const [sucursales, storages, categories, products, types, users, locations, departments] = await Promise.all([
     db.Sucursal.findAll(options(['id', 'name', 'city'], branchWhere)),
     db.Storage.findAll(options(['id', 'name', 'id_sucursal'], storageWhere)),
     db.Category.findAll(options(['id', 'name'])), db.Product.findAll(options(['id', 'name', 'id_category'])),
     db.TypesProvider.findAll({ attributes: ['id', 'name', 'code'], where: { status: true }, order: [['id', 'ASC']], raw: true }),
     db.User.findAll(options(['id', 'full_names', 'role'])),
-    db.ProviderBranch.findAll(options(['id', 'department', 'city'])),
-    db.Provider.findAll(options(['id', 'department'])),
+    activeProviderIds.length
+      ? db.ProviderBranch.findAll(options(['id', 'department', 'city'], { status: true, id_provider: { [Op.in]: activeProviderIds } }))
+      : [],
+    activeProviderIds.length
+      ? db.Provider.findAll(options(['id', 'department'], { status: true, id: { [Op.in]: activeProviderIds } }))
+      : [],
   ]);
   const unique = values => [...new Set(values.filter(Boolean))].sort().map(name => ({ name, value: name }));
   const cities = [...new Map(locations.filter(row => row.city).map(row => [JSON.stringify([row.department, row.city]), { name: row.city, value: row.city, department: row.department }])).values()].sort((a, b) => a.name.localeCompare(b.name, 'es'));

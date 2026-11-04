@@ -443,7 +443,7 @@ const receivedTransfer = async (req = request, res = response ) => {
                 qtyReceived: quantityReceived,
                 diffPct: tolerance.differencePercentage === null
                     ? 'no evaluable (enviado 0)'
-                    : `${tolerance.differencePercentage > 0 ? '+' : ''}${tolerance.differencePercentage.toFixed(2)}%`,
+                    : `${tolerance.differencePercentage > 0 ? '+' : ''}${formatDecimalEsBo(tolerance.differencePercentage)}%`,
             }));
 
         if (discrepantDetails.length > 0) {

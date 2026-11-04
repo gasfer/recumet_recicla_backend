@@ -10,6 +10,7 @@ module.exports = (sequelize, DataTypes) => {
       Sucursal.hasMany(models.assignSucursales,{as: 'assign_sucursales', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Storage,{as: 'storage', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Provider,{as: 'provider', foreignKey:'id_sucursal'});
+      Sucursal.hasMany(models.ProviderSucursalAvailability,{as: 'providerAvailability', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.History,{as: 'history', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Stock,{as: 'stock', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.Input,{as: 'input', foreignKey:'id_sucursal'});

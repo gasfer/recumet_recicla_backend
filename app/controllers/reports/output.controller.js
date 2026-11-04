@@ -8,7 +8,7 @@ const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const { buildOutputSearch, buildOutputWhere, outputOrder, sortOutputQuantities } = require('../../services/output-report-query.service');
-const { excelNumberMask } = require('../../helpers/number-formatter');
+const { excelNumberMask, formatDecimalEsBo } = require('../../helpers/number-formatter');
 const { buildOutputReportExcel } = require('../../services/output-report-excel.service');
 moment.locale('es'); 
 
@@ -74,8 +74,8 @@ const generatePdfReports = async (req = request, res = response) => {
                 {text:output?.comments, fontSize:9}, 
                 {text:output?.voucher, fontSize:9},
                 {text:output?.type_output, fontSize:9},
-                {text:Number(output?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
-                {text:Number(output.total).toFixed(decimal), fontSize:9, alignment: 'right'},
+                {text:formatDecimalEsBo(Number(output?.total_quantity), decimal), fontSize:9, alignment: 'right'},  
+                {text:formatDecimalEsBo(Number(output.total), decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
@@ -89,8 +89,8 @@ const generatePdfReports = async (req = request, res = response) => {
             {text:''},
             {text:''},
             {text:''},
-            {text:`Kg. ${Number(total_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'},
-            {text: `Bs. ${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
+            {text:`Kg. ${formatDecimalEsBo(Number(total_quantity), decimal)}`, bold: true, fontSize:10, alignment: 'right'},
+            {text: `Bs. ${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE VENTAS', paper: 'A4', orientation: 'landscape',
@@ -235,9 +235,9 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
             const tableData = [
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
-                {text:Number(detail?.price).toFixed(decimal), fontSize:9, alignment: 'right'},  
-                {text:Number(detail?.dataValues.suma_quantity).toFixed(decimal), fontSize:9, alignment: 'right'}, 
-                {text:Number(detail?.dataValues.suma_total).toFixed(decimal), fontSize:9, alignment: 'right'},
+                {text:formatDecimalEsBo(Number(detail?.price), decimal), fontSize:9, alignment: 'right'},  
+                {text:formatDecimalEsBo(Number(detail?.dataValues.suma_quantity), decimal), fontSize:9, alignment: 'right'}, 
+                {text:formatDecimalEsBo(Number(detail?.dataValues.suma_total), decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
@@ -246,7 +246,7 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
             {text:''},
             {text:''},
             {text:''},
-            {text: `${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
+            {text: `${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE VENTAS DETALLADAS', paper: 'A4', orientation: 'landscape',

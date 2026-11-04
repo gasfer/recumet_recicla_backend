@@ -1,6 +1,6 @@
 const { stockProviderCondition } = require('../services/stock-provider-filter.service');
 const { response, request } = require('express');
-const { sequelize, ViewKardex, TransferReviewNote } = require('../database/config');
+const { sequelize, ViewKardex, TransferReviewNote, Transfers, kardexMovements } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
@@ -61,13 +61,43 @@ const getKardexPaginate = async (req = request, res = response) => {
         const transferMovements = kardexes.data.filter((item) => item.type_movement === 'KMOVEMENT');
         const movementIds = transferMovements.map((item) => Number(item.id_movement)).filter(Number.isInteger);
         if (movementIds.length > 0) {
-            const notes = await TransferReviewNote.findAll({
-                where: { id_kardex_movement: { [Op.in]: movementIds } },
-                attributes: ['id', 'registry_number', 'type', 'id_kardex_movement'],
-            });
+            const transferCodes = [...new Set(transferMovements
+                .map((item) => `${item.detail || ''} ${item.sub_detail || ''}`.match(/\bTRAS\d+\b/i)?.[0])
+                .filter(Boolean))];
+            const [notes, sourceMovements, transfers] = await Promise.all([
+                TransferReviewNote.findAll({
+                    where: { id_kardex_movement: { [Op.in]: movementIds } },
+                    attributes: ['id', 'registry_number', 'type', 'id_kardex_movement'],
+                }),
+                kardexMovements.findAll({
+                    where: { id: { [Op.in]: movementIds } },
+                    attributes: ['id', 'source_type', 'source_id', 'source_detail_id', 'effect_type'],
+                    raw: true,
+                }),
+                transferCodes.length
+                    ? Transfers.findAll({ where: { cod: { [Op.in]: transferCodes } }, attributes: ['id', 'cod'], raw: true })
+                    : Promise.resolve([]),
+            ]);
             const notesByMovement = new Map(notes.map((note) => [Number(note.id_kardex_movement), note]));
+            const sourcesByMovement = new Map(sourceMovements.map((movement) => [Number(movement.id), movement]));
+            const transferIdsByCode = new Map(transfers.map((transfer) => [String(transfer.cod).toUpperCase(), transfer.id]));
             transferMovements.forEach((item) => {
+                const movement = sourcesByMovement.get(Number(item.id_movement));
                 const note = notesByMovement.get(Number(item.id_movement));
+                if (movement) {
+                    item.dataValues.source_type = movement.source_type;
+                    item.dataValues.source_id = movement.source_id;
+                    item.dataValues.source_detail_id = movement.source_detail_id;
+                    item.dataValues.effect_type = movement.effect_type;
+                    if (['TRANSFER_RECEPTION', 'TRANSFER_RECEPTION_CANCELLATION', 'TRANSFER_CANCELLATION'].includes(movement.source_type)
+                        && /^\d+$/.test(String(movement.source_id || ''))) {
+                        item.dataValues.source_transfer_id = Number(movement.source_id);
+                    }
+                }
+                const transferCode = `${item.detail || ''} ${item.sub_detail || ''}`.match(/\bTRAS\d+\b/i)?.[0];
+                if (!item.dataValues.source_transfer_id && transferCode) {
+                    item.dataValues.source_transfer_id = transferIdsByCode.get(transferCode.toUpperCase()) || null;
+                }
                 if (note) item.dataValues.review_note = note;
             });
         }

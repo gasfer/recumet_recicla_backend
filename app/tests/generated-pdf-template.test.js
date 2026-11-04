@@ -15,7 +15,8 @@ test('arqueo financiero conserva saldos y logo en su formato',options, async () 
  const document=buildCashVoucher({id:42,date_apertura:'2026-10-09',monto_apertura:100,sucursal:{name:'MATRIZ',company:{nit:'123456'}},user:{full_names:'Cajero QA'}},{saldo:125,monto_apertura_mas_saldo:225,ingresos:[],gastos:[],total_ingresos:50,total_gastos:25},2);
  const pdf=await generateReportPdf(document); const pages=inspectPdf(pdf); assert.equal(pages.length,1); assert.ok(Math.abs(pages[0].width-595.28)<1); assert.match(pages[0].text,/125.00/); assert.match(pages[0].text,/225.00/); assert.doesNotMatch(pages[0].text,/NaN/);
 });
-test('encabezado compartido cabe en rollo de 80 mm con logo y correlativo',options, async () => {
+test('encabezado compartido cabe en rollo de 79 mm con logo y correlativo',options, async () => {
  const pdf=await generateReportPdf(buildOperationVoucher({cod:'QA-42',date_voucher:'2026-10-09',sucursal:{company:{nit:'123456'},email:'prueba@recumet.com'},detailsInput:[{quantity:10,product:{cod:'P1',name:'Metal',unit:{siglas:'KG'}}}]},{kind:'purchase',format:'rollo',decimal:2}));
- const pages=inspectPdf(pdf); assert.equal(pages.length,1); assert.ok(Math.abs(pages[0].width-226.77)<1); assert.ok(pages[0].text.includes('QA-42')); assert.ok(pages[0].text.includes('Metal'));
+ const pages=inspectPdf(pdf); assert.equal(pages.length,1); assert.ok(Math.abs(pages[0].width-223.94)<1); assert.ok(pages[0].text.includes('QA-42')); assert.ok(pages[0].text.includes('Metal'));
+ assert.ok(pages[0].height < 500, `El comprobante térmico debe ajustarse al contenido; altura generada: ${pages[0].height} pt`);
 });

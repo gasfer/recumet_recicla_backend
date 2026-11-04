@@ -1,6 +1,19 @@
 'use strict';
 const { kilogramUnitSql } = require('../helpers/kilogram-units');
 
+const MANAGEMENT_PROVIDER_FIELDS = [
+  'id', 'full_names', 'id_sector', 'number_document', 'cellphone', 'direction', 'mayorista',
+  'name_contact', '"companyContacts"', '"workAreaOrPositionOrUnit"', 'frequency', 'cellphone_contact',
+  'id_category', 'id_type_provider', 'id_sucursal', 'id_provider_company', 'operating_departments',
+  'has_branches', 'site_role', 'status', 'estado_registro', 'commercial_name', 'entity_type',
+  'id_commercial_user', 'origin_channel', 'relationship_status', 'negotiation_condition',
+  'commercial_observations', 'commercialized_materials', 'contact_frequency', 'usual_service_mode',
+  'logistics_condition', 'negotiation_mode', 'price_policy', 'habitual_price_adjustment',
+  'requires_certificate', 'requires_traceability_report', 'certificate_file_name', 'traceability_file_name',
+  'department', 'zone', 'frequency_mode', 'service_mode', 'general_observations',
+  '"createdAt"', '"updatedAt"',
+].map(field => `p.${field}`).join(', ');
+
 const fail = message => { throw Object.assign(new Error(message), { statusCode: 400 }); };
 const present = value => value !== undefined && value !== null && value !== '';
 
@@ -81,8 +94,9 @@ function buildQuery(q, branchIds = null, { purchaseDetails = false, unpaginated 
   const purchase = []; const detail = ["d.status = 'ACTIVE'", 'd.removed_at IS NULL', 'pr.status = TRUE']; const provider = [];
   const bind = (key, value) => { replacements[key] = value; return `:${key}`; };
   if (branchIds) context.push(branchIds.length ? `i.id_sucursal IN (${bind('allowed_branches', branchIds)})` : 'FALSE');
-  if (branchIds) provider.push(branchIds.length ? '(p.id_sucursal IN (:allowed_branches) OR EXISTS (SELECT 1 FROM context_inputs ci WHERE ci.id_provider = p.id))' : 'FALSE');
+  if (branchIds) provider.push(branchIds.length ? 'EXISTS (SELECT 1 FROM provider_sucursal_availability pa WHERE pa.id_provider = p.id AND pa.status = TRUE AND pa.id_sucursal IN (:allowed_branches))' : 'FALSE');
   if (q.id_sucursales?.length) context.push(`i.id_sucursal IN (${bind('id_sucursales', q.id_sucursales)})`);
+  if (q.id_sucursales?.length) provider.push('EXISTS (SELECT 1 FROM provider_sucursal_availability pa WHERE pa.id_provider = p.id AND pa.status = TRUE AND pa.id_sucursal IN (:id_sucursales))');
   if (q.id_storages?.length) context.push(`i.id_storage IN (${bind('id_storages', q.id_storages)})`);
   if (present(q.type_registry)) purchase.push(`i.type_registry = ${bind('type_registry', q.type_registry)}`);
   if (q.start && q.date_basis === 'PURCHASES') purchase.push(`i.date_voucher >= ${bind('start', q.start)}::timestamptz AND i.date_voucher < ${bind('end', q.end)}::timestamptz`);
@@ -152,7 +166,7 @@ function buildQuery(q, branchIds = null, { purchaseDetails = false, unpaginated 
       ${q.id_storages?.length ? 'AND i.id_storage IN (:id_storages)' : ''}
       GROUP BY ap.id_provider),
     ${exportMetrics}
-    filtered AS (SELECT p.*, jsonb_build_object('code', t.code, 'name', t.name) type,
+    filtered AS (SELECT ${MANAGEMENT_PROVIDER_FIELDS}, jsonb_build_object('code', t.code, 'name', t.name) type,
       jsonb_build_object('name', s.name) sector, jsonb_build_object('name', cat.name) category,
       l.date_voucher date_last_input, l.old_customer latest_old_customer, l.with_pickup latest_with_pickup,
       COALESCE(a.total_inputs, 0) total_inputs, COALESCE(a.total_amount, 0) total_amount,

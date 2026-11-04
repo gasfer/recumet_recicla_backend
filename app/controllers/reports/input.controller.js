@@ -16,7 +16,7 @@ const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
-const { excelNumberMask } = require("../../helpers/number-formatter");
+const { excelNumberMask, formatDecimalEsBo } = require("../../helpers/number-formatter");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
@@ -51,8 +51,8 @@ const generatePdfReports = async (req = request, res = response) => {
                     fontSize: 9
                 },
                 {text:input?.provider?.type.name, fontSize:9}, 
-                {text:Number(input?.total_quantity).toFixed(decimal), fontSize:9, alignment: 'right'},  
-                {text:Number(input.total).toFixed(decimal), fontSize:9, alignment: 'right'},
+                {text:formatDecimalEsBo(Number(input?.total_quantity), decimal), fontSize:9, alignment: 'right'},  
+                {text:formatDecimalEsBo(Number(input.total), decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
@@ -66,8 +66,8 @@ const generatePdfReports = async (req = request, res = response) => {
             {text:''},
             {text:''},
             {text:''},
-            {text:`Kg. ${Number(total_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'},
-            {text: `Bs. ${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
+            {text:`Kg. ${formatDecimalEsBo(Number(total_quantity), decimal)}`, bold: true, fontSize:10, alignment: 'right'},
+            {text: `Bs. ${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
@@ -347,7 +347,7 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
                 {text:index, fontSize:9}, 
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
-                {text:Number(detail?.dataValues.suma_quantity).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+                {text:formatDecimalEsBo(Number(detail?.dataValues.suma_quantity), decimal), fontSize:9, alignment: 'right'}, 
             ];
             dataPdf[5].table.body.push(tableData);
             index++;
@@ -356,7 +356,7 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
             {colSpan: 2, text:`TOTAL`,fontSize:10},
             {text:''},
             {text:''},
-            {text: `${Number(total).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right'}
+            {text: `${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
@@ -387,9 +387,9 @@ const generatePdfDetailsCPPReports = async (req = request, res = response) => {
             const tableData = [
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
-                {text:Number(detail?.dataValues.cpp).toFixed(decimal), fontSize:10, alignment: 'right', bold: true, fillColor: '#DFF0D8'}, 
-                {text:Number(detail?.dataValues.suma_quantity).toFixed(decimal), fontSize:9, alignment: 'right'}, 
-                {text:Number(detail?.dataValues.suma_total).toFixed(decimal), fontSize:9, alignment: 'right'}, 
+                {text:formatDecimalEsBo(Number(detail?.dataValues.cpp), decimal), fontSize:10, alignment: 'right', bold: true, fillColor: '#DFF0D8'}, 
+                {text:formatDecimalEsBo(Number(detail?.dataValues.suma_quantity), decimal), fontSize:9, alignment: 'right'}, 
+                {text:formatDecimalEsBo(Number(detail?.dataValues.suma_total), decimal), fontSize:9, alignment: 'right'}, 
             ];
             dataPdf[5].table.body.push(tableData);
         });
@@ -397,8 +397,8 @@ const generatePdfDetailsCPPReports = async (req = request, res = response) => {
             {colSpan: 3, text:`TOTAL`, bold: true,fontSize:10, fillColor: '#eeeeee'},
             {text:''},
             {text:''},
-            {text: `${Number(suma_quantity).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'},
-            {text: `${Number(total_import).toFixed(decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'}
+            {text: `${formatDecimalEsBo(Number(suma_quantity), decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'},
+            {text: `${formatDecimalEsBo(Number(total_import), decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'}
         ]);
         const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
         const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
@@ -542,7 +542,8 @@ const printInputVoucher = async (req = request, res = response) =>{
             ]
         });
         const decimal = await getNumberDecimal();
-        const document = buildOperationVoucher(input, { kind: 'purchase', decimal, format: req.query.format });
+        const weighingRoll = req.userAuth?.role === 'OPERADOR_BALANZA' && req.query.format === 'rollo';
+        const document = buildOperationVoucher(input, { kind: 'purchase', decimal, format: weighingRoll ? 'rollo' : undefined });
         await sendReportPdf(res, document, 'boleta-compra-' + id_input + '.pdf');
     } catch (error) {
         if (error.statusCode) return res.status(error.statusCode).json({ ok: false, errors: [{ msg: error.message }] });

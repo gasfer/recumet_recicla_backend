@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete, preRegisterProvider, checkDuplicateProvider, getProviderCommercialDetails, commercialValidationProvider, saveProviderDetail, deleteProviderDetail, resolveGoogleMapsLink, getProviderFrequencyAnalysis } = require('../controllers/provider.controller');
+const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete, getPurchaseProviderAutocomplete, preRegisterProvider, checkDuplicateProvider, getProviderCommercialDetails, commercialValidationProvider, saveProviderDetail, deleteProviderDetail, resolveGoogleMapsLink, getProviderFrequencyAnalysis } = require('../controllers/provider.controller');
 const { getValidateCreate, getValidatePreRegister, getValidateUpdate, validateDelete, getValidateCreateSector, validateDeleteSector } = require('../middlewares/validators/provider');
 const { generateExcelProviders } = require('../controllers/reports/providers.controller');
 
@@ -64,6 +64,8 @@ router.get('/', [
 router.get('/autocomplete', [
     validarJWT,
 ], getProviderAutocomplete);
+
+router.get('/purchase-autocomplete', [validarJWT], getPurchaseProviderAutocomplete);
 
 router.get('/check-duplicate', [
     validarJWT,
