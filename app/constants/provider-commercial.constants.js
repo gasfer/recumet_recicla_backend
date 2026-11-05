@@ -2,7 +2,12 @@ const PROVIDER_COMMERCIAL_CATALOGS = Object.freeze({
   entity_type: Object.freeze(['PRIVATE', 'PUBLIC', 'NGO_FOUNDATION', 'OTHER']),
   frequency: Object.freeze(['WEEKLY', 'BIWEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUAL', 'EVENTUAL', 'UNDETERMINED']),
   service_mode: Object.freeze(['DELIVERY_TO_RECUMET', 'PICKUP_BY_RECUMET', 'BOTH']),
-  origin_channel: Object.freeze(['PROSPECTION', 'REFERRAL', 'SICOES', 'SOCIAL_MEDIA', 'DOOR', 'DIRECT_CONTACT', 'OTHER']),
+  // Canal de origen es común a todos los tipos de proveedor. Incluye los valores
+  // históricos y los actualmente presentados por el formulario Angular.
+  origin_channel: Object.freeze([
+    'PROSPECTION', 'REFERRAL', 'SICOES', 'SOCIAL_MEDIA', 'DOOR', 'DIRECT_CONTACT', 'OTHER',
+    'SEARCHED_BY_RECUMET', 'ROUTING_VISIT', 'WHATSAPP_CALL', 'SICOES_TENDER', 'COMPANY_INVITATION', 'HISTORICAL',
+  ]),
   relationship_status: Object.freeze(['PROSPECT', 'IN_PROGRESS', 'ACTIVE_PROVIDER', 'DORMANT', 'LOST']),
   negotiation_condition: Object.freeze(['DIRECT', 'QUOTATION', 'TENDER', 'AGREEMENT', 'CONTRACT', 'OTHER']),
   account_type: Object.freeze(['CAJA_AHORRO', 'CUENTA_CORRIENTE', 'OTRA']),

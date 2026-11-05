@@ -52,11 +52,22 @@ function createPdfRenderer({ launch = options => puppeteer.launch(options), conc
             if (expired) { await page.close(); throw new Error('Tiempo de generación PDF agotado'); }
             await page.setJavaScriptEnabled(false);
             await page.setRequestInterception(true);
-            page.on('request', request => /^(data:|about:)/.test(request.url()) ? request.continue() : request.abort());
-            await page.setContent(html, { waitUntil: 'load', timeout: remaining });
+            page.on('request', request => {
+                const url = request.url();
+                const allowed = /^(data:|about:)/.test(url)
+                    || /^https:\/\/tile\.openstreetmap\.org\/\d+\/\d+\/\d+\.png$/.test(url);
+                return allowed ? request.continue() : request.abort();
+            });
+            await page.setContent(html, { waitUntil: 'domcontentloaded', timeout: remaining });
             await page.evaluate(async () => {
                 await document.fonts.ready;
-                await Promise.all(Array.from(document.images).map(image => image.decode()));
+                const images = Array.from(document.images);
+                const localImages = images.filter(image => image.src.startsWith('data:'));
+                await Promise.all(localImages.map(image => image.decode().catch(() => undefined)));
+                await Promise.race([
+                    Promise.all(images.filter(image => !image.src.startsWith('data:')).map(image => image.decode().catch(() => undefined))),
+                    new Promise(resolve => setTimeout(resolve, 2500)),
+                ]);
             });
             const options = { printBackground: true, preferCSSPageSize: true, timeout: remaining, displayHeaderFooter: height !== 'auto', headerTemplate: '<span></span>', footerTemplate: '<div style="font-size:7px;width:100%;text-align:center;color:#64748b">RECUMET · <span class="pageNumber"></span> / <span class="totalPages"></span></div>' };
             if (height === 'auto') {

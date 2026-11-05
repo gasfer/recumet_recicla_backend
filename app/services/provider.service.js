@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { WHOLESALE_FIELDS, validateWholesaleProfile } = require('./provider-wholesale-profile');
 const { validateRegistrationFields } = require('./provider-registration-validation');
 const providerAvailability = require('./provider-sucursal-availability.service');
+const { isProviderCatalogValue } = require('../constants/provider-commercial.constants');
 
 const COMMERCIAL_FIELDS = [
   'full_names', 'number_document', 'cellphone', 'id_sector', 'id_category', 'id_sucursal',
@@ -350,6 +351,9 @@ class ProviderService {
     if (type && data.full_names != null) {
       for (const field of ['department', 'id_commercial_user', 'origin_channel', 'relationship_status', 'frequency', 'service_mode']) {
         if (!this.hasValue(data[field])) throw this.validationError(`El campo ${field} es obligatorio`);
+      }
+      if (!isProviderCatalogValue('origin_channel', data.origin_channel)) {
+        throw this.validationError('El valor de origin_channel no pertenece al catálogo permitido');
       }
       if (Array.isArray(data.materials) && !data.materials.some(item => item.status !== false)) throw this.validationError('Seleccione al menos un producto');
       if (type.code === 'B' && !(data.contacts || []).some(item => item.status !== false)) throw this.validationError('Registre al menos un contacto comercial');

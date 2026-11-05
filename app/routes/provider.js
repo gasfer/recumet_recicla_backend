@@ -1,4 +1,6 @@
 const { Router } = require('express');
+const { Op } = require('sequelize');
+const db = require('../database/config');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getProviderPaginate, newProvider, updateProvider, activeInactiveProvider, getAllSectorProvider, newSectorProvider, deleteSectorProvider, getProviderByProductPaginate, getAllTypesProvider, getProviderAutocomplete, getPurchaseProviderAutocomplete, preRegisterProvider, checkDuplicateProvider, getProviderCommercialDetails, commercialValidationProvider, saveProviderDetail, deleteProviderDetail, resolveGoogleMapsLink, getProviderFrequencyAnalysis } = require('../controllers/provider.controller');
@@ -22,14 +24,39 @@ const { validateSheet, createRegistrationHtmlPdf } = require('../services/provid
 router.post('/registration-sheet', [validarJWT, authorizeProviderAccess('view')], async (req, res) => {
     if (!validateSheet(req.body)) return res.status(400).json({ ok: false, msg: 'La ficha de registro no es válida.' });
     try {
-        const pdf = await createRegistrationHtmlPdf(req.body);
+        const companyId = Number(req.decimalPolicy?.companyId);
+        const [company, selectedBranch, headquarters] = await Promise.all([
+            db.Company.findOne({ where: { id: companyId, status: true }, attributes: ['nit', 'cellphone', 'email'], raw: true }),
+            Number.isInteger(Number(req.body.id_sucursal)) && Number(req.body.id_sucursal) > 0
+                ? db.Sucursal.findOne({ where: { id: Number(req.body.id_sucursal), id_company: companyId, status: true }, attributes: ['name', 'city', 'cellphone', 'email'], raw: true })
+                : Promise.resolve(null),
+            db.Sucursal.findOne({
+                where: { id_company: companyId, status: true, name: { [Op.iLike]: '%CASA MATRIZ%' } },
+                attributes: ['name', 'city', 'cellphone', 'email'], raw: true,
+            }),
+        ]);
+        const branch = selectedBranch || headquarters || await db.Sucursal.findOne({
+            where: { id_company: companyId, status: true }, attributes: ['name', 'city', 'cellphone', 'email'], order: [['id', 'ASC']], raw: true,
+        });
+        const companyHeader = {
+            branchName: branch?.name || 'CASA MATRIZ', city: branch?.city,
+            nit: company?.nit, phone: branch?.cellphone || company?.cellphone,
+            email: branch?.email || company?.email,
+        };
+        const pdf = await createRegistrationHtmlPdf({ ...req.body, company: companyHeader });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'inline; filename="ficha-proveedor.pdf"');
         res.setHeader('Cache-Control', 'no-store, private');
         return res.send(pdf);
     } catch (error) {
         console.error('No se pudo generar la ficha PDF:', error.message);
-        return res.status(500).json({ ok: false, msg: 'No se pudo generar la ficha de proveedor.' });
+        const isTimeout = /tiempo.*agotado|timeout/i.test(String(error.message || ''));
+        return res.status(500).json({
+            ok: false,
+            msg: isTimeout
+                ? 'El servicio PDF agotó el tiempo al preparar la ficha. Revise la conexión del servidor y vuelva a intentar.'
+                : 'Falló el generador de PDF al preparar la ficha. Código de diagnóstico: PDF_RENDER_FAILED.',
+        });
     }
 });
 
