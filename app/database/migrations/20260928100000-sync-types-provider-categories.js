@@ -4,8 +4,7 @@ const TYPES = [
   { id: 1, code: 'A', name: 'A - EMPRESAS E INSTITUCIONES' },
   { id: 2, code: 'B', name: 'B - ACOPIADORES / MAYORISTAS' },
   { id: 3, code: 'C', name: 'C - ACOPIADORES / MINORISTAS' },
-  { id: 4, code: 'D', name: 'D - OCACIONALES / PARTICULARES' },
-  { id: 5, code: 'E', name: 'E - DOMICILIARIOS' },
+  { id: 4, code: 'D', name: 'D - Domiciliarios/ Particulares' },
   { id: 6, code: 'F', name: 'F - NUEVOS (SIN CLASIFICAR)' },
 ];
 

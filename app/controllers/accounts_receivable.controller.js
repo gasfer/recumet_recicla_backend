@@ -8,7 +8,10 @@ const { validaOpenCajaSmall } = require('../middlewares/validators/caja_small');
 
 const getAccountsReceivablePaginate = async (req = request, res = response) => {
     try {
-        const {query, page, limit, type, status_account,id_client, id_sucursal, type_registry,filterBy, date1, date2,orderNew} = req.query;
+        let {query, page, limit, type, status_account,id_client, id_sucursal, type_registry,filterBy, date1, date2,orderNew} = req.query;
+        if (type === 'output.number_registry' && ['SINFICHA', 'SIN FICHA'].includes(String(query || '').toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim())) {
+            type = 'output.type_registry'; query = 'SIN FICHA';
+        }
         const whereDate = whereDateForType(filterBy,date1, date2, '"output"."date_output"');
         const where = {
             [Op.and]: [
@@ -40,16 +43,23 @@ const getAccountsReceivablePaginate = async (req = request, res = response) => {
             ]
         };
         let accountsReceivable = await paginate(AccountsReceivable, page, limit, type, query, optionsDb); 
+        const searchCondition = type && query ? {
+            [!isNaN(query) ? Op.eq : Op.iLike]: !isNaN(query) ? `${query}` : `%${query}%`
+        } : {};
+        const clientSearch = type && query && type.startsWith('client.') ? { [type.split('.')[1]]: searchCondition } : {};
+        const outputSearch = type && query && type.startsWith('output.') ? { [type.split('.')[1]]: searchCondition } : {};
         const optionsSum = {
             where,  
             include: [{
                 attributes: [],
                 association: 'output',
+                required: true,
                 where: { [Op.and]: [
                     type_registry ? { type_registry } : {},
-                    { date_output: whereDate }
+                    { date_output: whereDate },
+                    outputSearch
                 ]}
-            }],
+            }, ...(Object.keys(clientSearch).length ? [{ association: 'client', attributes: [], required: true, where: clientSearch }] : [])],
         };
         const total_abonados = await AccountsReceivable.sum('AccountsReceivable.monto_abonado', optionsSum);
         const total_restante = await AccountsReceivable.sum('AccountsReceivable.monto_restante', optionsSum);

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildFinancialVoucher, buildMultiplePaymentVoucher } = require('../helpers/generator-pdf/financial-voucher.document');
 const { renderReportHtml } = require('../helpers/generator-pdf/report-html.template');
-function account(payable, id = 1) { const operation = { cod: 'OP-' + id, date_voucher: '2026-09-12T12:14:44', date_output: '2026-09-12T12:14:44', provider: { full_names: 'Proveedor', number_document: '123' }, client: { full_names: 'Cliente', number_document: '456' }, detailsInput: [], detailsOutput: [], sumas: 100, sub_total: 100, discount: 0, total: 100 }; return { id, cod: 'CTA-' + id, date_credit: '2026-10-12', monto_abonado: 25, monto_restante: 75, sucursal: { name: 'Matriz', company: { nit: '99887766' } }, [payable ? 'input' : 'output']: operation, [payable ? 'abonosAccountsPayable' : 'abonosAccountsReceivable']: [{ id, date_abono: '2026-10-12', monto_abono: 25, restante_credito: 75, total_abonado: 25, user: { full_names: 'Cajero' } }] }; }
+function account(payable, id = 1) { const operation = { cod: 'OP-' + id, date_voucher: '2026-09-12T12:14:44', date_output: '2026-09-12T12:14:44', provider: { full_names: 'Proveedor', number_document: '123' }, client: { full_names: 'Cliente', number_document: '456' }, detailsInput: [{ product: { cod: 'MAT-' + id, name: 'Material ' + id, unit: { siglas: 'KG' } }, quantity: 2, cost: 10, total: 20 }], detailsOutput: [], sumas: 100, sub_total: 100, discount: 0, total: 100, type: 'CREDITO' }; return { id, cod: 'CTA-' + id, date_credit: '2026-10-12', monto_abonado: 25, monto_restante: 75, sucursal: { name: 'Matriz', company: { nit: '99887766' } }, [payable ? 'input' : 'output']: operation, [payable ? 'abonosAccountsPayable' : 'abonosAccountsReceivable']: [{ id, date_abono: '2026-10-12', monto_abono: 25, restante_credito: 75, total_abonado: 25, user: { full_names: 'Cajero' } }] }; }
 for (const payable of [true, false]) {
  test((payable ? 'CxP' : 'CxC') + ' conserva saldo, historia de abonos y entidad', () => {
   const document = buildFinancialVoucher(account(payable), { payable, decimal: 2 });
@@ -20,11 +20,13 @@ for (const payable of [true, false]) {
  test((payable ? 'CxP' : 'CxC') + ' abono conserva bancos, cuentas y transacción', () => {
   const html = renderReportHtml(buildFinancialVoucher(account(payable), { payable, decimal: 2, payment: { date_abono: '2026-10-12', monto_abono: 25, type_payment: 'TRANSFERENCIA', bankOrigin: { name: 'Origen' }, bankDestination: { name: 'Destino' }, account_origin: '0001', account_output: '0002', number_transaction: 'TX-123' } }));
   for (const text of ['Origen','Destino','0001','0002','TX-123','BOLIVIANOS VEINTICINCO CON 00/100']) assert.ok(html.includes(text), text);
+  if (payable) for (const text of ['MAT-1', 'Material 1', '20,00']) assert.ok(html.includes(text), text);
  });
  test((payable ? 'CxP' : 'CxC') + ' abono múltiple conserva cuentas aplicadas y suma numérica de saldos', () => {
   const document = buildMultiplePaymentVoucher({ date_abono: '2026-10-12', monto_abono: 50, type_payment: 'EFECTIVO', [payable ? 'ids_abonos_payables' : 'ids_abonos_receivables']: [1,2] }, [account(payable,1),account(payable,2)], { payable, decimal: 2 });
   const html = renderReportHtml(document);
   for (const text of ['OP-1','OP-2','50,00','150,00']) assert.ok(html.includes(text), text);
+  if (payable) for (const text of ['MAT-1','MAT-2','Material 1','Material 2']) assert.ok(html.includes(text), text);
   assert.throws(() => buildMultiplePaymentVoucher({ ids_abonos_payables: [] }, [account(true)], { payable: true, decimal: 2 }), /abono aplicado/);
  });
 }

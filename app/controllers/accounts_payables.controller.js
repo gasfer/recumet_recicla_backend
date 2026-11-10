@@ -14,7 +14,10 @@ const purchaseAudit = require('../services/purchase-audit.service');
 
 const getAccountsPayablePaginate = async (req = request, res = response) => {
     try {
-        const {query, page, limit, type,status_account, id_provider, id_sucursal,type_registry, filterBy, date1, date2,orderNew} = req.query;
+        let {query, page, limit, type,status_account, id_provider, id_type_provider, id_sucursal,type_registry, filterBy, date1, date2,orderNew} = req.query;
+        if (type === 'input.registry_number' && ['SINFICHA', 'SIN FICHA'].includes(String(query || '').toUpperCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim())) {
+            type = 'input.type_registry'; query = 'SIN FICHA';
+        }
         const whereDate = whereDateForType(filterBy,date1, date2, '"input"."date_voucher"');
         const where = {
             [Op.and]: [
@@ -29,7 +32,7 @@ const getAccountsPayablePaginate = async (req = request, res = response) => {
             where,
             include: [ 
                 { association: 'sucursal',attributes: ['name'] },
-                { association: 'provider', attributes: ['full_names']},
+                { association: 'provider', attributes: ['full_names'], ...(id_type_provider ? { required: true, include: [{ association: 'type', where: { id: id_type_provider }, attributes: [], required: true }] } : {})},
                 { association: 'input',
                     where: { [Op.and]: [
                         type_registry ? { type_registry } : {},
@@ -46,16 +49,27 @@ const getAccountsPayablePaginate = async (req = request, res = response) => {
             ]
         };
         let accountsPayable = await paginate(AccountsPayable, page, limit, type, query, optionsDb);
+        const searchCondition = type && query ? {
+            [!isNaN(query) ? Op.eq : Op.iLike]: !isNaN(query) ? `${query}` : `%${query}%`
+        } : {};
+        const providerSearch = type && query && type.startsWith('provider.') ? { [type.split('.')[1]]: searchCondition } : {};
+        const inputSearch = type && query && type.startsWith('input.') ? { [type.split('.')[1]]: searchCondition } : {};
         const optionsSum = {
             where,  
             include: [{
                 attributes: [],
                 association: 'input',
+                required: true,
                 where: { [Op.and]: [
                     type_registry ? { type_registry } : {},
-                    { date_voucher: whereDate }
+                    { date_voucher: whereDate },
+                    inputSearch
                 ]}
-            }],
+            }, ...((id_type_provider || Object.keys(providerSearch).length) ? [{
+                association: 'provider', attributes: [], required: true,
+                ...(Object.keys(providerSearch).length ? { where: providerSearch } : {}),
+                ...(id_type_provider ? { include: [{ association: 'type', where: { id: id_type_provider }, attributes: [], required: true }] } : {})
+            }] : [])],
         };
         const total_abonados = await AccountsPayable.sum('AccountsPayable.monto_abonado', optionsSum);
         const total_restante = await AccountsPayable.sum('AccountsPayable.monto_restante', optionsSum);
@@ -370,7 +384,8 @@ const getAccountAllProvider = async (req = request, res = response) => {
         const where = {
             [Op.and]: [
                 id_provider ? { id_provider } : {},
-               { status: true }
+               { status: true },
+               { monto_restante: { [Op.gt]: 0 } }
             ]
         }
         const inputWhere = {};
@@ -436,7 +451,8 @@ const payAccountMultiple = async (req = request, res = response) => {
             [Op.and]: [
                 id_provider ? { id_provider } : {},
                { status: true },
-               { status_account: 'PENDIENTE'}
+               { status_account: 'PENDIENTE'},
+               { monto_restante: { [Op.gt]: 0 } }
             ]
         }
         const accountsPayable = await AccountsPayable.findAll({order: [['id', 'ASC']], 

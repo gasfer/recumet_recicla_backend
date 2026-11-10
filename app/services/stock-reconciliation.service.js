@@ -62,12 +62,18 @@ const caseInclude = [
 ];
 
 const getCurrentSnapshot = async ({ productId, sucursalId, storageId, transaction, lock = false }) => {
-  const stock = await Stock.findOne({
+  const stockRows = await Stock.findAll({
     where: { id_product: productId, id_sucursal: sucursalId, id_storage: storageId, status: true },
     transaction,
     ...(lock ? { lock: { level: transaction.LOCK.UPDATE, of: Stock } } : {}),
   });
-  if (!stock) throw serviceError('No existe una fila activa de Stock para este producto y ubicación.', 404);
+  if (!stockRows.length) throw serviceError('No existe una fila activa de Stock para este producto y ubicación.', 404);
+  const physicalStock = stockRows.reduce((total, row) => exactAdd(total, row.stock), '0.0000');
+  const latestStockUpdatedAt = stockRows
+    .map((row) => row.updatedAt)
+    .filter(Boolean)
+    .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null;
+  const stock = { stock: physicalStock, updatedAt: latestStockUpdatedAt };
   const [currentKardex] = await sequelize.query(`
     SELECT
       COALESCE(SUM(quantity_input), 0) - COALESCE(SUM(quantity_output), 0) AS saldo,
@@ -78,7 +84,7 @@ const getCurrentSnapshot = async ({ productId, sucursalId, storageId, transactio
   `, { replacements: { productId, sucursalId, storageId }, type: QueryTypes.SELECT, transaction });
   const snapshot = {
     id_product: Number(productId), id_sucursal: Number(sucursalId), id_storage: Number(storageId),
-    physical_stock: normalizeNumber(stock.stock), kardex_balance: normalizeNumber(currentKardex?.saldo),
+    physical_stock: normalizeNumber(physicalStock), kardex_balance: normalizeNumber(currentKardex?.saldo),
     stock_updated_at: stock.updatedAt?.toISOString?.() || String(stock.updatedAt || ''), kardex_last_id: currentKardex?.id || null,
   };
   snapshot.physical_kardex_difference = exactSubtract(snapshot.physical_stock, snapshot.kardex_balance);
@@ -171,6 +177,7 @@ const listAuthorizers = async ({ sucursalId }) => {
 const detectCases = async ({ idSucursal, idStorage, actorUserId, limit = 2000 }) => {
   const irregularities = await getStockKardexIrregularities({ idSucursal, idStorage, limit });
   const cases = [];
+  const detectedLocations = new Set(irregularities.map((item) => `${item.id_product}:${item.id_sucursal}:${item.id_storage}`));
   for (const item of irregularities) {
     const fingerprint = fingerprintFor(item);
     const values = {
@@ -202,7 +209,67 @@ const detectCases = async ({ idSucursal, idStorage, actorUserId, limit = 2000 })
     });
     cases.push({ ...record.toJSON(), created });
   }
-  return { cases, detected: irregularities.length, created: cases.filter((item) => item.created).length };
+
+  // La detección también cierra casos antiguos que ya no tienen diferencia actual.
+  // Esto puede ocurrir cuando los saldos se corrigieron directamente en la base de datos.
+  const openCases = await StockReconciliationCase.findAll({
+    where: {
+      id_sucursal: Number(idSucursal),
+      ...(idStorage ? { id_storage: Number(idStorage) } : {}),
+      status: { [Op.ne]: STATUSES.RESOLVED },
+    },
+  });
+  let closed = 0;
+  for (const record of openCases) {
+    const locationKey = `${record.id_product}:${record.id_sucursal}:${record.id_storage}`;
+    if (detectedLocations.has(locationKey)) continue;
+
+    let wasClosed = false;
+    try {
+      await sequelize.transaction(async (transaction) => {
+        const currentCase = await StockReconciliationCase.findByPk(record.id, {
+          transaction,
+          lock: transaction.LOCK.UPDATE,
+        });
+        if (!currentCase || currentCase.status === STATUSES.RESOLVED) return;
+
+        const { snapshot } = await getCurrentSnapshot({
+          productId: currentCase.id_product,
+          sucursalId: currentCase.id_sucursal,
+          storageId: currentCase.id_storage,
+          transaction,
+          lock: true,
+        });
+        if (exactCompare(snapshot.physical_kardex_difference, 0) !== 0) return;
+
+        const resolvedAt = new Date();
+        await currentCase.update({
+          status: STATUSES.RESOLVED,
+          fingerprint: snapshot.fingerprint,
+          physical_stock_observed: snapshot.physical_stock,
+          kardex_balance_observed: snapshot.kardex_balance,
+          difference_observed: snapshot.physical_kardex_difference,
+          resolved_at: resolvedAt,
+          id_resolved_user: actorUserId,
+        }, { transaction });
+        await createEvent({
+          caseId: currentCase.id,
+          userId: actorUserId,
+          type: 'REGULARIZADA_EXTERNAMENTE',
+          description: 'Los saldos actuales de Stock y Kardex coinciden. El caso se cerró al detectarse una regularización realizada fuera de este módulo; no se modificaron saldos.',
+          metadata: { snapshot, closure: 'BALANCES_ALREADY_MATCH' },
+          transaction,
+        });
+        wasClosed = true;
+      });
+    } catch (error) {
+      // No cerrar un caso si la ubicación ya no tiene una fila activa de Stock.
+      if (error.statusCode === 404) continue;
+      throw error;
+    }
+    if (wasClosed) closed += 1;
+  }
+  return { cases, detected: irregularities.length, created: cases.filter((item) => item.created).length, closed };
 };
 
 const listCases = async ({ page = 1, limit = 25, idSucursal, idStorage, status, direction, query }) => {
@@ -211,7 +278,7 @@ const listCases = async ({ page = 1, limit = 25, idSucursal, idStorage, status, 
   const where = {
     ...(idSucursal ? { id_sucursal: Number(idSucursal) } : {}),
     ...(idStorage ? { id_storage: Number(idStorage) } : {}),
-    ...(status ? { status } : {}),
+    ...(status === 'ABIERTAS' ? { status: { [Op.ne]: STATUSES.RESOLVED } } : status ? { status } : {}),
     ...(direction ? { direction } : {}),
   };
   const result = await StockReconciliationCase.findAndCountAll({

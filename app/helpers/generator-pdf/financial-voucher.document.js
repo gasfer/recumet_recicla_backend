@@ -25,7 +25,9 @@ const buildFinancialVoucher = (account, { payable, payment, decimal }) => {
         { title: payable ? 'DATOS PROVEEDOR' : 'DATOS CLIENTE', fields: providerFields },
         { title: 'CONCEPTO Y REGISTRO', fields: operationFields },
     ];
+    const purchaseDetails = document.sections.find(section => section.columns.some(column => column.label === 'CÓDIGO') && section.columns.some(column => column.label === 'IMPORTE'));
     document.sections = document.sections.filter(section => ['DETALLE DE PRODUCTOS', 'TOTALES', 'RESUMEN DE CRÉDITO'].includes(section.title));
+    if (payment && payable && purchaseDetails && !document.sections.includes(purchaseDetails)) document.sections.unshift({ ...purchaseDetails, title: 'DETALLE DE LA COMPRA' });
     if (!payment) {
         const payments = account[payable ? 'abonosAccountsPayable' : 'abonosAccountsReceivable'] || [];
         document.sections.push({
@@ -37,7 +39,9 @@ const buildFinancialVoucher = (account, { payable, payment, decimal }) => {
                 { kind: 'total', cells: ['SALDO RESTANTE', '', '', money(account.monto_restante, decimal)] },
             ],
         });
-    } else document.sections.push({ title: 'ESTADO DE CUENTA', columns: [{ label: 'CONCEPTO' }, { label: 'BS', align: 'right' }], rows: [['MONTO DE ESTE ABONO', money(payment.monto_abono, decimal)], ['SALDO RESTANTE', money(account.monto_restante, decimal)]] });
+    } else {
+        document.sections.push({ title: 'ESTADO DE CUENTA', columns: [{ label: 'CONCEPTO' }, { label: 'BS', align: 'right' }], rows: [['MONTO DE ESTE ABONO', money(payment.monto_abono, decimal)], ['SALDO RESTANTE', money(payment.restante_credito ?? account.monto_restante, decimal)]] });
+    }
     if (payment) document.panels.push(paymentPanel(payment));
     document.observations = payment?.comments;
     document.signatures = payable ? [{ role: 'Recibí conforme', name: entity.full_names || '' }, { role: 'Entregue conforme', name: account.sucursal?.name || '' }] : [{ role: 'Recibí conforme', name: account.sucursal?.name || '' }, { role: 'Entregue conforme', name: entity.full_names || '' }];
@@ -56,7 +60,12 @@ const buildMultiplePaymentVoucher = (payment, accounts, { payable, decimal }) =>
         totalBalance += Number(abono.restante_credito);
         const document = buildFinancialVoucher(account, { payable, payment: abono, decimal });
         const operation = account[payable ? 'input' : 'output'];
-        sections.push({ ...document.sections[0], title: `${payable ? 'Compra' : 'Venta'} Nº ${operation.cod} · A cuenta: ${money(abono.monto_abono, decimal)} · Saldo: ${money(abono.restante_credito, decimal)}` });
+        const detailSection = document.sections.find(section => section.columns.some(column => column.label === 'CÓDIGO') && section.columns.some(column => column.label === 'IMPORTE'));
+        if (detailSection) {
+            sections.push({ ...detailSection, title: `${payable ? 'Compra' : 'Venta'} Nº ${operation.cod} · A cuenta: ${money(abono.monto_abono, decimal)} · Saldo: ${money(abono.restante_credito, decimal)}` });
+        } else if (payable) {
+            throw new Error(`La compra ${operation.cod || account.cod} no tiene detalle de productos activo para imprimir`);
+        }
     });
     sections.push({ title: 'RESUMEN', columns: [{ label: 'CONCEPTO' }, { label: 'BS', align: 'right' }], rows: [['A CUENTA', money(totalPaid, decimal)], ['SALDO TOTAL', money(totalBalance, decimal)]] });
     return { variant: 'voucher', paper: 'A4', title: 'COMPROBANTE ABONO MÚLTIPLE', reference: accounts[0]?.cod || '', date: moment(payment.date_abono).format('DD/MM/YYYY HH:mm:ss'), company: companyData(accounts[0]?.sucursal || payment.sucursal), panels: [{ title: payable ? 'ENTREGUE A (PROVEEDOR)' : 'RECIBÍ DE (CLIENTE)', fields: [field('Nombre', entity.full_names), field('NIT/CI', entity.number_document), field('Monto abono', `Bs. ${money(payment.monto_abono, decimal)} (${NumeroALetras(decimalToNumber(payment.monto_abono, decimal))})`), field('Concepto', payment.comments)] }, paymentPanel(payment)], sections, signatures: [{ role: 'Recibí conforme', name: entity.full_names || '' }, { role: 'Entregue conforme', name: payment.sucursal?.name || '' }] };

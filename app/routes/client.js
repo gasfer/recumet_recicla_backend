@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
-const { getClientPaginate, newClient, updateClient, activeInactiveClient } = require('../controllers/client.controller');
+const { getClientPaginate, getClientSalesHistory, exportClientsExcel, newClient, updateClient, activeInactiveClient } = require('../controllers/client.controller');
 const { getValidateCreate, getValidateUpdate, validateDelete } = require('../middlewares/validators/client');
 
 const router = Router();
@@ -27,6 +27,9 @@ const router = Router();
 router.get('/', [
     validarJWT,
 ], getClientPaginate);
+
+router.get('/excel', [validarJWT], exportClientsExcel);
+router.get('/:id/sales-history', [validarJWT], getClientSalesHistory);
 
 /**
  * @swagger

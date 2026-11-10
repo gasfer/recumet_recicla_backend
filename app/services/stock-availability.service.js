@@ -122,6 +122,19 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
         ${idSucursal ? 'AND id_sucursal = :idSucursal' : ''}
         ${idStorage ? 'AND id_storage = :idStorage' : ''}
       GROUP BY id_product, id_sucursal, id_storage
+    ), stock_current AS (
+      SELECT
+        id_product,
+        id_sucursal,
+        id_storage,
+        COALESCE(SUM(stock), 0) AS physical_stock,
+        MAX("updatedAt") AS stock_updated_at,
+        COUNT(*)::integer AS active_stock_rows
+      FROM stocks
+      WHERE status = true
+        ${idSucursal ? 'AND id_sucursal = :idSucursal' : ''}
+        ${idStorage ? 'AND id_storage = :idStorage' : ''}
+      GROUP BY id_product, id_sucursal, id_storage
     ), held AS (
       SELECT h.id_product, h.id_sucursal, h.id_storage,
         SUM(h.quantity) AS quantity_in_review,
@@ -143,26 +156,25 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
       GROUP BY n.id_product, n.id_sucursal, n.id_storage
     )
     SELECT p.cod, p.name, s.id_product, s.id_sucursal, s.id_storage,
-      s.stock AS physical_stock,
-      s."updatedAt" AS stock_updated_at,
+      s.physical_stock,
+      s.stock_updated_at,
+      s.active_stock_rows,
       COALESCE(h.quantity_in_review, 0) AS stock_in_review,
       COALESCE(h.retained_without_adjustment, 0) AS retained_without_adjustment,
       COALESCE(lh.quantity_in_review, 0) AS legacy_stock_in_review,
       COALESCE(h.quantity_in_review, 0) - COALESCE(lh.quantity_in_review, 0) AS hold_source_difference,
-      GREATEST(s.stock - COALESCE(h.quantity_in_review, 0), 0) AS available_stock,
+      GREATEST(s.physical_stock - COALESCE(h.quantity_in_review, 0), 0) AS available_stock,
       COALESCE(k.kardex_balance, 0) AS kardex_balance,
       k.kardex_last_id,
       k.kardex_last_date,
-      s.stock - COALESCE(k.kardex_balance, 0) AS physical_kardex_difference
-    FROM stocks s
+      s.physical_stock - COALESCE(k.kardex_balance, 0) AS physical_kardex_difference
+    FROM stock_current s
     INNER JOIN products p ON p.id = s.id_product
     LEFT JOIN held h ON h.id_product = s.id_product AND h.id_sucursal = s.id_sucursal AND h.id_storage = s.id_storage
     LEFT JOIN legacy_held lh ON lh.id_product = s.id_product AND lh.id_sucursal = s.id_sucursal AND lh.id_storage = s.id_storage
     LEFT JOIN kardex_current k ON k.id_product = s.id_product AND k.id_sucursal = s.id_sucursal AND k.id_storage = s.id_storage
-    WHERE s.status = true
-      ${idSucursal ? 'AND s.id_sucursal = :idSucursal' : ''}
-      ${idStorage ? 'AND s.id_storage = :idStorage' : ''}
-    ORDER BY ABS(s.stock - COALESCE(k.kardex_balance, 0)) DESC, p.cod ASC
+    WHERE true
+    ORDER BY ABS(s.physical_stock - COALESCE(k.kardex_balance, 0)) DESC, p.cod ASC
     LIMIT :limit
   `, {
     replacements: { idSucursal, idStorage, limit: Math.min(Number(limit) || 500, 2000) },

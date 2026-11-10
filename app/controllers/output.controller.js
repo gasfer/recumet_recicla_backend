@@ -116,7 +116,10 @@ const getOutputsPaginate = async (req = request, res = response) => {
         });
         outputs.totals = {
             totalOutput,
-            totalQuantity
+            totalQuantity,
+            total_amount: totalOutput,
+            kg_total: totalQuantity,
+            total_quantity: totalQuantity,
         }
         return res.status(200).json({
             ok: true,

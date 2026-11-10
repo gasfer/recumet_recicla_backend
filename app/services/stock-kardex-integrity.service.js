@@ -23,7 +23,7 @@ const uniqueSortedLocations = (locations = []) => Array.from(
 
 const getStockKardexIntegrity = async ({ productId, sucursalId, storageId, transaction, tolerance = getDefaultTolerance() } = {}) => {
   const location = normalizeLocation({ productId, sucursalId, storageId });
-  const stock = await Stock.findOne({
+  const stockRows = await Stock.findAll({
     where: {
       id_product: location.productId,
       id_sucursal: location.sucursalId,
@@ -32,7 +32,12 @@ const getStockKardexIntegrity = async ({ productId, sucursalId, storageId, trans
     },
     transaction,
   });
-  const physicalStock = exactAdd(stock?.stock ?? 0, 0);
+  // Las bases con filas activas históricas duplicadas deben validarse por el
+  // saldo total de la ubicación, igual que el diagnóstico y el conteo físico.
+  const physicalStock = stockRows.reduce(
+    (total, stock) => exactAdd(total, stock.stock ?? 0),
+    '0.0000',
+  );
   const [projection = {}] = await sequelize.query(`
     WITH detail AS (
       SELECT quantity_input, quantity_output

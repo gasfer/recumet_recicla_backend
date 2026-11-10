@@ -40,6 +40,12 @@ const auditRequestKey = (req, suffix) => {
     return supplied ? `purchase:${supplied}:${suffix}` : null;
 };
 
+const configurePurchaseTransactionTimeouts = async (transaction) => {
+    // Las compras no deben quedar esperando indefinidamente por un bloqueo en PostgreSQL.
+    await sequelize.query("SET LOCAL lock_timeout = '15s'", { transaction });
+    await sequelize.query("SET LOCAL statement_timeout = '45s'", { transaction });
+};
+
 const normalizePurchasePayment = (inputData) => {
     const isCredit = Boolean(inputData.pay_to_credit);
     const initialPayment = Number(inputData.on_account || 0);
@@ -185,6 +191,7 @@ const newInput = async (req = request, res = response) => {
     let t;
     try {
         t = await sequelize.transaction();
+        await configurePurchaseTransactionTimeouts(t);
         const { input_data, input_details } = req.body;
         const createIdempotencyKey = auditRequestKey(req, 'create');
         await purchaseAudit.lockIdempotencyKey(createIdempotencyKey, t);
@@ -344,9 +351,19 @@ const newInput = async (req = request, res = response) => {
             try { await t.rollback(); } catch (rollbackError) { console.error('ERROR AL REVERTIR COMPRA:', rollbackError); }
         }
         console.error('ERROR COMPRA:', error);
-        return res.status(error.status || 500).json({
+        const databaseCode = error.original?.code || error.parent?.code;
+        const databaseWaitTimeout = ['55P03', '57014'].includes(databaseCode);
+        const statusCode = databaseWaitTimeout ? 503 : Number(error.status || error.statusCode || 500);
+        const message = databaseWaitTimeout
+            ? 'La base de datos demoró demasiado por un bloqueo. La transacción fue cancelada; verifique si la compra aparece antes de reintentar.'
+            : statusCode < 500 && error.message
+            ? error.message
+            : 'Ocurrió un imprevisto interno | hable con soporte';
+        return res.status(statusCode).json({
           ok: false,
-            errors: [{ msg: error.status ? error.message : `Ocurrió un imprevisto interno | hable con soporte`}],
+          ...(databaseWaitTimeout ? { code: 'PURCHASE_DATABASE_WAIT_TIMEOUT' } : statusCode < 500 && error.code ? { code: error.code } : {}),
+          ...(statusCode < 500 && error.details ? { details: error.details } : {}),
+            errors: [{ msg: message }],
         });
     }
 }

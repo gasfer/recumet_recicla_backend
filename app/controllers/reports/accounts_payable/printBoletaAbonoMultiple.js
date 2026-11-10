@@ -27,7 +27,7 @@ const printAbonoMultipleAccountPayableVoucher = async (req = request, res = resp
             include: [ 
                 { association: 'sucursal', include:{ association: 'company'}},
                 { association: 'input', include: [
-                        { association: 'detailsInput', 
+                        { association: 'detailsInput', where: { status: 'ACTIVE', removed_at: null }, required: false,
                             include: [
                                 {   association: 'product',
                                     include: [{ association:'unit'}]
