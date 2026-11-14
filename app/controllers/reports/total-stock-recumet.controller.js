@@ -15,6 +15,7 @@ const { buildConsolidatedInventoryProjection } = require("../../services/invento
 const { generateConsolidatedInventoryExcel, writeInventoryReportHeader } = require("../../services/inventory-consolidated-excel.service");
 const { REPORT_COLORS, solidFill, reportThinBorder } = require('../../constants/report-style.constants');
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
+const { unitLabel, addUnitQuantity, formatUnitTotals, normalizeStockOrder } = require('../../helpers/stock-unit-totals');
 moment.locale("es");
 
 const { getReportLogoPath } = require('../../helpers/report-logo');
@@ -88,7 +89,7 @@ const returnDataTotalStockRecumet = async (queryReq) => {
         }
     };
 
-    const orderNew = queryReq.orderNew || ['product', 'cod', 'ASC'];
+    const orderNew = normalizeStockOrder(queryReq.field_sort, queryReq.order);
     const optionsDbAll = {
         order: [
             ['product', 'category', 'name', 'ASC'],
@@ -277,10 +278,11 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
             include: [
                 {
                     association: 'product',
-                    attributes: ['id_category'],
+                    attributes: ['id_category', 'id_unit'],
                     where: whereProduct,
                     include: [
-                        { association: 'category', attributes: ['name', 'type'], where: whereCategory }
+                        { association: 'category', attributes: ['name', 'type'], where: whereCategory },
+                        { association: 'unit', attributes: ['siglas'] }
                     ]
                 },
                 {
@@ -288,10 +290,17 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
                     attributes: ['name']
                 }
             ],
-            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'sucursal.id'],
+            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'product.unit.id', 'sucursal.id'],
             raw: true,
             nest: true
         };
+
+        if (query) optionsDbSucursalProduct.where[Op.and].push({
+            [Op.or]: [
+                { '$product.name$': { [Op.iLike]: `%${query}%` } },
+                { '$product.cod$': { [Op.iLike]: `%${query}%` } }
+            ]
+        });
 
         const sucursalProductKardexes = await ViewKardex.findAll(optionsDbSucursalProduct);
         if (sucursalProductKardexes && sucursalProductKardexes.length > 0) {
@@ -349,23 +358,25 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
             if (!sucursalTotals[sucursalId]) {
                 sucursalTotals[sucursalId] = {
                     name: sucursalName,
-                    quantity_saldo: 0,
-                    quantity_saldo_mp: 0,
-                    quantity_saldo_pt: 0
+                    quantity_saldo: {},
+                    quantity_saldo_mp: {},
+                    quantity_saldo_pt: {}
                 };
             }
 
-            sucursalTotals[sucursalId].quantity_saldo += saldoVal;
+            const unit = sp.product?.unit?.siglas || 'SIN UNIDAD';
+            addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo, unit, saldoVal);
             if (catType === 'RAW_MATERIAL') {
-                sucursalTotals[sucursalId].quantity_saldo_mp += saldoVal;
+                addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo_mp, unit, saldoVal);
             } else if (catType === 'FINISHED_PRODUCT') {
-                sucursalTotals[sucursalId].quantity_saldo_pt += saldoVal;
+                addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo_pt, unit, saldoVal);
             }
         }
 
         // Build main table body with category headers and footers
         const tableBody = [
             [
+                { text: "N.º", fontSize: 8, fillColor: "#eeeeee", bold: true },
                 { text: "CÓDIGO", fontSize: 8, fillColor: "#eeeeee", bold: true },
                 { text: "DETALLE", fontSize: 8, fillColor: "#eeeeee", bold: true },
                 { text: "UND", fontSize: 8, fillColor: "#eeeeee", bold: true },
@@ -373,31 +384,33 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
             ]
         ];
 
-        let totalSaldo = 0;
-        let totalSaldoMp = 0;
-        let totalSaldoPt = 0;
+        const totalSaldo = {};
+        const totalSaldoMp = {};
+        const totalSaldoPt = {};
 
         let currentCategoryName = "";
-        let categorySum = 0;
+        let categorySum = {};
 
         const addCategoryFooter = (catName, sumVal) => {
             tableBody.push([
-                { text: `TOTAL ${catName.toUpperCase()}`, fontSize: 8, bold: true, fillColor: "#f8f9fa", colSpan: 3 },
+                { text: `TOTAL ${catName.toUpperCase()}`, fontSize: 8, bold: true, fillColor: "#f8f9fa", colSpan: 4 },
                 {},
                 {},
-                { text: formatEuro(sumVal, decimal), fontSize: 8, bold: true, alignment: "right", fillColor: "#f8f9fa" }
+                {},
+                { text: formatUnitTotals(sumVal, decimal), fontSize: 8, bold: true, alignment: "right", fillColor: "#f8f9fa" }
             ]);
         };
 
-        kardexes.forEach((kardex) => {
+        kardexes.forEach((kardex, index) => {
             const saldoVal = Number(kardex.dataValues.quantity_saldo || 0);
-            totalSaldo += saldoVal;
+            const unit = unitLabel(kardex.product);
+            addUnitQuantity(totalSaldo, unit, saldoVal);
 
             const catType = kardex.product?.category?.type;
             if (catType === 'RAW_MATERIAL') {
-                totalSaldoMp += saldoVal;
+                addUnitQuantity(totalSaldoMp, unit, saldoVal);
             } else if (catType === 'FINISHED_PRODUCT') {
-                totalSaldoPt += saldoVal;
+                addUnitQuantity(totalSaldoPt, unit, saldoVal);
             }
 
             const categoryName = kardex.product?.category?.name || "SIN CATEGORÍA";
@@ -407,20 +420,22 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
                     addCategoryFooter(currentCategoryName, categorySum);
                 }
                 currentCategoryName = categoryName;
-                categorySum = 0;
+                categorySum = {};
 
                 // Add group header row
                 tableBody.push([
-                    { text: categoryName.toUpperCase(), fontSize: 8, bold: true, fillColor: "#e0f2fe", colSpan: 4 },
+                    { text: categoryName.toUpperCase(), fontSize: 8, bold: true, fillColor: "#e0f2fe", colSpan: 5 },
+                    {},
                     {},
                     {},
                     {}
                 ]);
             }
 
-            categorySum += saldoVal;
+            addUnitQuantity(categorySum, unit, saldoVal);
 
             tableBody.push([
+                { text: String(index + 1), fontSize: 8, alignment: "center" },
                 { text: kardex.product.cod, fontSize: 8 },
                 { text: kardex.product.name, fontSize: 8 },
                 { text: kardex.product.unit.siglas, fontSize: 8 },
@@ -431,6 +446,9 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         if (currentCategoryName !== "") {
             addCategoryFooter(currentCategoryName, categorySum);
         }
+        if (!kardexes.length) {
+            tableBody.push([{ text: 'Sin resultados para los filtros seleccionados.', colSpan: 5, alignment: 'center', italics: true, margin: [0, 8, 0, 8] }, {}, {}, {}, {}]);
+        }
 
         // Push main table
         dataPdf.push({
@@ -438,7 +456,7 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
             margin: [0, 25, 0, 10],
             table: {
                 headerRows: 1,
-                widths: ["auto", "*", "auto", "auto"],
+                widths: ["auto", "auto", "*", "auto", "auto"],
                 body: tableBody
             },
             layout: "lightHorizontalLines",
@@ -448,8 +466,8 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         const sucursalTableBody = [
             [
                 { text: "SUCURSAL", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99" },
-                { text: "TOTAL (MP)", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" },
-                { text: "TOTAL (PT)", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" },
+                { text: "TOTAL MP POR UNIDAD", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" },
+                { text: "TOTAL PT POR UNIDAD", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" },
                 { text: "TOTAL GENERAL", fontSize: 8, fillColor: "#d2e2f7", bold: true, color: "#0f3d99", alignment: "right" }
             ]
         ];
@@ -458,18 +476,18 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         sucursalesList.forEach((st) => {
             sucursalTableBody.push([
                 { text: st.name.toUpperCase(), fontSize: 8, bold: true, color: "#1e293b" },
-                { text: formatEuro(st.quantity_saldo_mp, decimal), fontSize: 8, color: "#64748b", alignment: "right" },
-                { text: formatEuro(st.quantity_saldo_pt, decimal), fontSize: 8, color: "#64748b", alignment: "right" },
-                { text: formatEuro(st.quantity_saldo, decimal), fontSize: 8, bold: true, color: "#1e293b", alignment: "right" }
+                { text: formatUnitTotals(st.quantity_saldo_mp, decimal), fontSize: 8, color: "#64748b", alignment: "right" },
+                { text: formatUnitTotals(st.quantity_saldo_pt, decimal), fontSize: 8, color: "#64748b", alignment: "right" },
+                { text: formatUnitTotals(st.quantity_saldo, decimal), fontSize: 8, bold: true, color: "#1e293b", alignment: "right" }
             ]);
         });
 
         // Add Consolidado General row
-        sucursalTableBody.push([
+        if (kardexes.length) sucursalTableBody.push([
             { text: "CONSOLIDADO GENERAL", fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc" },
-            { text: formatEuro(totalSaldoMp, decimal), fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc", alignment: "right" },
-            { text: formatEuro(totalSaldoPt, decimal), fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc", alignment: "right" },
-            { text: formatEuro(totalSaldo, decimal), fontSize: 9, bold: true, color: "#ffffff", fillColor: "#038b21", alignment: "right" }
+            { text: formatUnitTotals(totalSaldoMp, decimal), fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc", alignment: "right" },
+            { text: formatUnitTotals(totalSaldoPt, decimal), fontSize: 8, bold: true, color: "#0f3d99", fillColor: "#f4f6fc", alignment: "right" },
+            { text: formatUnitTotals(totalSaldo, decimal), fontSize: 9, bold: true, color: "#ffffff", fillColor: "#038b21", alignment: "right" }
         ]);
 
         dataPdf.push({
@@ -513,7 +531,7 @@ const generatePdfReportsTotalStock = async (req = request, res = response) => {
         ].filter(group => group.items.length);
         if (req.userAuth?.full_names) filterGroups.push({ label: 'Generado por', items: [{ label: 'Usuario', value: req.userAuth.full_names }] });
         await sendReportPdf(res, {
-            title: 'STOCK TOTAL RECUMET', paper: 'A4', orientation: 'portrait', sections, reportTheme: 'stock', filterGroups,
+            title: 'CONSOLIDADO DE STOCK (MP Y PT) RECUMET', paper: 'A4', orientation: 'landscape', sections, reportTheme: 'stock', filterGroups,
             company: await resolveReportCompany(id_sucursal || id_sucursales),
         }, 'generatePdfReportsTotalStock.pdf');
     } catch (error) {
@@ -620,10 +638,11 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             include: [
                 {
                     association: 'product',
-                    attributes: ['id_category'],
+                    attributes: ['id_category', 'id_unit'],
                     where: whereProduct,
                     include: [
-                        { association: 'category', attributes: ['name', 'type'], where: whereCategory }
+                        { association: 'category', attributes: ['name', 'type'], where: whereCategory },
+                        { association: 'unit', attributes: ['siglas'] }
                     ]
                 },
                 {
@@ -631,11 +650,17 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                     attributes: ['name']
                 }
             ],
-            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'sucursal.id'],
+            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'product.unit.id', 'sucursal.id'],
             raw: true,
             nest: true
         };
 
+        if (query) optionsDbSucursalProduct.where[Op.and].push({
+            [Op.or]: [
+                { '$product.name$': { [Op.iLike]: `%${query}%` } },
+                { '$product.cod$': { [Op.iLike]: `%${query}%` } }
+            ]
+        });
         const sucursalProductKardexes = await ViewKardex.findAll(optionsDbSucursalProduct);
         if (sucursalProductKardexes && sucursalProductKardexes.length > 0) {
             const productIds = sucursalProductKardexes.map(k => k.id_product);
@@ -692,23 +717,25 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             if (!sucursalTotals[sucursalId]) {
                 sucursalTotals[sucursalId] = {
                     name: sucursalName,
-                    quantity_saldo: 0,
-                    quantity_saldo_mp: 0,
-                    quantity_saldo_pt: 0
+                    quantity_saldo: {},
+                    quantity_saldo_mp: {},
+                    quantity_saldo_pt: {}
                 };
             }
 
-            sucursalTotals[sucursalId].quantity_saldo += saldoVal;
+            const unit = sp.product?.unit?.siglas || 'SIN UNIDAD';
+            addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo, unit, saldoVal);
             if (catType === 'RAW_MATERIAL') {
-                sucursalTotals[sucursalId].quantity_saldo_mp += saldoVal;
+                addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo_mp, unit, saldoVal);
             } else if (catType === 'FINISHED_PRODUCT') {
-                sucursalTotals[sucursalId].quantity_saldo_pt += saldoVal;
+                addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo_pt, unit, saldoVal);
             }
         }
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Consolidado Stock");
         const headers = [
+            "N.º",
             "Código",
             "Detalle",
             "Unidad",
@@ -723,8 +750,8 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         const mode = filterLines.find(filter => /^Tipo filtrado:/i.test(filter))?.replace(/^Tipo filtrado:\s*/i, '') || '';
         writeInventoryReportHeader(worksheet, {
             workbook,
-            totalColumns: 4,
-            title: 'CONSOLIDADO DE INVENTARIO (MATERIA PRIMA Y PRODUCTOS TERMINADOS)',
+            totalColumns: 5,
+            title: 'CONSOLIDADO DE STOCK (MP Y PT) RECUMET',
             context: [`CORTE: ${cutoff}`, `MODO: ${mode}`].filter(Boolean).join(' | '),
             selectedFilters,
         });
@@ -736,24 +763,30 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             cell.border = thinBorder;
         });
         headerRow.height = 24;
+        if (!kardexes.length) {
+            const emptyRow = worksheet.addRow(['Sin resultados para los filtros seleccionados.']);
+            worksheet.mergeCells(`A${emptyRow.number}:E${emptyRow.number}`);
+            emptyRow.getCell(1).font = { name: 'Arial', size: 10, italic: true, color: { argb: REPORT_COLORS.muted } };
+            emptyRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
+        }
 
-        let totalSaldo = 0;
-        let totalSaldoMp = 0;
-        let totalSaldoPt = 0;
+        const totalSaldo = {};
+        const totalSaldoMp = {};
+        const totalSaldoPt = {};
 
         let currentCategoryName = "";
-        let categorySum = 0;
+        let categorySum = {};
 
         const addCategoryFooterExcel = (catName, sumVal) => {
             const catFooterRow = worksheet.addRow([
                 `TOTAL ${catName.toUpperCase()}`,
                 "",
                 "",
-                sumVal
+                "",
+                formatUnitTotals(sumVal, decimal)
             ]);
             catFooterRow.font = { name: 'Arial', size: 10, bold: true };
-            catFooterRow.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-            worksheet.mergeCells(`A${catFooterRow.number}:C${catFooterRow.number}`);
+            worksheet.mergeCells(`A${catFooterRow.number}:D${catFooterRow.number}`);
             
             for (let i = 1; i <= 4; i++) {
                 const cell = catFooterRow.getCell(i);
@@ -761,18 +794,19 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                 cell.border = thinBorder;
             }
             catFooterRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-            catFooterRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+            catFooterRow.getCell(5).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
         };
 
-        kardexes.forEach((kardex) => {
+        kardexes.forEach((kardex, index) => {
             const saldoVal = Number(kardex.dataValues.quantity_saldo || 0);
-            totalSaldo += saldoVal;
+            const unit = unitLabel(kardex.product);
+            addUnitQuantity(totalSaldo, unit, saldoVal);
 
             const catType = kardex.product?.category?.type;
             if (catType === 'RAW_MATERIAL') {
-                totalSaldoMp += saldoVal;
+                addUnitQuantity(totalSaldoMp, unit, saldoVal);
             } else if (catType === 'FINISHED_PRODUCT') {
-                totalSaldoPt += saldoVal;
+                addUnitQuantity(totalSaldoPt, unit, saldoVal);
             }
 
             const categoryName = kardex.product?.category?.name || "SIN CATEGORÍA";
@@ -782,12 +816,12 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                     addCategoryFooterExcel(currentCategoryName, categorySum);
                 }
                 currentCategoryName = categoryName;
-                categorySum = 0;
+                categorySum = {};
 
                 // Add group header row in Excel
                 const catRow = worksheet.addRow([categoryName.toUpperCase()]);
                 catRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
-                worksheet.mergeCells(`A${catRow.number}:D${catRow.number}`);
+                worksheet.mergeCells(`A${catRow.number}:E${catRow.number}`);
                 
                 for (let i = 1; i <= 4; i++) {
                     const cell = catRow.getCell(i);
@@ -797,20 +831,22 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
                 catRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
             }
 
-            categorySum += saldoVal;
+            addUnitQuantity(categorySum, unit, saldoVal);
 
             const row = worksheet.addRow([
+                index + 1,
                 kardex.product.cod,
                 kardex.product.name,
                 kardex.product.unit.siglas,
                 saldoVal,
             ]);
-            row.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-            row.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(5).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+            row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
             row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
-            row.getCell(3).alignment = { horizontal: 'center', vertical: 'middle' };
-            row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
-            for (let i = 1; i <= 4; i++) {
+            row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
+            row.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
+            row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
+            for (let i = 1; i <= 5; i++) {
                 row.getCell(i).border = thinBorder;
             }
         });
@@ -825,8 +861,8 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         // Add Resumen por Sucursal Section
         const subTitleRow = worksheet.addRow(["RESUMEN POR SUCURSAL"]);
         subTitleRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
-        worksheet.mergeCells(`A${subTitleRow.number}:D${subTitleRow.number}`);
-        for (let column = 1; column <= 4; column++) {
+        worksheet.mergeCells(`A${subTitleRow.number}:E${subTitleRow.number}`);
+        for (let column = 1; column <= 5; column++) {
             const cell = subTitleRow.getCell(column);
             cell.fill = solidFill(REPORT_COLORS.subheader);
             cell.border = thinBorder;
@@ -834,9 +870,10 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
 
         const sucHeaderRow = worksheet.addRow([
             "SUCURSAL",
-            "TOTAL (MP)",
-            "TOTAL (PT)",
-            "TOTAL GENERAL"
+            "TOTAL MP POR UNIDAD",
+            "TOTAL PT POR UNIDAD",
+            "TOTAL POR UNIDAD",
+            ""
         ]);
         sucHeaderRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
         sucHeaderRow.eachCell((cell) => {
@@ -850,49 +887,47 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
         sucursalesList.forEach((st) => {
             const row = worksheet.addRow([
                 st.name.toUpperCase(),
-                st.quantity_saldo_mp,
-                st.quantity_saldo_pt,
-                st.quantity_saldo
+                formatUnitTotals(st.quantity_saldo_mp, decimal),
+                formatUnitTotals(st.quantity_saldo_pt, decimal),
+                formatUnitTotals(st.quantity_saldo, decimal),
+                ""
             ]);
             row.font = { name: 'Arial', size: 10 };
-            row.getCell(2).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-            row.getCell(3).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-            row.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
             row.getCell(4).font = { name: 'Arial', size: 10, bold: true };
             row.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-            row.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
-            row.getCell(3).alignment = { horizontal: 'right', vertical: 'middle' };
-            row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
-            for (let i = 1; i <= 4; i++) {
+            row.getCell(2).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+            row.getCell(3).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+            row.getCell(4).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+            for (let i = 1; i <= 5; i++) {
                 row.getCell(i).border = thinBorder;
             }
         });
 
         // Add Consolidado General Row
+        if (kardexes.length) {
         const consRow = worksheet.addRow([
             "CONSOLIDADO GENERAL",
-            totalSaldoMp,
-            totalSaldoPt,
-            totalSaldo
+            formatUnitTotals(totalSaldoMp, decimal),
+            formatUnitTotals(totalSaldoPt, decimal),
+            formatUnitTotals(totalSaldo, decimal),
+            ""
         ]);
         consRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.header } };
-        for (let i = 1; i <= 3; i++) {
+        for (let i = 1; i <= 4; i++) {
             const cell = consRow.getCell(i);
             cell.fill = solidFill(REPORT_COLORS.total);
             cell.border = thinBorder;
         }
-        consRow.getCell(2).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-        consRow.getCell(3).numFormat = `#,##0.${'0'.repeat(decimal)}`;
-
         consRow.getCell(4).fill = solidFill(REPORT_COLORS.grandTotal);
         consRow.getCell(4).font = { name: 'Arial', size: 10, bold: true, color: { argb: REPORT_COLORS.text } };
-        consRow.getCell(4).numFormat = `#,##0.${'0'.repeat(decimal)}`;
+        consRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
         consRow.getCell(4).border = thinBorder;
+        consRow.getCell(5).border = thinBorder;
 
         consRow.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-        consRow.getCell(2).alignment = { horizontal: 'right', vertical: 'middle' };
-        consRow.getCell(3).alignment = { horizontal: 'right', vertical: 'middle' };
-        consRow.getCell(4).alignment = { horizontal: 'right', vertical: 'middle' };
+        consRow.getCell(2).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+        consRow.getCell(3).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true };
+        }
 
         // Auto-fit column widths
         worksheet.columns.forEach(column => {
@@ -904,7 +939,10 @@ const generateExcelReportsTotalStock = async (req = request, res = response) => 
             });
             column.width = Math.max(maxLen + 4, 12);
         });
-        worksheet.getColumn(1).width = Math.max(worksheet.getColumn(1).width || 0, 30);
+        worksheet.getColumn(1).width = Math.max(worksheet.getColumn(1).width || 0, 10);
+        worksheet.getColumn(3).width = Math.max(worksheet.getColumn(3).width || 0, 34);
+        worksheet.getColumn(4).width = Math.max(worksheet.getColumn(4).width || 0, 20);
+        worksheet.getColumn(5).width = Math.max(worksheet.getColumn(5).width || 0, 18);
 
         res.setHeader(
             "Content-Type",

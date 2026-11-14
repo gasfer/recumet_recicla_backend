@@ -1,6 +1,6 @@
 const { providerCommercialFilter } = require('../services/provider-commercial-filter');
 const { response, request } = require('express');
-const { Input, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
+const { Input, Provider, sequelize, History ,Stock,DetailsInput,AccountsPayable,AbonosAccountsPayable, Sequelize,Product,} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
@@ -13,6 +13,8 @@ const purchaseAudit = require('../services/purchase-audit.service');
 const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
 const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
+const { isKilogramUnit } = require('../helpers/kilogram-units');
+const { exactAdd } = require('../helpers/number-formatter');
 
 const { resolveAuthorizer } = require('../services/purchase-authorization.service');
 const { classifyPurchaseEdit } = require('../services/purchase-pricing-authorization-policy.service');
@@ -62,7 +64,27 @@ const normalizePurchasePayment = (inputData) => {
 };
 
 const validateProviderSucursal = async (providerId, sucursalId, transaction) => {
-    if (!providerId || !sucursalId) return;
+    if (!providerId) {
+        const error = new Error('Seleccione un proveedor activo para registrar la compra.');
+        error.status = 400;
+        throw error;
+    }
+    if (!sucursalId) {
+        const error = new Error('Seleccione una sucursal para registrar la compra.');
+        error.status = 400;
+        throw error;
+    }
+    const provider = await Provider.findOne({
+        where: { id: Number(providerId), status: true },
+        attributes: ['id', 'estado_registro'],
+        transaction,
+    });
+    if (!provider) {
+        const error = new Error('El proveedor no existe o está inactivo.');
+        error.status = 400;
+        throw error;
+    }
+    // El estado PENDIENTE es comercial; no impide registrar una compra.
     const allowed = await providerAvailability.isEnabled(providerId, sucursalId, transaction);
     if (!allowed) {
         const error = new Error('Este proveedor no está habilitado para comprar en la sucursal seleccionada.');
@@ -141,6 +163,36 @@ const getInputsPaginate = async (req = request, res = response) => {
                 with_pickup ? { with_pickup: with_pickup === 'SI' } : {},
             ],
         };
+        const providerTotalsFilter = {
+            association: 'provider',
+            required: true,
+            where: {
+                ...providerCommercialFilter(req.query.id_commercial_user, req.query.id_type_provider ? req.query.entity_type : null),
+                ...(id_type_provider ? { id_type_provider } : {}),
+            },
+            attributes: [],
+        };
+        const searchQuery = String(query ?? '').trim();
+        const additionalInputFilters = [];
+        const totalsWhere = { ...where, [Op.and]: [...where[Op.and], ...additionalInputFilters] };
+        const totalsIncludes = [providerTotalsFilter];
+        if (searchQuery && type) {
+            const searchValue = !Number.isNaN(Number(searchQuery))
+                ? { [Op.eq]: searchQuery }
+                : { [Op.iLike]: `%${searchQuery}%` };
+            if (type.includes('.')) {
+                const [association, field] = type.split('.');
+                const associationFilter = { association, required: true, attributes: [], where: { [field]: searchValue } };
+                if (association === 'provider') {
+                    providerTotalsFilter.where = { ...providerTotalsFilter.where, ...associationFilter.where };
+                } else {
+                    totalsIncludes.push(associationFilter);
+                }
+            } else {
+                additionalInputFilters.push({ [type]: searchValue });
+                totalsWhere[Op.and] = [...where[Op.and], ...additionalInputFilters];
+            }
+        }
         const optionsDb = {
             order: [getOperationalOrder({ field_sort, order, orderNew })],
             where,
@@ -164,14 +216,22 @@ const getInputsPaginate = async (req = request, res = response) => {
                 { association: 'accounts_payable', include:[ {association: 'abonosAccountsPayable', required:false,where: {status:true}}]},
             ]
         };
-        const searchQuery = String(query ?? '').trim();
         let inputs = await paginate(Input, page, limit, searchQuery ? type : '', searchQuery, optionsDb);
         for (const input of inputs.data) {
-            input.dataValues.total_quantity = input.detailsInput.reduce((acc, item) => acc + Number(item.quantity), 0);
+            input.dataValues.total_quantity = Number(input.detailsInput
+                .filter(item => isKilogramUnit(item.product?.unit?.siglas))
+                .reduce((sum, item) => exactAdd(sum, item.quantity || 0), '0'));
         }
-        const totalInput = await Input.sum('total', { where });
+        const totalInput = await Input.sum('total', { where: totalsWhere, include: totalsIncludes });
         const totalQuantity = await DetailsInput.sum('quantity', {
-            include: [{ association: 'input', attributes: [], where: whereSum }],
+            where: { status: 'ACTIVE', removed_at: null },
+            include: [{
+                association: 'input', attributes: [], where: { ...whereSum, [Op.and]: [...whereSum[Op.and], ...additionalInputFilters] },
+                include: totalsIncludes.map(item => ({ ...item, where: item.where ? { ...item.where } : undefined })),
+            }, {
+                association: 'product', required: true, attributes: [],
+                include: [{ association: 'unit', required: true, attributes: [], where: { siglas: { [Op.in]: ['KG', 'KGR', 'KILO', 'KILOGRAMO', 'KILOGRAMOS'] } } }],
+            }],
         });
         inputs.totals = { totalInput, totalQuantity };
         return res.status(200).json({

@@ -11,6 +11,7 @@ const router = Router();
 const expressfileUpload = require('express-fileupload');
 const { uploadCertificate } = require('../controllers/provider-certificate.controller');
 const { authorizeProviderAccess } = require('../middlewares/authorize-provider-access');
+const { authorizeCommercialProviderClassification } = require('../middlewares/authorize-commercial-provider-classification');
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 const management = require('../controllers/provider-management.controller');
 const drafts = require('../controllers/provider-draft.controller');
@@ -120,6 +121,7 @@ router.post('/:id/certificate', [validarJWT, authorizeProviderAccess('update'), 
 router.put('/:id/commercial-validation', [
     validarJWT,
     authorizeProviderAccess('update'),
+    authorizeCommercialProviderClassification,
     toUpperCaseConvert,
 ], commercialValidationProvider);
 

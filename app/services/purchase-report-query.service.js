@@ -3,9 +3,10 @@ const { Input, sequelize } = require('../database/config');
 const { Op } = require('sequelize');
 const moment = require('moment');
 const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('./purchase-report-filters.service');
+const { exactAdd, decimalMultiply } = require('../helpers/number-formatter');
 
 const REPORT_EXPORT_INPUT_ATTRIBUTES = [
-    'id', 'cod', 'date_voucher', 'type', 'type_registry', 'registry_number', 'total',
+    'id', 'cod', 'date_voucher', 'type', 'type_payment', 'type_registry', 'registry_number', 'total',
     'referral_sources', 'old_customer', 'with_pickup', 'id_provider',
 ];
 const REPORT_PAGE_INPUT_ATTRIBUTES = [
@@ -39,12 +40,12 @@ const includesForReport = (filters, { includeDetailModal = false } = {}) => [
 
 const addTotalQuantity = (inputs) => inputs.map((input) => {
     const kgDetails = (input.detailsInput || []).filter((item) => ['KG', 'KGR', 'KILO', 'KILOGRAMO', 'KILOGRAMOS'].includes(String(item.product?.unit?.siglas || '').trim().toUpperCase()));
-    const kgQuantity = kgDetails.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-    const kgAmount = kgDetails.reduce((sum, item) => sum + Number(item.total ?? Number(item.quantity || 0) * Number(item.cost || 0)), 0);
-    input.dataValues.total_quantity = (input.detailsInput || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const kgQuantity = kgDetails.reduce((sum, item) => exactAdd(sum, item.quantity || 0), '0');
+    const kgAmount = kgDetails.reduce((sum, item) => exactAdd(sum, item.total ?? decimalMultiply(item.quantity || 0, item.cost || 0)), '0');
+    input.dataValues.total_quantity = (input.detailsInput || []).reduce((sum, item) => exactAdd(sum, item.quantity || 0), '0');
     input.dataValues.kg_quantity = kgQuantity;
     input.dataValues.kg_total = kgAmount;
-    input.dataValues.kg_purchase_price = kgQuantity ? kgAmount / kgQuantity : null;
+    input.dataValues.kg_purchase_price = Number(kgQuantity) > 0 ? Number(kgAmount) / Number(kgQuantity) : null;
     return input;
 });
 
@@ -68,16 +69,16 @@ const queryPurchaseReportTotals = async (params) => {
         }],
     });
     const totals = inputs.reduce((result, input) => {
-        result.total_amount += Number(input.total || 0);
+        result.total_amount = exactAdd(result.total_amount, input.total || 0);
         for (const detail of input.detailsInput || []) {
             if (!['KG', 'KGR', 'KILO', 'KILOGRAMO', 'KILOGRAMOS'].includes(String(detail.product?.unit?.siglas || '').trim().toUpperCase())) continue;
             const quantity = Number(detail.quantity || 0);
-            result.kg_quantity += quantity;
-            result.kg_total += Number(detail.total ?? quantity * Number(detail.cost || 0));
+            result.kg_quantity = exactAdd(result.kg_quantity, quantity);
+            result.kg_total = exactAdd(result.kg_total, detail.total ?? decimalMultiply(quantity, detail.cost || 0));
         }
         return result;
     }, { total_amount: 0, kg_quantity: 0, kg_total: 0 });
-    totals.kg_purchase_price = totals.kg_quantity ? totals.kg_total / totals.kg_quantity : null;
+    totals.kg_purchase_price = Number(totals.kg_quantity) > 0 ? Number(totals.kg_total) / Number(totals.kg_quantity) : null;
     return totals;
 };
 
@@ -161,7 +162,7 @@ const queryPurchaseReportExport = async (params) => {
     const filters = normalizePurchaseReportFilters(params);
     const options = applyDetailFilter(applyReportSearch({
         where: buildPurchaseReportWhere(filters),
-        order: [['id_provider', 'ASC'], ['date_voucher', 'DESC'], [filters.fieldSort, filters.direction]],
+        order: [[filters.fieldSort, filters.direction], ['id', 'DESC']],
         attributes: REPORT_EXPORT_INPUT_ATTRIBUTES,
         include: includesForReport(filters),
     }, filters), filters);
@@ -177,12 +178,15 @@ const summarizeByProduct = (inputs) => {
             if (!product) return;
             const id = product.id;
             const current = rows.get(id) || { cod: product.cod, name: product.name, quantity: 0, total: 0 };
-            current.quantity += Number(detail.quantity || 0);
-            current.total += Number(detail.total || 0);
+            current.quantity = exactAdd(current.quantity, detail.quantity || 0);
+            current.total = exactAdd(current.total, detail.total || 0);
+            current.unit = detail.product?.unit?.siglas || current.unit || '';
             rows.set(id, current);
         });
     });
-    return [...rows.values()];
+    return [...rows.values()].sort((left, right) =>
+        String(left.cod || '').localeCompare(String(right.cod || ''), 'es', { numeric: true })
+    );
 };
 
 module.exports = { queryPurchaseReportPage, queryPurchaseReportTotals, addPurchaseReportTotals, queryPurchaseReportExport, summarizeByProduct, normalizePurchaseReportFilters };

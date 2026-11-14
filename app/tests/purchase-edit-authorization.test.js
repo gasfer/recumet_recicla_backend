@@ -35,6 +35,7 @@ test('edición de precio conserva creador y registra actor, motivo y autorizador
   t.mock.method(db.Input, 'update', async data => { payload = data; return [1]; });
   const stock = { id_product: 2, id_sucursal: 3, id_storage: 4, stock: 50, setDataValue(key, value) { this[key] = Number(value); }, save: async () => {} };
   t.mock.method(db.Stock, 'findOne', async () => stock);
+  t.mock.method(db.Stock, 'findAll', async () => [stock]);
   t.mock.method(db.History, 'create', async () => ({}));
   const events = [];
   t.mock.method(audit, 'createEvent', async event => { events.push(event); return event; });
@@ -82,6 +83,7 @@ test('asignación inicial guarda precios y trazabilidad sin motivo ni autorizado
   t.mock.method(db.Input, 'update', async data => { payload = data; return [1]; });
   const stock = { id_product: 2, id_sucursal: 3, id_storage: 4, stock: 50, setDataValue(key, value) { this[key] = Number(value); }, save: async () => {} };
   t.mock.method(db.Stock, 'findOne', async () => stock);
+  t.mock.method(db.Stock, 'findAll', async () => [stock]);
   t.mock.method(db.History, 'create', async () => ({}));
   const events = [];
   t.mock.method(audit, 'createEvent', async event => { events.push(event); return event; });

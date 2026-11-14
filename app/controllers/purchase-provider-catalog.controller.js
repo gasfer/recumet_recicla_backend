@@ -3,6 +3,7 @@ const { Provider, TypesProvider } = require('../database/config');
 const { Op } = require('sequelize');
 const { assignedBranches } = require('../services/provider-management.service');
 const providerAvailability = require('../services/provider-sucursal-availability.service');
+const { PROVIDER_TYPE_CODES } = require('../constants/provider-commercial.constants');
 async function purchaseProviderCatalog(req, res) {
   const id = String(req.query.id_type_provider || '');
   if (id && !/^[1-9]\d*$/.test(id)) return res.status(400).json({ ok: false, errors: [{ msg: 'Tipo de proveedor inválido.' }] });
@@ -26,7 +27,7 @@ async function purchaseProviderCatalog(req, res) {
         include: [{ association: 'branchAvailability', attributes: [], where: { id_sucursal: Number(branch), status: true }, required: true }],
         order: [['full_names', 'ASC'], ['id', 'ASC']], raw: true,
       }),
-      TypesProvider.findAll({ attributes: ['id', 'name', 'code'], order: [['id', 'ASC']], raw: true }),
+      TypesProvider.findAll({ attributes: ['id', 'name', 'code'], where: { status: true, code: { [Op.in]: PROVIDER_TYPE_CODES } }, order: [['code', 'ASC']], raw: true }),
     ]);
     res.json({ ok: true, providers, types });
   } catch (error) { console.error(error); res.status(500).json({ ok: false, errors: [{ msg: 'No se pudieron cargar los filtros de proveedores.' }] }); }

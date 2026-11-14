@@ -1,5 +1,5 @@
 const { request, response } = require("express")
-const { Output, sequelize, History ,Stock,OutputBig,DetailsOutput,AccountsReceivable,AbonosAccountsReceivable,Sequelize,DetailsCajaSmall,CajaSmall} = require('../database/config');
+const { Output, sequelize, History ,Stock,Product,OutputBig,DetailsOutput,AccountsReceivable,AbonosAccountsReceivable,Sequelize,DetailsCajaSmall,CajaSmall} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
@@ -10,6 +10,8 @@ const { hasAvailableStock } = require('../services/stock-availability.service');
 const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
 const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
+const { KILOGRAM_UNITS, isKilogramUnit } = require('../helpers/kilogram-units');
+const { exactAdd } = require('../helpers/number-formatter');
 
 const valuedKardex = new ValuedKardexService();
 
@@ -102,7 +104,9 @@ const getOutputsPaginate = async (req = request, res = response) => {
         };
         let outputs = await paginate(Output, page, limit, type, query, optionsDb); 
         for (const output of outputs.data) {
-            output.dataValues.total_quantity = output.detailsOutput.reduce((acc, item) => acc + Number(item.quantity), 0);
+            output.dataValues.total_quantity = Number((output.detailsOutput || [])
+                .filter(item => isKilogramUnit(item.product?.unit?.siglas))
+                .reduce((sum, item) => exactAdd(sum, item.quantity || 0), '0'));
         }
         const totalOutput = await Output.sum('total', {where});
         const totalQuantity = await DetailsOutput.sum('quantity', {
@@ -111,6 +115,13 @@ const getOutputsPaginate = async (req = request, res = response) => {
                     attributes: [],
                     association: 'output',
                     where: whereSum
+                },
+                {
+                    association: 'product', attributes: [], required: true,
+                    include: [{
+                        association: 'unit', attributes: [], required: true,
+                        where: { siglas: { [Op.in]: KILOGRAM_UNITS } },
+                    }],
                 }
             ]
         });
@@ -260,12 +271,20 @@ const newOutput = async (req = request, res = response) => {
                 transaction: t
             });
 
+            if (!stock) {
+                const product = await Product.findByPk(detail.id_product, { attributes: ['cod', 'name'], transaction: t });
+                listProductNotStock.push({
+                    msg: `${product ? `${product.cod} - ${product.name}` : `Producto ${detail.id_product}`} no tiene un registro activo de stock en la sucursal ${id_sucursal} y almacén ${id_storage}. Asígnele stock antes de registrar la venta.`,
+                });
+                continue;
+            }
+
             // ERROR STOCK INSUFICIENTE
             const availability = await hasAvailableStock(stock, detail.quantity, t);
             if (!availability.sufficient) {
 
                 listProductNotStock.push({
-                    msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`
+                    msg: `${stock.product.cod} - ${stock.product.name}: solicita ${detail.quantity}, pero hay ${availability.available_stock} disponibles (${availability.physical_stock} en stock físico y ${availability.stock_in_review} en revisión).`,
                 });
                 continue;
             }
@@ -440,11 +459,14 @@ const newOutput = async (req = request, res = response) => {
 
         console.log('ERROR VENTA:', error);
 
-        return res.status(500).json({
+        const status = error.statusCode || error.status || 500;
+        return res.status(status).json({
             ok: false,
-            errors: [{
-                msg: 'Ocurrió un imprevisto interno | hable con soporte'
-            }],
+            ...(error.code ? { code: error.code } : {}),
+            errors: [{ msg: status < 500 && error.message
+                ? error.message
+                : 'No se pudo registrar la venta; la operación fue revertida. Contacte a soporte si vuelve a ocurrir.' }],
+            ...(Array.isArray(error.details) ? { details: error.details } : {}),
         });
     }
 };
@@ -618,8 +640,7 @@ const updateOutput = async (req = request, res = response) => {
             if(!stock){
 
                 listProductNotStock.push({
-                    msg:
-                    'Producto sin stock registrado'
+                    msg: `El producto ${detail.id_product} no tiene un registro activo de stock en la sucursal ${id_sucursal} y almacén ${id_storage}. La venta no se modificó.`,
                 });
 
                 continue;
@@ -630,7 +651,7 @@ const updateOutput = async (req = request, res = response) => {
 
                 listProductNotStock.push({
                     msg:
-                    `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`
+                    `${stock.product.cod} - ${stock.product.name}: solicita ${detail.quantity}, pero hay ${availability.available_stock} disponibles (${availability.physical_stock} en stock físico y ${availability.stock_in_review} en revisión).`
                 });
 
                 continue;
@@ -666,47 +687,34 @@ const updateOutput = async (req = request, res = response) => {
             });
         }
 
-        // CREDITOS
-        if(
-            output_old.type_output==
-            'CREDITO' &&
+        // CREDITOS: mantener coherentes la venta, la cuenta por cobrar y su ingreso de caja.
+        const oldAccountsReceivable = output_old.accounts_receivable;
+        const oldAbonos = oldAccountsReceivable?.abonosAccountsReceivable || [];
+        const oldCashDescriptions = [
+            `POR VENTA #${output_old.cod}`,
+            ...(oldAccountsReceivable?.cod
+                ? oldAbonos.map(abono => `POR ABONO CREDITO #${oldAccountsReceivable.cod} ABONO #${abono.id}`)
+                : []),
+        ];
+        const hasMultipleCreditPayments = output_old.type_output === 'CREDITO' && oldAbonos.length > 1;
 
-            output_old?.accounts_receivable
-            ?.abonosAccountsReceivable
-            ?.length>1
-        ){
+        if (hasMultipleCreditPayments && Number(output_old.total) !== Number(output_data.total)) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: [{
+                msg: 'No se puede cambiar el total: esta venta tiene varios abonos registrados. Anule los abonos o conserve el total actual.',
+            }] });
+        }
+        if (hasMultipleCreditPayments && !output_data.pay_to_credit) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: [{
+                msg: 'No se puede convertir esta venta a contado porque tiene varios abonos aplicados a su cuenta por cobrar.',
+            }] });
+        }
 
-            if(
-                output_old.total !=
-                output_data.total
-            ){
-
-                await t.rollback();
-
-                return res.status(422).json({
-
-                    ok:false,
-
-                    errors:[
-                        {
-                            msg:
-                            'La venta no puede ser modificada, Se tienen varios abonos al crédito, y el total fue modificado'
-                        },
-                        {
-                            msg:
-                            'Anule los abonos a esta venta'
-                        }
-                    ]
-                });
-            }
-
-        }else{
-
-            const accountsReceivable_old =
-                await AccountsReceivable.findByPk(
-                    output_old?.accounts_receivable?.id,
-                    { transaction:t }
-                );
+        if (!hasMultipleCreditPayments) {
+            const accountsReceivable_old = oldAccountsReceivable
+                ? await AccountsReceivable.findByPk(oldAccountsReceivable.id, { transaction: t })
+                : null;
 
             if(accountsReceivable_old){
 
@@ -734,6 +742,9 @@ const updateOutput = async (req = request, res = response) => {
             let description_caja=
                 `POR VENTA #${output_old.cod}`;
 
+            let output_credit = null;
+            let newAbono = null;
+
             if(
                 output_data.pay_to_credit
             ){
@@ -742,7 +753,7 @@ const updateOutput = async (req = request, res = response) => {
                     Number(output_data.total)-
                     Number(output_data.on_account);
 
-                const output_credit=
+                output_credit=
                     await AccountsReceivable.create({
 
                     id_output,
@@ -794,37 +805,62 @@ const updateOutput = async (req = request, res = response) => {
                 await output_credit.save({
                     transaction:t
                 });
+
+                if (Number(output_data.on_account) > 0) {
+                    newAbono = await AbonosAccountsReceivable.create({
+                        id_account_receivable: output_credit.id,
+                        date_abono: new Date(),
+                        monto_abono: output_data.on_account,
+                        total_abonado: output_data.on_account,
+                        restante_credito: monto_restante,
+                        id_user: req.userAuth.id,
+                        status: true,
+                        type_payment: output_data.type_payment,
+                        account_input: output_data.account_output,
+                        id_bank: output_data.id_bank,
+                    }, { transaction: t });
+                    description_caja = `POR ABONO CREDITO #${output_credit.cod} ABONO #${newAbono.id}`;
+                }
             }
 
-            await DetailsCajaSmall.update({
-
-                type_payment:
-                    output_data.type_payment,
-
-                id_bank:
-                    output_data.id_bank,
-
-                account_payment:
-                    output_data.account_output,
-
-                monto:
-                    output_data.pay_to_credit
-                    ?output_data.on_account
-                    :output_data.total,
-
-                description:
-                    description_caja
-
-            },{
-
-                where:{
-                    description:
-                    `POR VENTA #${output_old.cod}`
-                },
-
-                transaction:t
-
+            const oldCashDetails = await DetailsCajaSmall.findAll({
+                where: { description: { [Op.in]: oldCashDescriptions }, status: true },
+                order: [['id', 'ASC']],
+                transaction: t,
+                lock: t.LOCK.UPDATE,
             });
+            const cashDetailData = {
+                date: new Date(),
+                type: 'INGRESO',
+                type_payment: output_data.type_payment,
+                id_bank: output_data.id_bank,
+                account_payment: output_data.account_output,
+                monto: output_data.pay_to_credit ? output_data.on_account : output_data.total,
+                description: description_caja,
+                status: true,
+            };
+
+            if (oldCashDetails.length) {
+                await oldCashDetails[0].update(cashDetailData, { transaction: t });
+                if (oldCashDetails.length > 1) {
+                    await DetailsCajaSmall.update({ status: false }, {
+                        where: { id: { [Op.in]: oldCashDetails.slice(1).map(detail => detail.id) } },
+                        transaction: t,
+                    });
+                }
+            } else {
+                let caja = await validaOpenCajaSmall(id_sucursal, req.userAuth.id);
+                if (!caja) {
+                    caja = await CajaSmall.create({
+                        date_apertura: new Date(),
+                        monto_apertura: 0,
+                        id_user: req.userAuth.id,
+                        id_sucursal,
+                        status: 'ABIERTO',
+                    }, { transaction: t });
+                }
+                await DetailsCajaSmall.create({ ...cashDetailData, id_caja_small: caja.id }, { transaction: t });
+            }
         }
 
         await History.create({
@@ -876,15 +912,14 @@ const updateOutput = async (req = request, res = response) => {
             error
         );
 
-        return res.status(500).json({
-
-            ok:false,
-
-            errors:[{
-                msg:
-                'Ocurrió un imprevisto interno | hable con soporte'
-            }]
-
+        const status = error.statusCode || error.status || 500;
+        return res.status(status).json({
+            ok: false,
+            ...(error.code ? { code: error.code } : {}),
+            errors: [{ msg: status < 500 && error.message
+                ? error.message
+                : 'No se pudo modificar la venta; los cambios fueron revertidos. Contacte a soporte si vuelve a ocurrir.' }],
+            ...(Array.isArray(error.details) ? { details: error.details } : {}),
         });
     }
 }

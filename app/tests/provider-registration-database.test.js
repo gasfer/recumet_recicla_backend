@@ -38,7 +38,7 @@ test('crear, editar y recuperar perfiles A a F en PostgreSQL sin conservar datos
     assert.equal(reloadedA.company.commercial_name, 'EMPRESA EDITADA');
     assert.equal(reloadedA.general_observations, 'SEDE EDITADA');
     assert.equal(reloadedA.frequency_mode, 'manual');
-    for (const code of ['B', 'C', 'D', 'E', 'F']) {
+    for (const code of ['B', 'C', 'D', 'F']) {
       const type = types.find(item => item.code === code);
       assert.ok(type, `Falta tipo ${code}`);
       const payload = {

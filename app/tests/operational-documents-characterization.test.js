@@ -15,6 +15,7 @@ function fixture(t) {
   const kardexWrites = [];
   const kardexState = { allowExplicitMovement: false, projectedBalance: null };
   const transaction = {
+    LOCK: { SHARE: 'SHARE', UPDATE: 'UPDATE' },
     commit: async () => writes.push('commit'),
     rollback: async () => writes.push('rollback'),
   };
@@ -42,6 +43,13 @@ function fixture(t) {
     assert.equal(tx, transaction);
     return stocks.find((stock) => stock.id_product === where.id_product);
   });
+  t.mock.method(db.Stock, 'findAll', async ({ where, transaction: tx }) => {
+    assert.equal(tx, transaction);
+    return stocks.filter(stock => stock.id_product === where.id_product
+      && stock.id_sucursal === where.id_sucursal && stock.id_storage === where.id_storage);
+  });
+  t.mock.method(db.Sucursal, 'findByPk', async id => ({ id: Number(id), status: true }));
+  t.mock.method(db.Storage, 'findByPk', async id => ({ id: Number(id), id_sucursal: 2, status: true }));
   t.mock.method(db.History, 'create', async (data, options) => {
     assert.equal(options.transaction, transaction);
     writes.push(data);
@@ -60,7 +68,7 @@ function fixture(t) {
   });
   const res = { status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } };
   return { writes, kardexWrites, kardexState, transaction, record, stocks, movements, res,
-    actor: { id: 9, full_names: 'Test' } };
+    actor: { id: 9, full_names: 'Test', role: 'ADMINISTRADOR' } };
 }
 
 test('crear traslado conserva documento, detalle, salida física e historial sin Kardex adicional', async (t) => {
@@ -200,6 +208,24 @@ test('clasificación rechaza cantidades de salida y entrada distintas antes de m
   assert.match(f.res.body.errors[0].msg, /debe ser igual/);
   assert.deepEqual(f.stocks.map(({ stock }) => stock), [20, 10]);
   assert.deepEqual(f.writes, ['rollback']);
+});
+
+test('clasificación sin fila Stock para el producto de origen devuelve validación y revierte', async (t) => {
+  const f = fixture(t);
+  f.stocks.splice(0, 1);
+  t.mock.method(db.Classified, 'findOne', async () => ({ number_registry: 'SFCL-00008' }));
+  t.mock.method(db.Classified, 'count', async () => 3);
+  t.mock.method(db.Classified, 'create', async data => f.record({ ...data, id: 12 }));
+  t.mock.method(db.DetailsClassified, 'create', async data => f.record(data));
+
+  await classifications.newClassified({ userAuth: f.actor, body: {
+    classified_data: { id_product: 1, quantity_product: 6, id_sucursal: 2, id_storage: 3, type_registry: 'SIN FICHA' },
+    classified_details: [{ id_product: 4, quantity: 6 }],
+  } }, f.res);
+
+  assert.equal(f.res.code, 422);
+  assert.match(f.res.body.errors[0].msg, /producto de origen/);
+  assert.equal(f.writes.at(-1), 'rollback');
 });
 
 test('clasificación normaliza decimales de JavaScript antes de comparar salida e ingresos', async (t) => {

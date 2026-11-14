@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const service = require('../services/provider-company.service');
 const providerService = require('../services/provider.service');
-const { TypesProvider } = require('../database/config');
+const { TypesProvider, Provider } = require('../database/config');
 
 const validCompany = {
   full_names: 'RECICLADORA ANDINA S.R.L.',
@@ -70,4 +70,45 @@ test('rechaza principales y elementos duplicados en colecciones', () => {
     { id_bank: 1, account_holder: 'A', account_number: '1', account_type: 'OTRA', currency: 'BOB', is_main: true },
     { id_bank: 1, account_holder: 'B', account_number: '2', account_type: 'OTRA', currency: 'BOB', is_main: true },
   ]), /cuenta principal/);
+});
+
+test('sincroniza el tipo comercial en todas las sedes vinculadas', async t => {
+  const sites = [{ id: 11, id_type_provider: 1 }, { id: 12, id_type_provider: 2 }];
+  const findSites = t.mock.method(Provider, 'findAll', async () => sites);
+  const updateSites = t.mock.method(Provider, 'update', async () => [2]);
+  const verifyPermission = t.mock.method(providerService, 'assertProviderTypeChangeAllowed', async () => {});
+  t.mock.method(providerService, 'getCurrentProviderType', async () => ({ code: 'C' }));
+  const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+
+  await service.syncCompanyProviderType({ id: 9 }, 3, { role: 'COMERCIAL' }, transaction);
+
+  assert.equal(findSites.mock.calls.length, 1);
+  assert.equal(verifyPermission.mock.calls.length, 2);
+  assert.deepEqual(updateSites.mock.calls[0].arguments[0], { id_type_provider: 3, estado_registro: 'VALIDADO' });
+  assert.deepEqual(updateSites.mock.calls[0].arguments[1].where, { id_provider_company: 9 });
+});
+
+test('no sincroniza tipos si el permiso de clasificación es denegado', async t => {
+  t.mock.method(Provider, 'findAll', async () => [{ id: 11, id_type_provider: 1 }]);
+  const updateSites = t.mock.method(Provider, 'update', async () => [1]);
+  t.mock.method(providerService, 'assertProviderTypeChangeAllowed', async () => { throw Object.assign(new Error('Solo Comercial o Administrador'), { statusCode: 403 }); });
+  t.mock.method(providerService, 'getCurrentProviderType', async () => ({ code: 'C' }));
+  const transaction = { LOCK: { UPDATE: 'UPDATE' } };
+
+  await assert.rejects(
+    () => service.syncCompanyProviderType({ id: 9 }, 3, { role: 'OPERADOR_BALANZA' }, transaction),
+    { statusCode: 403 },
+  );
+  assert.equal(updateSites.mock.calls.length, 0);
+});
+
+test('al cambiar un grupo a F deja sus sedes pendientes de validación comercial', async t => {
+  t.mock.method(Provider, 'findAll', async () => [{ id: 11, id_type_provider: 1 }]);
+  const updateSites = t.mock.method(Provider, 'update', async () => [1]);
+  t.mock.method(providerService, 'assertProviderTypeChangeAllowed', async () => {});
+  t.mock.method(providerService, 'getCurrentProviderType', async () => ({ code: 'F' }));
+
+  await service.syncCompanyProviderType({ id: 9 }, 6, { role: 'ADMINISTRADOR' }, { LOCK: { UPDATE: 'UPDATE' } });
+
+  assert.deepEqual(updateSites.mock.calls[0].arguments[0], { id_type_provider: 6, estado_registro: 'PENDIENTE' });
 });

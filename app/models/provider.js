@@ -60,6 +60,7 @@ module.exports = (sequelize, DataTypes) => {
     certificate_file_name: DataTypes.STRING,
     traceability_file_name: DataTypes.STRING,
     department: DataTypes.STRING,
+    city: DataTypes.STRING,
     zone: DataTypes.STRING,
     frequency_mode: DataTypes.STRING,
     service_mode: DataTypes.STRING,

@@ -1,11 +1,13 @@
 const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
 const { exactAdd, exactSubtract, exactCompare, exactMin, exactAbs, exactCeil, formatDecimalEsBo } = require('./number-formatter');
+const { getDecimalPlaces } = require('./decimals-value');
 const { evaluateReceiptTolerance } = require('../services/transfer-reception-tolerance.service');
 
 const isValidReceivedQuantity = (value) => {
     if (value === null || value === undefined || value === '') return false;
     const str = String(value).trim();
     if (!/^\d+(?:\.\d+)?$/.test(str)) return false;
+    if ((str.split('.')[1] || '').length > getDecimalPlaces()) return false;
     try {
         return exactCompare(str, 0) >= 0;
     } catch (_) {
@@ -19,6 +21,14 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
     }
 
     const detailsById = new Map();
+    const detailLabel = (detailId) => {
+        const detail = transferDetails.find((item) => Number(item.id) === Number(detailId));
+        const product = detail?.product;
+        const label = product?.name
+            ? `${product.cod ? `${product.cod} - ` : ''}${product.name}`
+            : `detalle ${detailId}`;
+        return label;
+    };
     for (const incomingDetail of incomingDetails || []) {
         const detailId = Number(incomingDetail?.id_detail);
 
@@ -27,7 +37,7 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
         }
 
         if (!isValidReceivedQuantity(incomingDetail.quantity_received)) {
-            return { errors: [`La cantidad recibida del detalle ${detailId} debe ser un número no negativo válido.`] };
+            return { errors: [`${detailLabel(detailId)}: ingrese una cantidad recibida no negativa con hasta ${getDecimalPlaces()} decimales.`] };
         }
 
         detailsById.set(detailId, {
@@ -39,7 +49,7 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
     const transferDetailIds = new Set(transferDetails.map((detail) => Number(detail.id)));
     for (const detailId of detailsById.keys()) {
         if (!transferDetailIds.has(detailId)) {
-            return { errors: [`El detalle ${detailId} no pertenece al traslado.`] };
+            return { errors: [`El detalle ${detailId} no pertenece al traslado seleccionado. Actualice la pantalla y vuelva a cargar la recepción.`] };
         }
     }
 
@@ -47,7 +57,8 @@ const buildReceivedDetails = (incomingDetails, transferDetails) => {
         const missingIds = transferDetails
             .map((detail) => Number(detail.id))
             .filter((detailId) => !detailsById.has(detailId));
-        return { errors: [`Debe registrar el peso recibido de todos los detalles. Faltan: ${missingIds.join(', ')}.`] };
+        const missingLabels = missingIds.map(detailLabel);
+        return { errors: [`Registre la cantidad recibida de todos los productos. Faltan: ${missingLabels.join('; ')}.`] };
     }
 
     const receivedDetails = transferDetails.map((detail) => {

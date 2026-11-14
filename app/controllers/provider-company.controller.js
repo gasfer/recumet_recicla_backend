@@ -6,7 +6,7 @@ const { ProviderCompany, ProviderCompanyDocument, sequelize } = require('../data
 const { buildProviderPrintableProfile } = require('../services/provider-printable-profile.service');
 const { sendReportPdf } = require('../services/pdf/report-pdf.service');
 const { validateCompanyPdfUpload, safeOriginalName } = require('../services/provider-company-document.service');
-const sendError = (res, error) => res.status(error.statusCode || 500).json({ ok: false, errors: [{ msg: error.statusCode ? error.message : 'No fue posible procesar la empresa matriz' }] });
+const sendError = (res, error) => res.status(error.statusCode || 500).json({ ok: false, errors: [{ msg: error.statusCode ? error.message : 'No fue posible procesar la empresa matriz', ...(error.field ? { field: error.field } : {}) }] });
 exports.list = async (req, res) => { try { res.json({ ok: true, ...(await service.list(req.query.query || '')) }); } catch (error) { sendError(res, error); } };
 exports.get = async (req, res) => { try { const company = await service.details(req.params.id); if (!company) return res.status(404).json({ ok: false, errors: [{ msg: 'La empresa matriz no existe' }] }); res.json({ ok: true, company }); } catch (error) { sendError(res, error); } };
 exports.printableProfile = async (req, res) => {
@@ -20,7 +20,7 @@ exports.printableProfile = async (req, res) => {
 };
 exports.create = async (req, res) => { try { res.status(201).json({ ok: true, company: await service.create(req.body, req.userAuth) }); } catch (error) { if (error.name === 'SequelizeUniqueConstraintError') error.statusCode = 400, error.message = 'El NIT ya está asociado a una empresa'; sendError(res, error); } };
 exports.update = async (req, res) => { try { res.json({ ok: true, company: await service.update(req.params.id, req.body, req.userAuth) }); } catch (error) { sendError(res, error); } };
-exports.setProviders = async (req, res) => { try { res.json({ ok: true, company: await service.setProviders(req.params.id, req.body.provider_ids) }); } catch (error) { sendError(res, error); } };
+exports.setProviders = async (req, res) => { try { res.json({ ok: true, company: await service.setProviders(req.params.id, req.body.provider_ids, req.userAuth) }); } catch (error) { sendError(res, error); } };
 exports.createSite = async (req, res) => { try { res.status(201).json({ ok: true, company: await service.createSite(req.params.id, req.body, req.userAuth) }); } catch (error) { sendError(res, error); } };
 exports.updateSite = async (req, res) => { try { res.json({ ok: true, site: await service.updateSite(req.params.id, req.params.providerId, req.body, req.userAuth) }); } catch (error) { sendError(res, error); } };
 exports.transferHeadquarters = async (req, res) => { try { res.json({ ok: true, company: await service.transferHeadquarters(req.params.id, req.params.providerId) }); } catch (error) { sendError(res, error); } };

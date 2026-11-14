@@ -81,7 +81,7 @@ test('las exportaciones proyectan únicamente los campos de sus documentos', asy
   await queryPurchaseReportExport({ filterBy: 'MONTH', date1: '10', date2: '2026', status: 'ACTIVE' });
 
   assert.deepEqual(attributes, [
-    'id', 'cod', 'date_voucher', 'type', 'type_registry', 'registry_number', 'total',
+    'id', 'cod', 'date_voucher', 'type', 'type_payment', 'type_registry', 'registry_number', 'total',
     'referral_sources', 'old_customer', 'with_pickup', 'id_provider',
   ]);
 });

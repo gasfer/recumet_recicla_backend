@@ -250,15 +250,15 @@ const queryKardexBalances = async ({ sucursales = [], storages = [], products = 
   return balanceMap;
 };
 
-const queryPendingTransfers = async ({ sucursales = [], storages = [], products = [], cutoffDate, isByStorage }) => {
-  const sucursalCond = sucursales.length > 0 ? { id_sucursal_received: { [Op.in]: sucursales } } : {};
-  const storageCond = storages.length > 0 ? { id_storage_received: { [Op.in]: storages } } : {};
+const queryPendingTransfers = async ({ destinationSucursales = [], products = [], cutoffDate, isByStorage }) => {
+  const sucursalCond = destinationSucursales.length > 0
+    ? { id_sucursal_received: { [Op.in]: destinationSucursales } }
+    : {};
   const productCond = products.length > 0 ? { id_product: { [Op.in]: products } } : {};
 
   const transferWhere = {
     [Op.and]: [
       sucursalCond,
-      storageCond,
       { date_send: { [Op.lte]: cutoffDate } },
       {
         [Op.or]: [
@@ -287,8 +287,10 @@ const queryPendingTransfers = async ({ sucursales = [], storages = [], products 
   const pendingMap = new Map();
 
   for (const tr of transfers) {
+    // The destination storage is selected during reception, so an unapproved
+    // transfer has no reliable warehouse assignment yet. Keep it in transit.
     const locKey = isByStorage
-      ? `loc_${tr.id_sucursal_received}_${tr.id_storage_received}`
+      ? `loc_${tr.id_sucursal_received}_transit`
       : `loc_${tr.id_sucursal_received}`;
 
     const details = tr.detailsTransfers || [];
@@ -483,13 +485,34 @@ const buildConsolidatedInventoryProjection = async (rawQuery = {}, options = {})
   const decimalPlaces = (typeof rawDecimals === 'number' && rawDecimals > 0) ? rawDecimals : 2;
 
   const locations = await resolveReportLocations({ sucursales, storages });
+  const destinationSucursales = [...new Set(locations.map(({ id_sucursal }) => Number(id_sucursal)).filter(Boolean))];
 
   const [balancesMap, pendingMap, holdsMap, catalogProducts] = await Promise.all([
     queryKardexBalances({ sucursales, storages, products, categories, cutoffDate: cutoffInfo.cutoffDate, isByStorage, providerQuery: rawQuery }),
-    queryPendingTransfers({ sucursales, storages, products, cutoffDate: cutoffInfo.cutoffDate, isByStorage }),
+    queryPendingTransfers({ destinationSucursales, products, cutoffDate: cutoffInfo.cutoffDate, isByStorage }),
     queryConciliationHolds({ sucursales, storages, products, cutoffDate: cutoffInfo.cutoffDate, isByStorage }),
     queryCatalogProducts({ products, categories, querySearch, orderField, orderDir }),
   ]);
+
+  if (isByStorage) {
+    const pendingTransitKeys = new Set([...pendingMap.keys()].map(key => key.slice(key.indexOf(':') + 1)));
+    const branchLocations = new Map();
+    for (const location of locations) {
+      if (!branchLocations.has(location.id_sucursal)) branchLocations.set(location.id_sucursal, location);
+    }
+    for (const [branchId, branchLocation] of branchLocations) {
+      const key = `loc_${branchId}_transit`;
+      if (!pendingTransitKeys.has(key)) continue;
+      locations.push({
+        key,
+        id_sucursal: branchId,
+        sucursal_name: branchLocation.sucursal_name,
+        id_storage: null,
+        storage_name: 'EN TRÁNSITO / SIN RECEPCIÓN',
+        label: `${branchLocation.sucursal_name} / EN TRÁNSITO (SIN RECEPCIÓN)`,
+      });
+    }
+  }
 
   const rawMaterialCategoriesMap = new Map();
   const finishedProductCategoriesMap = new Map();
@@ -508,7 +531,10 @@ const buildConsolidatedInventoryProjection = async (rawQuery = {}, options = {})
 
     for (const loc of locations) {
       const pKey = `${prodId}:${loc.key}`;
-      if (providerFiltered && !balancesMap.has(pKey)) {
+      // A product filtered by supplier can still be in transit to this
+      // location before its first receipt movement exists in the kardex.
+      // Keep that pending quantity visible while leaving registered stock at 0.
+      if (providerFiltered && !balancesMap.has(pKey) && !pendingMap.has(pKey)) {
         locQuantities[loc.key] = { registeredStock: 0, pendingReceipt: 0, inConciliation: 0 };
         continue;
       }

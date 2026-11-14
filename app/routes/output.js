@@ -3,6 +3,7 @@ const { validarJWT } = require('../middlewares/validators/validar-jwt');
 const toUpperCaseConvert = require('../middlewares/touppercase-convert');
 const { getOutputsPaginate, newOutput, anularOutput, updateOutput, getOutputFindOne } = require('../controllers/output.controller');
 const { getValidateCreate, validateIdOutput, getValidateUpdate } = require('../middlewares/validators/output');
+const { validateOutputCommandRequest } = require('../middlewares/validate-output-command');
 const { printOutputVoucher, generatePdfReports, generateExcelReports, generatePdfDetailsReports, generateExcelDetailsReports } = require('../controllers/reports/output.controller');
 const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
 const { authorizeProductCategoryAccess, detailProductIds } = require('../middlewares/authorize-product-category-access');
@@ -65,6 +66,7 @@ router.post('/', [
     validarJWT,
     toUpperCaseConvert,
     getValidateCreate,
+    validateOutputCommandRequest,
     authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.SALES, action: 'create', extractProductIds: detailProductIds('output_details') })
 ], newOutput);
 
@@ -88,6 +90,7 @@ router.put('/:id_output', [
     validarJWT,
     toUpperCaseConvert,
     getValidateUpdate,
+    validateOutputCommandRequest,
     authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.SALES, action: 'update', extractProductIds: detailProductIds('output_details') }),
 ], updateOutput);
 

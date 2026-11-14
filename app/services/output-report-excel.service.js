@@ -104,7 +104,7 @@ function buildOutputReportExcel({ title, sheetName, filters, company, columns, r
     styleBanner(emptyRow, REPORT_COLORS.alternateRow);
   } else if (Object.keys(totals).length) {
     const values = columns.map(column => Object.prototype.hasOwnProperty.call(totals, column.key) ? totals[column.key] : null);
-    values[0] = 'TOTAL GENERAL';
+    values[0] = totals.label || 'TOTAL GENERAL';
     const totalRow = sheet.addRow(values);
     totalRow.eachCell({ includeEmpty: true }, (cell, columnIndex) => {
       cell.fill = solidFill(REPORT_COLORS.grandTotal);

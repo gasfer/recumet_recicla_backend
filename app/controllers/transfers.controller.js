@@ -298,7 +298,7 @@ const receivedTransfer = async (req = request, res = response ) => {
         const { id_transfer, id_storage_received, observations_received, date_received, details, id_merma_product } = req.body;
         const transfer_received = await Transfers.findOne({
             where: { id:id_transfer, status:'PENDING' },
-            include: [{association: 'detailsTransfers'}], transaction: t,
+            include: [{association: 'detailsTransfers', include: [{ association: 'product', attributes: ['id', 'cod', 'name'] }]}], transaction: t,
             lock: { level: t.LOCK?.UPDATE || true, of: Transfers },
         });
         if (!transfer_received) {

@@ -11,12 +11,16 @@ const validationSchema =  {
         errorMessage: 'El objeto de output_data debe ser un objecto valido con datos de la venta'
     },
     'output_data.type_voucher': {
-        isEmpty: {  negated: true, errorMessage: "El tipo de voucher es obligatorio" },
+        isIn: { options: [['FACTURA', 'PREVENTA']], errorMessage: 'Seleccione FACTURA o PREVENTA como comprobante.' },
     },
     'output_data.type_registry': {
         isEmpty: {
             negated: true, errorMessage: "El tipo de registro es obligatorio",
         },
+    },
+    'output_data.date_output': {
+        notEmpty: { errorMessage: 'Indique la fecha y hora de la venta.' },
+        isISO8601: { bail: true, options: { strict: true }, errorMessage: 'La fecha de venta no es válida. Selecciónela nuevamente en el calendario.' },
     },
    'output_data.number_registry': {
     custom: {
@@ -37,15 +41,19 @@ const validationSchema =  {
             // ✅ validar duplicados
             return await registryNumberExistOutput(value, { req });
         }
-    }
+    },
+    isLength: { options: { max: 50 }, errorMessage: 'El número de ficha o boleta no puede superar 50 caracteres.' },
 },
     'output_data.id_scale': {
+        notEmpty: { errorMessage: 'Seleccione la balanza utilizada para el pesaje.' },
         custom: { options: idExistScala },
     },
     'output_data.id_sucursal': {
+        notEmpty: { errorMessage: 'No se identificó la sucursal de la venta. Actualice el contexto de trabajo.' },
         custom: { options: idExistSucursal },
     },
     'output_data.id_storage': {
+        notEmpty: { errorMessage: 'Seleccione el almacén de salida de los productos.' },
         custom: { options: idExistStorage },
     },
     'output_data.pay_to_credit': {
@@ -74,7 +82,7 @@ const validationSchema =  {
         },
     },
     'output_data.type_payment': {
-        isEmpty: {  negated: true, errorMessage: "El tipo de pago es obligatorio" },
+        isIn: { options: [['EFECTIVO', 'CHEQUE', 'TRANSFERENCIA']], errorMessage: 'Seleccione efectivo, cheque o transferencia como medio de pago.' },
     },
     'output_data.comments': {
         optional:{ options: {nullable: true}},

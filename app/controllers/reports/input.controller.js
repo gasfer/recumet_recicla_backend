@@ -1,4 +1,4 @@
-const { buildPurchaseExcel } = require('../../services/purchase-management-excel.service');
+const { buildPurchaseExcel, purchaseExcelContext } = require('../../services/purchase-management-excel.service');
 const { queryPurchaseReportExport, summarizeByProduct } = require('../../services/purchase-report-query.service');
 const { providerCommercialFilter } = require('../../services/provider-commercial-filter');
 const { buildOperationVoucher } = require('../../helpers/generator-pdf/operation-voucher.document');
@@ -16,7 +16,7 @@ const imagePath = getReportLogoPath();
 const ExcelJS = require('exceljs');
 const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
-const { excelNumberMask, formatDecimalEsBo } = require("../../helpers/number-formatter");
+const { excelNumberMask, formatDecimalEsBo, exactAdd } = require("../../helpers/number-formatter");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',hour: "numeric",
 minute: "numeric",
@@ -24,25 +24,36 @@ second: "numeric", };
 
 moment.locale('es');
 
+const unitQuantitySummary = (rows, decimal) => {
+    const totals = new Map();
+    rows.forEach(row => {
+        const unit = String(row.product?.unit || 'SIN UNIDAD').trim().toUpperCase();
+        totals.set(unit, exactAdd(totals.get(unit) || '0', row.dataValues?.suma_quantity || 0));
+    });
+    return [...totals.entries()].sort(([left], [right]) => left.localeCompare(right, 'es')).map(([unit, quantity]) => `${unit}: ${formatDecimalEsBo(Number(quantity), decimal)}`).join(' · ');
+};
+
 const generatePdfReports = async (req = request, res = response) => {
     try {
-        const { filterBy, date1, date2} = req.query;
         const decimal = await getNumberDecimal();
         const inputs = await returnDataInput(req.query);
+        const context = await purchaseExcelContext(req.query, req.userAuth);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
-        let total = 0;
-        let total_quantity = 0;
-        inputs.forEach(input => {
-            total += Number(input.total);
-            total_quantity += Number(input.total_quantity);
+        let total = '0';
+        let total_quantity = '0';
+        inputs.forEach((input, index) => {
+            total = exactAdd(total, input.total || 0);
+            total_quantity = exactAdd(total_quantity, input.total_quantity || 0);
             const tableData = [
+                {text:String(index + 1), fontSize:9, alignment: 'center'},
                 {text:input?.cod, fontSize:9}, 
                 {text:moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:input?.type_registry, fontSize:9}, 
                 {text:input?.registry_number, fontSize:9}, 
                 {text:input?.provider?.full_names, fontSize:9}, 
-                {text:input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '), fontSize:9}, 
+                {text:(input.detailsInput || []).map(detail => `${detail.product?.name || '-'} [${detail.quantity} ${detail.product?.unit?.siglas || ''}]`).join(', '), fontSize:9},
                 {text:input?.type, fontSize:9}, 
+                {text:input?.type_payment, fontSize:9},
                 {
                     text:
                         (input?.referral_sources ?? '-') + '\n' +
@@ -50,31 +61,22 @@ const generatePdfReports = async (req = request, res = response) => {
                         'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
                     fontSize: 9
                 },
-                {text:input?.provider?.type.name, fontSize:9}, 
+                {text:input?.provider?.type?.name || '', fontSize:9},
                 {text:formatDecimalEsBo(Number(input?.total_quantity), decimal), fontSize:9, alignment: 'right'},  
                 {text:formatDecimalEsBo(Number(input.total), decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            {colSpan: 9, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10, },
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
+            {colSpan: 11, text:`TOTAL GENERAL: ${NumeroALetras(Number(total))}`,fontSize:10, },
+            ...Array.from({ length: 10 }, () => ({ text: '' })),
             {text:`Kg. ${formatDecimalEsBo(Number(total_quantity), decimal)}`, bold: true, fontSize:10, alignment: 'right'},
             {text: `Bs. ${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
-        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
-        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE COMPRAS', paper: 'A4', orientation: 'landscape',
-            company: await resolveReportCompany(req.query.id_sucursal),
-            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            company: context.company,
+            filters: context.filters,
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'input-generatePdfReports.pdf');
@@ -99,20 +101,22 @@ const dataPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,50,40,55,90,'*',45,80,60,50,50],
+            widths: [26,48,68,44,52,82,'*',54,58,86,60,48,58],
             body: [
                 [
+                    {text:'N.º', fontSize:9,fillColor: '#eeeeee', bold:true},
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TIPO DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'NRO. DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'FECHA DE COMPRA', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'TIPO DE DOCUMENTO', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'N.º DE DOCUMENTO', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                     {text:'PROVEEDOR', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TIPO', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'REFERENCIA', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CONDICIÓN DE PAGO', fontSize:9,fillColor: '#eeeeee', bold:true},
+                    {text:'MEDIO DE PAGO', fontSize:9,fillColor: '#eeeeee', bold:true},
+                    {text:'REFERENCIA COMERCIAL', fontSize:9,fillColor: '#eeeeee', bold:true},
                     {text:'TIPO PROVEEDOR', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANT. KG', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CANTIDAD (KG)', fontSize:9,fillColor: '#eeeeee', bold:true},
+                    {text:'TOTAL Bs',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true},
                 ]
             ]   ,
             layout: 'lightHorizontalLines'
@@ -249,65 +253,24 @@ const generateExcelReports = async (req = request, res = response) => {
   try {
     const inputs = await returnDataInput(req.query);
     const decimal = await getNumberDecimal();
-    let input_data = [];
-
-    if (inputs.length == 0) {
-      input_data.push({
-        CÓDIGO: '',
-        FECHA_COMPRA: '',
-        TIPO_DOCUMENTO: '',
-        NRO_DOCUMENTO: '',
-        PROVEEDOR: '',
-        DETALLE: '',
-        TIPO: '',
-        REFERENCIA: '',
-        TIPO_PROVEEDOR: '',
-        CANT_KG: 0,
-        TOTAL: 0,
-      });
-    }
-
-    let total = 0;
-    let total_quantity = 0;
-
-    inputs.forEach(input => {
-      total += Number(input.total);
-      total_quantity += Number(input.total_quantity);
-
-      const tableData = {
+    const inputData = inputs.map((input, index) => ({
+        NRO_FILA: index + 1,
         CÓDIGO: input.cod,
         FECHA_COMPRA: moment(input?.date_voucher).format('DD/MM/YYYY HH:mm:ss'),
         TIPO_DOCUMENTO: input.type_registry,
         NRO_DOCUMENTO: input.registry_number,
         PROVEEDOR: input.provider?.full_names ?? '',
-        DETALLE: input.detailsInput.map(res => res.product.name + ` [${res.quantity} ${res.product.unit.siglas}]`).join(', '),
+        DETALLE: (input.detailsInput || []).map(detail => `${detail.product?.name || '-'} [${detail.quantity} ${detail.product?.unit?.siglas || ''}]`).join(', '),
         TIPO: input.type,
+        TIPO_PAGO: input.type_payment ?? '',
         REFERENCIA: (input?.referral_sources ?? '-') + '  ' +
                     'Cliente antiguo: ' + (input?.old_customer ? 'SI' : 'NO') + '  ' +
                     'Con recojo: ' + (input?.with_pickup ? 'SI' : 'NO'),
         TIPO_PROVEEDOR: input.provider?.type?.name ?? '',
         CANT_KG: Number(input.total_quantity),
         TOTAL: Number(input.total),
-      };
-      input_data.push(tableData);
-    });
-
-    // Totales finales (como número, no texto)
-    input_data.push({
-      CÓDIGO: '',
-      FECHA_COMPRA: '',
-      TIPO_DOCUMENTO: '',
-      NRO_DOCUMENTO: '',
-      PROVEEDOR: '',
-      DETALLE: '',
-      TIPO: '',
-      REFERENCIA: '',
-      TIPO_PROVEEDOR: '',
-      CANT_KG: Number(total_quantity),
-      TOTAL: Number(total),
-    });
-
-    const workbook = await buildPurchaseExcel(req.query, input_data.slice(0, -1), decimal, false);
+    }));
+    const workbook = await buildPurchaseExcel(req.query, inputData, decimal, false, req.userAuth);
 
         // Enviar Excel
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -330,40 +293,35 @@ const generateExcelReports = async (req = request, res = response) => {
 const returnDataInput = async params => {
     const inputs = await queryPurchaseReportExport(params);
     if (!inputs.length) throw Object.assign(new Error('No hay compras para los filtros seleccionados.'), { statusCode: 404 });
-    for (const input of inputs) input.total_quantity = input.dataValues.total_quantity;
+    for (const input of inputs) input.total_quantity = input.dataValues.kg_quantity;
     return inputs;
 };
 const generatePdfDetailsReports = async (req = request, res = response) => {
     try {
-        const {filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const detailsInput = await returnDataDetailsInput(req.query);
-        let dataPdf = dataDetailsPdfReturn(req.userAuth,date1,date2); //PDF 
-        let total = 0;
-        let index= 1;
-        detailsInput.forEach(detail => {
-            total = Number(total) + Number(detail.dataValues.suma_quantity);
+        const context = await purchaseExcelContext(req.query, req.userAuth);
+        let dataPdf = dataDetailsPdfReturn(req.userAuth, req.query.date1, req.query.date2); //PDF
+        detailsInput.forEach((detail, index) => {
             const tableData = [
-                {text:index, fontSize:9}, 
+                {text:index + 1, fontSize:9, alignment: 'center'},
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
+                {text:detail?.product.unit || '', fontSize:9},
                 {text:formatDecimalEsBo(Number(detail?.dataValues.suma_quantity), decimal), fontSize:9, alignment: 'right'}, 
             ];
             dataPdf[5].table.body.push(tableData);
-            index++;
         });
         dataPdf[5].table.body.push([
-            {colSpan: 2, text:`TOTAL`,fontSize:10},
-            {text:''},
-            {text:''},
-            {text: `${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
+            {colSpan: 3, text:'TOTALES POR UNIDAD',fontSize:10},
+            {text:''}, {text:''},
+            {text:'Por unidad', bold:true},
+            {text:unitQuantitySummary(detailsInput, decimal), bold: true, fontSize:10, alignment: 'right'}
         ]);
-        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
-        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
             title: 'REPORTE DE COMPRAS POR PRODUCTO', paper: 'A4', orientation: 'portrait',
-            company: await resolveReportCompany(id_sucursal),
-            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            company: context.company,
+            filters: context.filters,
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'input-generatePdfDetailsReports.pdf');
@@ -376,17 +334,18 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
 
 const generatePdfDetailsCPPReports = async (req = request, res = response) => {
     try {
-        const {filterBy, date1, date2, id_sucursal} = req.query;
         const decimal = await getNumberDecimal();
         const detailsInput = await returnDataDetailsInput(req.query);
-        let dataPdf = dataDetailsPdfDetailsCPPReturn(req.userAuth,date1,date2); //PDF
-        let total_import = 0, suma_quantity = 0; 
-        detailsInput.forEach(detail => {
-            suma_quantity = Number(suma_quantity) + Number(detail.dataValues.suma_quantity);
-            total_import = Number(total_import) + Number(detail.dataValues.suma_total);
+        const context = await purchaseExcelContext(req.query, req.userAuth);
+        let dataPdf = dataDetailsPdfDetailsCPPReturn(req.userAuth,req.query.date1,req.query.date2); //PDF
+        let total_import = '0';
+        detailsInput.forEach((detail, index) => {
+            total_import = exactAdd(total_import, detail.dataValues.suma_total || 0);
             const tableData = [
+                {text:index + 1, fontSize:9, alignment: 'center'},
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
+                {text:detail?.product.unit || '', fontSize:9},
                 {text:formatDecimalEsBo(Number(detail?.dataValues.cpp), decimal), fontSize:10, alignment: 'right', bold: true, fillColor: '#DFF0D8'}, 
                 {text:formatDecimalEsBo(Number(detail?.dataValues.suma_quantity), decimal), fontSize:9, alignment: 'right'}, 
                 {text:formatDecimalEsBo(Number(detail?.dataValues.suma_total), decimal), fontSize:9, alignment: 'right'}, 
@@ -394,18 +353,15 @@ const generatePdfDetailsCPPReports = async (req = request, res = response) => {
             dataPdf[5].table.body.push(tableData);
         });
         dataPdf[5].table.body.push([
-            {colSpan: 3, text:`TOTAL`, bold: true,fontSize:10, fillColor: '#eeeeee'},
-            {text:''},
-            {text:''},
-            {text: `${formatDecimalEsBo(Number(suma_quantity), decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'},
+            {colSpan: 4, text:'TOTALES POR UNIDAD', bold: true,fontSize:10, fillColor: '#eeeeee'},
+            {text:''}, {text:''}, {text:''}, {text:''},
+            {text:unitQuantitySummary(detailsInput, decimal), bold: true, fontSize:9, alignment: 'right', fillColor: '#eeeeee'},
             {text: `${formatDecimalEsBo(Number(total_import), decimal)}`, bold: true, fontSize:10, alignment: 'right', fillColor: '#eeeeee'}
         ]);
-        const formatDate1 = filterBy == 'MONTH' ? 'MM' : filterBy == 'YEAR' ? 'YYYY' : 'DD-MM-YYYY'; 
-        const formatDate2 = filterBy == 'MONTH' ? 'YYYY' : 'DD-MM-YYYY';
         const document = tabularReport(dataPdf[5].table, {
-            title: 'REPORTE DE COSTO PROMEDIO', paper: 'A4', orientation: 'portrait',
-            company: await resolveReportCompany(id_sucursal),
-            filters: ['Período: ' + [date1, date2].filter(Boolean).join(' / '), 'Impreso por: ' + (req.userAuth?.full_names || '')],
+            title: 'REPORTE DE COSTO PROMEDIO PONDERADO', paper: 'A4', orientation: 'portrait',
+            company: context.company,
+            filters: context.filters,
             date: new Intl.DateTimeFormat('es-BO', { timeZone: 'America/La_Paz', dateStyle: 'short', timeStyle: 'short' }).format(new Date()),
         });
         await sendReportPdf(res, document, 'input-generatePdfDetailsCPPReports.pdf');
@@ -417,18 +373,19 @@ const generatePdfDetailsCPPReports = async (req = request, res = response) => {
 }
 
 const dataDetailsPdfReturn = (auth,date1,date2) => [
-    ...buildStandardReportHeader({ title: 'COMPRAS TOTALIZADAS', auth, details: `Fecha reporte: ${date1} ${date2}` }),
+    ...buildStandardReportHeader({ title: 'REPORTE DE COMPRAS POR PRODUCTO', auth, details: `Fecha reporte: ${date1} ${date2}` }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [70,60,'*',70],
+            widths: [32,60,'*',60,75],
             body: [
                 [
-                    {text:'N', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'N.º', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'PRODUCTO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'UNIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                     {text:'CANTIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                 ]
             ]   ,
@@ -438,20 +395,22 @@ const dataDetailsPdfReturn = (auth,date1,date2) => [
 ];
 
 const dataDetailsPdfDetailsCPPReturn = (auth,date1,date2) => [
-    ...buildStandardReportHeader({ title: 'COMPRAS DETALLE COSTO PROMEDIO', auth, details: `Fecha reporte: ${date1} ${date2}` }),
+    ...buildStandardReportHeader({ title: 'REPORTE DE COSTO PROMEDIO PONDERADO', auth, details: `Fecha reporte: ${date1} ${date2}` }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [70,'*',70,70,70],
+            widths: [32,60,'*',55,75,70,75],
             body: [
                 [
+                    {text:'N.º', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'PRODUCTO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'COSTO PROMEDIO PONDERADO', fontSize:8 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'CANTIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TOTAL COMPRA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'UNIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'COSTO PROMEDIO (Bs/UNIDAD)', fontSize:8 ,fillColor: '#eeeeee', bold:true},
+                    {text:'CANTIDAD POR UNIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'TOTAL (Bs)', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                 ]
             ]   ,
             layout: 'lightHorizontalLines'
@@ -463,35 +422,14 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
     try {
         const detailsInput = await returnDataDetailsInput(req.query);
         const decimal = await getNumberDecimal();
-        let detailsInput_data = [];
-
-        if (detailsInput.length == 0) {
-            detailsInput_data.push({
-                CÓDIGO: '',
-                PRODUCTO: '',
-                CANTIDAD: 0
-            });
-        }
-
-        let total = 0;
-        detailsInput.forEach(detail => {
-            total += Number(detail?.dataValues.suma_quantity);
-            const tableData = {
+        const detailsInputData = detailsInput.map((detail, index) => ({
+                NRO_FILA: index + 1,
                 CÓDIGO: detail?.product.cod,
                 PRODUCTO: detail?.product.name,
+                UNIDAD: detail?.product.unit || '',
                 CANTIDAD: Number(detail?.dataValues.suma_quantity)
-            }
-            detailsInput_data.push(tableData);
-        });
-
-        // Total final
-        detailsInput_data.push({
-            CÓDIGO: '',
-            PRODUCTO: '',
-            CANTIDAD: Number(total)
-        });
-
-        const workbook = await buildPurchaseExcel(req.query, detailsInput_data.slice(0, -1), decimal, true);
+        }));
+        const workbook = await buildPurchaseExcel(req.query, detailsInputData, decimal, true, req.userAuth);
 
         // Enviar Excel
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -516,7 +454,7 @@ const returnDataDetailsInput = async params => {
     const summary = summarizeByProduct(inputs);
     if (!summary.length) throw Object.assign(new Error('No hay materiales comprados para los filtros seleccionados.'), { statusCode: 404 });
     return summary.map(row => ({
-        product: { cod: row.cod, name: row.name },
+        product: { cod: row.cod, name: row.name, unit: row.unit },
         dataValues: { suma_quantity: row.quantity, suma_total: row.total, cpp: row.quantity ? row.total / row.quantity : 0 },
     }));
 };

@@ -2,6 +2,7 @@
 const db = require('../database/config');
 const { Op, QueryTypes } = require('sequelize');
 const { normalizeQuery, buildQuery } = require('./provider-management-query');
+const { PROVIDER_TYPE_CODES } = require('../constants/provider-commercial.constants');
 
 function assignedBranches(user) {
   if (user?.role === 'ADMINISTRADOR') return null;
@@ -59,7 +60,7 @@ async function catalogs(user) {
     db.Sucursal.findAll(options(['id', 'name', 'city'], branchWhere)),
     db.Storage.findAll(options(['id', 'name', 'id_sucursal'], storageWhere)),
     db.Category.findAll(options(['id', 'name'])), db.Product.findAll(options(['id', 'name', 'id_category'])),
-    db.TypesProvider.findAll({ attributes: ['id', 'name', 'code'], where: { status: true }, order: [['id', 'ASC']], raw: true }),
+    db.TypesProvider.findAll({ attributes: ['id', 'name', 'code'], where: { status: true, code: { [Op.in]: PROVIDER_TYPE_CODES } }, order: [['code', 'ASC']], raw: true }),
     db.User.findAll(options(['id', 'full_names', 'role'])),
     activeProviderIds.length
       ? db.ProviderBranch.findAll(options(['id', 'department', 'city'], { status: true, id_provider: { [Op.in]: activeProviderIds } }))

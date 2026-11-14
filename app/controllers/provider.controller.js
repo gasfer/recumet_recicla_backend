@@ -4,6 +4,7 @@ const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const providerService = require('../services/provider.service');
 const providerFrequencyService = require('../services/provider-frequency.service');
+const { PROVIDER_TYPE_CODES } = require('../constants/provider-commercial.constants');
 
 const resolveGoogleMapsLink = async (req = request, res = response) => {
     try {
@@ -109,7 +110,7 @@ const newProvider = async (req = request, res = response ) => {
         if (status === 500) console.error(error);
         return res.status(status).json({
           ok: false,
-          errors: [{ msg: status === 500 ? 'Ocurrió un imprevisto interno | hable con soporte' : error.message }],
+          errors: [{ msg: status === 500 ? 'Ocurrió un imprevisto interno | hable con soporte' : error.message, ...(error.field ? { field: error.field } : {}) }],
         });
     }
 }
@@ -128,7 +129,7 @@ const updateProvider = async (req = request, res = response) => {
         if (status === 500) console.log(error);
         return res.status(status).json({
           ok: false,
-          errors: [{ msg: status === 500 ? 'Ocurrió un imprevisto interno | hable con soporte' : error.message }],
+          errors: [{ msg: status === 500 ? 'Ocurrió un imprevisto interno | hable con soporte' : error.message, ...(error.field ? { field: error.field } : {}) }],
         });
     }
 }
@@ -211,7 +212,10 @@ const deleteSectorProvider = async (req = request, res = response ) => {
 
 const getAllTypesProvider = async (req = request, res = response) => {
     try {
-        let typesProvider =  await TypesProvider.findAll({where:{status: true}});
+        const typesProvider = await TypesProvider.findAll({
+            where: { status: true, code: { [Op.in]: PROVIDER_TYPE_CODES } },
+            order: [['code', 'ASC']],
+        });
         return res.status(200).json({
             ok: true,
             typesProvider
@@ -275,8 +279,16 @@ const preRegisterProvider = async (req = request, res = response) => {
 
 const checkDuplicateProvider = async (req = request, res = response) => {
     try {
-        const provider = await providerService.findDuplicate(req.query);
-        return res.status(200).json({ ok: true, exists: Boolean(provider), ...(provider ? { provider } : {}) });
+        const matches = await providerService.findIdentityDuplicates({
+            full_names: req.query.full_names,
+            commercial_name: req.query.commercial_name,
+            number_document: req.query.number_document,
+            cellphone: req.query.cellphone,
+            exclude_provider_id: req.query.exclude_provider_id,
+            exclude_company_id: req.query.exclude_company_id,
+        });
+        const provider = matches.duplicate;
+        return res.status(200).json({ ok: true, exists: Boolean(provider), matches, ...(provider ? { provider } : {}) });
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No fue posible verificar duplicados' }] });

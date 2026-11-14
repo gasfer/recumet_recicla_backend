@@ -1,15 +1,20 @@
-const { Provider, ProviderBranch, ProviderContact, ProviderBankAccount, ProviderMaterial, Product, Bank, Sucursal, TypesProvider, sequelize } = require('../database/config');
-const { Op } = require('sequelize');
+const { Provider, ProviderCompany, ProviderBranch, ProviderContact, ProviderBankAccount, ProviderMaterial, Product, Bank, Sucursal, TypesProvider, sequelize } = require('../database/config');
+const { Op, QueryTypes } = require('sequelize');
 const { WHOLESALE_FIELDS, validateWholesaleProfile } = require('./provider-wholesale-profile');
 const { validateRegistrationFields } = require('./provider-registration-validation');
 const providerAvailability = require('./provider-sucursal-availability.service');
-const { isProviderCatalogValue } = require('../constants/provider-commercial.constants');
+const {
+  isProviderCatalogValue,
+  PROVIDER_TYPE_CODES,
+  COMMERCIAL_PROVIDER_TYPE_CODES,
+  UNCLASSIFIED_PROVIDER_TYPE_CODE,
+} = require('../constants/provider-commercial.constants');
 
 const COMMERCIAL_FIELDS = [
   'full_names', 'number_document', 'cellphone', 'id_sector', 'id_category', 'id_sucursal',
   'commercial_name', 'entity_type', 'origin_channel', 'relationship_status', 'negotiation_condition',
   'commercial_observations', 'requires_certificate', 'requires_traceability_report', 'service_mode',
-  'general_observations', 'frequency', 'id_commercial_user', 'department', 'zone',
+  'general_observations', 'frequency', 'id_commercial_user', 'department', 'city', 'zone',
   'certificate_file_name', 'traceability_file_name', 'frequency_mode', 'operating_departments', 'has_branches', ...WHOLESALE_FIELDS
 ];
 const PROFILE_FIELDS = [...new Set([...COMMERCIAL_FIELDS, 'id_sucursal', 'direction', 'mayorista', 'name_contact', 'companyContacts', 'workAreaOrPositionOrUnit', 'cellphone_contact', 'id_type_provider', 'status', 'operating_departments', 'has_branches'])];
@@ -22,13 +27,24 @@ const DETAIL_MODELS = {
 };
 
 const normalizeProviderDocument = value => String(value || '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
+const normalizeProviderName = value => String(value || '').toUpperCase().replace(/[^\p{L}\p{N}]/gu, '');
+const normalizeProviderPhone = value => {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.length === 11 && digits.startsWith('591') ? digits.slice(3) : digits;
+};
 
 class ProviderService {
   async createProfile(data, user) {
     await this.validateProfile(data);
     return sequelize.transaction(async (transaction) => {
+      await this.lockProviderIdentity(data, transaction);
+      await this.assertIdentityAvailable(data, {}, transaction);
+      await this.assertProviderTypeChangeAllowed(null, data.id_type_provider, user, transaction);
       const registrationBranch = await providerAvailability.assertBranchAccess(data.id_sucursal, user, transaction);
-      const provider = await Provider.create({ ...this.pick(data, PROFILE_FIELDS), id_sucursal: registrationBranch }, { transaction });
+      const profile = this.pick(data, PROFILE_FIELDS);
+      const type = data.id_type_provider ? await this.getCurrentProviderType(data.id_type_provider, transaction) : null;
+      if (type?.code === UNCLASSIFIED_PROVIDER_TYPE_CODE) profile.estado_registro = 'PENDIENTE';
+      const provider = await Provider.create({ ...profile, id_sucursal: registrationBranch }, { transaction });
       await providerAvailability.enableInitial(provider.id, registrationBranch, user, transaction);
 
       await this.syncMainBranch(provider, data, transaction);
@@ -73,13 +89,21 @@ class ProviderService {
       await this.lockProviderIdentity(data, transaction);
       const sucursal = await Sucursal.findByPk(branchId, { transaction });
       if (!sucursal || !sucursal.status) throw this.validationError('La sucursal seleccionada no existe o está inactiva');
-      const duplicate = await this.findDuplicate({ number_document: data.number_document, cellphone: data.cellphone }, transaction);
+      const duplicate = await this.findDuplicate({ full_names: data.full_names, number_document: data.number_document, cellphone: data.cellphone }, transaction);
       if (duplicate) {
-        throw Object.assign(new Error('Ya existe un proveedor con este CI/NIT o celular. Selecciónelo para continuar.'), {
+        const matchName = duplicate.full_names || duplicate.commercial_name || 'proveedor';
+        const message = duplicate.match_quality === 'APPROXIMATE'
+          ? `Encontramos una ficha con un nombre parecido (${matchName}). Verifique si ya existe antes de continuar.`
+          : `Ya existe una ficha coincidente (${matchName}). Selecciónela para continuar o complete un CI/NIT o celular distinto si se trata de otra persona o empresa.`;
+        throw Object.assign(new Error(message), {
           statusCode: 409,
           duplicateProvider: duplicate,
         });
       }
+      const unclassifiedType = await TypesProvider.findOne({
+        where: { code: UNCLASSIFIED_PROVIDER_TYPE_CODE, status: true }, transaction,
+      });
+      if (!unclassifiedType) throw this.validationError('No está disponible el tipo F para pre-registros sin clasificar');
       const provider = await Provider.create({
       full_names: data.full_names,
       number_document: data.number_document || null,
@@ -87,7 +111,7 @@ class ProviderService {
       id_sucursal: sucursal.id,
       id_sector: data.id_sector || null,
       id_category: data.id_category || null,
-      id_type_provider: 6,
+      id_type_provider: unclassifiedType.id,
       estado_registro: 'PENDIENTE',
       origin_channel: data.origin_channel || 'BALANZA',
       status: true,
@@ -98,26 +122,184 @@ class ProviderService {
     });
   }
 
-  async findDuplicate({ number_document, cellphone }, transaction) {
-    const matches = [];
+  async findIdentityDuplicates({ full_names, commercial_name, number_document, cellphone, corporate_cellphone, exclude_provider_id, exclude_company_id } = {}, transaction) {
     const document = normalizeProviderDocument(number_document);
-    if (document) matches.push(sequelize.where(
+    const phone = normalizeProviderPhone(cellphone || corporate_cellphone);
+    const names = [...new Set([full_names, commercial_name].map(normalizeProviderName).filter(Boolean))];
+    const phoneVariants = phone.length === 8 ? [phone, `591${phone}`] : [phone];
+    const providerId = Number(exclude_provider_id) || null;
+    const companyId = Number(exclude_company_id) || null;
+    const providerScope = (match) => ({ [Op.and]: [
+      match,
+      ...(providerId ? [{ id: { [Op.ne]: providerId } }] : []),
+      ...(companyId ? [{ [Op.or]: [{ id_provider_company: null }, { id_provider_company: { [Op.ne]: companyId } }] }] : []),
+    ] });
+    const companyScope = (match) => ({ [Op.and]: [
+      match,
+      ...(companyId ? [{ id: { [Op.ne]: companyId } }] : []),
+    ] });
+    const documentProviderMatch = document && sequelize.where(
       sequelize.fn('UPPER', sequelize.fn('REGEXP_REPLACE', sequelize.fn('TRIM', sequelize.col('number_document')), '[^[:alnum:]]', '', 'g')),
       document,
-    ));
-    if (cellphone) matches.push({ cellphone: String(cellphone) });
-    if (!matches.length) return null;
-    return Provider.findOne({
-      attributes: ['id', 'full_names', 'number_document', 'cellphone', 'estado_registro'],
-      where: { [Op.or]: matches }, order: [['id', 'ASC']], transaction,
-    });
+    );
+    const documentCompanyMatch = document && sequelize.where(
+      sequelize.fn('UPPER', sequelize.fn('REGEXP_REPLACE', sequelize.fn('TRIM', sequelize.col('number_document')), '[^[:alnum:]]', '', 'g')),
+      document,
+    );
+    const providerPhoneMatch = phone && sequelize.where(
+      sequelize.fn('REGEXP_REPLACE', sequelize.cast(sequelize.col('cellphone'), 'TEXT'), '[^[:digit:]]', '', 'g'),
+      { [Op.in]: phoneVariants },
+    );
+    const companyPhoneMatch = phone && sequelize.where(
+      sequelize.fn('REGEXP_REPLACE', sequelize.fn('TRIM', sequelize.col('corporate_cellphone')), '[^[:digit:]]', '', 'g'),
+      { [Op.in]: phoneVariants },
+    );
+    const normalizedName = field => sequelize.fn('UPPER', sequelize.fn('REGEXP_REPLACE', sequelize.fn('TRIM', sequelize.col(field)), '[^[:alnum:]]', '', 'g'));
+    const nameMatches = fields => ({ [Op.or]: fields.flatMap(field => names.map(name => sequelize.where(normalizedName(field), name))) });
+    const providerNameMatch = names.length ? nameMatches(['full_names', 'commercial_name']) : null;
+    const companyNameMatch = names.length ? nameMatches(['full_names', 'commercial_name']) : null;
+    const [documentProvider, documentCompany, phoneProvider, phoneCompany, nameProvider, nameCompany] = await Promise.all([
+      documentProviderMatch ? Provider.findOne({ attributes: ['id', 'full_names', 'number_document', 'cellphone'], where: providerScope(documentProviderMatch), order: [['id', 'ASC']], transaction }) : null,
+      documentCompanyMatch ? ProviderCompany.findOne({ attributes: ['id', 'full_names', 'number_document', 'corporate_cellphone'], where: companyScope(documentCompanyMatch), order: [['id', 'ASC']], transaction }) : null,
+      providerPhoneMatch ? Provider.findOne({ attributes: ['id', 'full_names', 'number_document', 'cellphone'], where: providerScope(providerPhoneMatch), order: [['id', 'ASC']], transaction }) : null,
+      companyPhoneMatch ? ProviderCompany.findOne({ attributes: ['id', 'full_names', 'number_document', 'corporate_cellphone'], where: companyScope(companyPhoneMatch), order: [['id', 'ASC']], transaction }) : null,
+      providerNameMatch ? Provider.findOne({ attributes: ['id', 'full_names', 'commercial_name', 'number_document', 'cellphone'], where: providerScope(providerNameMatch), order: [['id', 'ASC']], transaction }) : null,
+      companyNameMatch ? ProviderCompany.findOne({ attributes: ['id', 'full_names', 'commercial_name', 'number_document', 'corporate_cellphone'], where: companyScope(companyNameMatch), order: [['id', 'ASC']], transaction }) : null,
+    ]);
+    const exactNameMatch = nameCompany || nameProvider;
+    let similarNameMatch = null;
+    if (!exactNameMatch && names.length) {
+      try {
+        similarNameMatch = await this.findSimilarProviderName(names, { providerId, companyId }, transaction);
+      } catch (error) {
+        const databaseCode = error?.original?.code || error?.parent?.code;
+        if (databaseCode !== '42883') throw error;
+        // Keep exact CI/NIT, phone, and name checks available if pg_trgm has not
+        // been installed by the database migration yet. Approximate matching
+        // resumes automatically once the extension is present.
+        console.warn('pg_trgm no está disponible; se omite temporalmente la comparación aproximada de nombres.');
+      }
+    }
+    const serialize = (record, kind) => record ? {
+      ...(typeof record.get === 'function' ? record.get({ plain: true }) : record),
+      kind: record.kind || kind,
+    } : null;
+    const documentMatch = documentCompany || documentProvider;
+    const phoneMatch = phoneProvider || phoneCompany;
+    const nameMatch = exactNameMatch || similarNameMatch;
+    return {
+      number_document: serialize(documentMatch, documentCompany ? 'company' : 'provider'),
+      cellphone: serialize(phoneMatch, phoneProvider ? 'provider' : 'company'),
+      full_names: serialize(nameMatch, nameCompany ? 'company' : 'provider'),
+      duplicate: serialize(documentMatch || phoneMatch || (!document && !phone ? nameMatch : null), documentMatch ? (documentCompany ? 'company' : 'provider') : phoneMatch ? (phoneProvider ? 'provider' : 'company') : nameCompany ? 'company' : 'provider'),
+    };
+  }
+
+  async findSimilarProviderName(names, exclusions = {}, transaction) {
+    const candidates = [];
+    for (const name of names) {
+      if (name.length < 5) continue;
+      const rows = await sequelize.query(`
+        WITH candidates AS (
+          SELECT p.id, p.full_names, p.number_document, p.cellphone::text AS cellphone,
+                 p.commercial_name, 'provider'::text AS kind,
+                 GREATEST(
+                   similarity(UPPER(REGEXP_REPLACE(COALESCE(p.full_names, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   similarity(UPPER(REGEXP_REPLACE(COALESCE(p.commercial_name, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   word_similarity(UPPER(REGEXP_REPLACE(COALESCE(p.full_names, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   word_similarity(UPPER(REGEXP_REPLACE(COALESCE(p.commercial_name, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   word_similarity(:name, UPPER(REGEXP_REPLACE(COALESCE(p.full_names, ''), '[^[:alnum:]]', '', 'g'))),
+                   word_similarity(:name, UPPER(REGEXP_REPLACE(COALESCE(p.commercial_name, ''), '[^[:alnum:]]', '', 'g')))
+                 ) AS score
+          FROM providers p
+          WHERE (:provider_id IS NULL OR p.id <> :provider_id)
+            AND (:company_id IS NULL OR p.id_provider_company IS DISTINCT FROM :company_id)
+            AND (
+              UPPER(REGEXP_REPLACE(COALESCE(p.full_names, ''), '[^[:alnum:]]', '', 'g')) % :name
+              OR UPPER(REGEXP_REPLACE(COALESCE(p.commercial_name, ''), '[^[:alnum:]]', '', 'g')) % :name
+              OR UPPER(REGEXP_REPLACE(COALESCE(p.full_names, ''), '[^[:alnum:]]', '', 'g')) <% :name
+              OR UPPER(REGEXP_REPLACE(COALESCE(p.commercial_name, ''), '[^[:alnum:]]', '', 'g')) <% :name
+              OR :name <% UPPER(REGEXP_REPLACE(COALESCE(p.full_names, ''), '[^[:alnum:]]', '', 'g'))
+              OR :name <% UPPER(REGEXP_REPLACE(COALESCE(p.commercial_name, ''), '[^[:alnum:]]', '', 'g'))
+            )
+          UNION ALL
+          SELECT pc.id, pc.full_names, pc.number_document, pc.corporate_cellphone AS cellphone,
+                 pc.commercial_name, 'company'::text AS kind,
+                 GREATEST(
+                   similarity(UPPER(REGEXP_REPLACE(COALESCE(pc.full_names, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   similarity(UPPER(REGEXP_REPLACE(COALESCE(pc.commercial_name, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   word_similarity(UPPER(REGEXP_REPLACE(COALESCE(pc.full_names, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   word_similarity(UPPER(REGEXP_REPLACE(COALESCE(pc.commercial_name, ''), '[^[:alnum:]]', '', 'g')), :name),
+                   word_similarity(:name, UPPER(REGEXP_REPLACE(COALESCE(pc.full_names, ''), '[^[:alnum:]]', '', 'g'))),
+                   word_similarity(:name, UPPER(REGEXP_REPLACE(COALESCE(pc.commercial_name, ''), '[^[:alnum:]]', '', 'g')))
+                 ) AS score
+          FROM provider_companies pc
+          WHERE (:company_id IS NULL OR pc.id <> :company_id)
+            AND (
+              UPPER(REGEXP_REPLACE(COALESCE(pc.full_names, ''), '[^[:alnum:]]', '', 'g')) % :name
+              OR UPPER(REGEXP_REPLACE(COALESCE(pc.commercial_name, ''), '[^[:alnum:]]', '', 'g')) % :name
+              OR UPPER(REGEXP_REPLACE(COALESCE(pc.full_names, ''), '[^[:alnum:]]', '', 'g')) <% :name
+              OR UPPER(REGEXP_REPLACE(COALESCE(pc.commercial_name, ''), '[^[:alnum:]]', '', 'g')) <% :name
+              OR :name <% UPPER(REGEXP_REPLACE(COALESCE(pc.full_names, ''), '[^[:alnum:]]', '', 'g'))
+              OR :name <% UPPER(REGEXP_REPLACE(COALESCE(pc.commercial_name, ''), '[^[:alnum:]]', '', 'g'))
+            )
+        )
+        SELECT id, full_names, number_document, cellphone, commercial_name, kind, score
+        FROM candidates
+        WHERE score >= 0.48
+        ORDER BY score DESC, id ASC
+        LIMIT 1
+      `, {
+        replacements: { name, provider_id: exclusions.providerId || null, company_id: exclusions.companyId || null },
+        type: QueryTypes.SELECT,
+        transaction,
+        logging: false,
+      });
+      if (rows[0]) candidates.push({ ...rows[0], match_quality: 'APPROXIMATE' });
+    }
+    return candidates.sort((left, right) => Number(right.score) - Number(left.score))[0] || null;
+  }
+
+  async findDuplicate(data, transaction) {
+    const duplicates = await this.findIdentityDuplicates(data, transaction);
+    return duplicates.duplicate;
+  }
+
+  async assertIdentityAvailable(data, exclusions = {}, transaction) {
+    const duplicates = await this.findIdentityDuplicates({
+      number_document: data.number_document,
+      cellphone: data.cellphone || data.corporate_cellphone,
+      full_names: data.full_names,
+      commercial_name: data.commercial_name,
+      exclude_provider_id: exclusions.providerId,
+      exclude_company_id: exclusions.companyId,
+    }, transaction);
+    const messages = [];
+    if (duplicates.number_document) messages.push(`El CI/NIT ya está asignado a ${duplicates.number_document.full_names || 'otro proveedor'}`);
+    if (duplicates.cellphone) messages.push(`El celular ya está asignado a ${duplicates.cellphone.full_names || 'otro proveedor'}`);
+    const hasDocumentOrPhone = normalizeProviderDocument(data.number_document)
+      || normalizeProviderPhone(data.cellphone || data.corporate_cellphone);
+    if (!hasDocumentOrPhone && duplicates.full_names) {
+      const matchName = duplicates.full_names.full_names || duplicates.full_names.commercial_name || 'proveedor';
+      messages.push(duplicates.full_names.match_quality === 'APPROXIMATE'
+        ? `El nombre o razón social es parecido al de una ficha existente (${matchName})`
+        : `El nombre o razón social ya figura en una ficha de ${matchName}`);
+    }
+    if (!messages.length) return;
+    const error = new Error(messages.join('. '));
+    error.statusCode = 409;
+    error.field = duplicates.number_document ? 'number_document'
+      : duplicates.cellphone ? (data.corporate_cellphone ? 'corporate_cellphone' : 'cellphone')
+      : 'full_names';
+    throw error;
   }
 
   async lockProviderIdentity(data, transaction) {
-    const keys = [
+    const keys = [...new Set([
       normalizeProviderDocument(data.number_document) && `provider-document:${normalizeProviderDocument(data.number_document)}`,
-      data.cellphone && `provider-phone:${String(data.cellphone).replace(/\D/g, '')}`,
-    ].filter(Boolean).sort();
+      normalizeProviderPhone(data.cellphone || data.corporate_cellphone) && `provider-phone:${normalizeProviderPhone(data.cellphone || data.corporate_cellphone)}`,
+      ...[data.full_names, data.commercial_name].map(normalizeProviderName).filter(Boolean).map(name => `provider-name:${name}`),
+    ].filter(Boolean))].sort();
     for (const key of keys) {
       await sequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', {
         replacements: { key }, transaction, logging: false,
@@ -126,12 +308,20 @@ class ProviderService {
   }
 
   async validateCommercial(providerId, data, user) {
+    if (!this.canManageProviderClassification(user)) throw this.classificationPermissionError();
     const typeId = Number(data.id_type_provider);
-    if (!Number.isInteger(typeId) || typeId < 1 || typeId > 5) throw new Error('La clasificación comercial debe ser una categoría entre A y E');
-    if (typeId === 1) this.validateTypeA(data);
     return sequelize.transaction(async (transaction) => {
+      const type = Number.isInteger(typeId) && typeId > 0
+        ? await TypesProvider.findOne({ where: { id: typeId, status: true }, attributes: ['id', 'code'], transaction })
+        : null;
+      if (!type || !COMMERCIAL_PROVIDER_TYPE_CODES.includes(type.code)) {
+        throw this.validationError('La clasificación comercial debe ser A, B, C o D');
+      }
+      if (type.code === 'A') this.validateTypeA(data);
       const provider = await this.requireProvider(providerId, transaction);
-      await provider.update({ ...this.pick(data, COMMERCIAL_FIELDS), id_type_provider: typeId, estado_registro: 'VALIDADO', id_commercial_user: user?.id || user }, { transaction });
+      await this.lockProviderIdentity(provider, transaction);
+      await this.assertIdentityAvailable(provider, { providerId: provider.id, companyId: provider.id_provider_company }, transaction);
+      await provider.update({ ...this.pick(data, COMMERCIAL_FIELDS), id_type_provider: type.id, estado_registro: 'VALIDADO', id_commercial_user: user?.id || user }, { transaction });
       if (Array.isArray(data.enabled_sucursal_ids)) {
         await providerAvailability.syncAuthorized(provider.id, data.enabled_sucursal_ids, user, transaction);
       }
@@ -143,8 +333,17 @@ class ProviderService {
   async updateProfile(providerId, data, user) {
     return sequelize.transaction(async (transaction) => {
       const provider = await this.requireProvider(providerId, transaction);
+      await this.lockProviderIdentity(data, transaction);
+      await this.assertIdentityAvailable(data, { providerId: provider.id, companyId: provider.id_provider_company }, transaction);
+      if (Object.prototype.hasOwnProperty.call(data, 'id_type_provider')) {
+        await this.assertProviderTypeChangeAllowed(provider.id_type_provider, data.id_type_provider, user, transaction);
+      }
       await this.validateProfile({ ...data, id_type_provider: data.id_type_provider ?? provider.id_type_provider }, transaction);
       const profileData = this.pick(data, PROFILE_FIELDS);
+      const nextType = data.id_type_provider ? await this.getCurrentProviderType(data.id_type_provider, transaction) : null;
+      if (nextType && Number(data.id_type_provider) !== Number(provider.id_type_provider)) {
+        profileData.estado_registro = nextType.code === UNCLASSIFIED_PROVIDER_TYPE_CODE ? 'PENDIENTE' : 'VALIDADO';
+      }
       delete profileData.id_sucursal;
       await provider.update(profileData, { transaction });
       if (Array.isArray(data.enabled_sucursal_ids)) {
@@ -345,9 +544,8 @@ class ProviderService {
   async validateProfile(data, transaction) {
     validateRegistrationFields(data);
     const type = data.id_type_provider
-      ? await TypesProvider.findByPk(data.id_type_provider, { attributes: ['code'], transaction })
+      ? await this.getCurrentProviderType(data.id_type_provider, transaction)
       : null;
-    if (data.id_type_provider && !type) throw this.validationError('El tipo de proveedor no existe');
     if (type && data.full_names != null) {
       for (const field of ['department', 'id_commercial_user', 'origin_channel', 'relationship_status', 'frequency', 'service_mode']) {
         if (!this.hasValue(data[field])) throw this.validationError(`El campo ${field} es obligatorio`);
@@ -359,6 +557,38 @@ class ProviderService {
       if (type.code === 'B' && !(data.contacts || []).some(item => item.status !== false)) throw this.validationError('Registre al menos un contacto comercial');
     }
     validateWholesaleProfile(data, type?.code);
+  }
+
+  canManageProviderClassification(user) {
+    return ['COMERCIAL', 'ADMINISTRADOR'].includes(user?.role);
+  }
+
+  async getCurrentProviderType(typeId, transaction) {
+    const type = await TypesProvider.findOne({
+      where: { id: Number(typeId), status: true },
+      attributes: ['id', 'code'],
+      transaction,
+    });
+    if (!type) throw this.validationError('El tipo de proveedor no existe o está inactivo');
+    if (!PROVIDER_TYPE_CODES.includes(type.code)) {
+      throw this.validationError('El tipo de proveedor no pertenece al catálogo vigente (A, B, C, D, F)');
+    }
+    return type;
+  }
+
+  async assertProviderTypeChangeAllowed(currentTypeId, nextTypeId, user, transaction) {
+    const [currentType, nextType] = await Promise.all([
+      currentTypeId ? TypesProvider.findByPk(currentTypeId, { attributes: ['code'], transaction }) : null,
+      nextTypeId ? TypesProvider.findByPk(nextTypeId, { attributes: ['code'], transaction }) : null,
+    ]);
+    if ((currentType?.code || null) === (nextType?.code || null)) return;
+    if (this.canManageProviderClassification(user)) return;
+    if (!currentType && nextType?.code === UNCLASSIFIED_PROVIDER_TYPE_CODE) return;
+    throw this.classificationPermissionError();
+  }
+
+  classificationPermissionError() {
+    return Object.assign(new Error('Solo el Área Comercial puede asignar o cambiar la clasificación del proveedor.'), { statusCode: 403 });
   }
 
   hasValue(value) {

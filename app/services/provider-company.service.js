@@ -59,6 +59,13 @@ class ProviderCompanyService {
     const payload = data.company || data;
     this.validateCompany(payload);
     return sequelize.transaction(async (transaction) => {
+      const identity = { ...payload, cellphone: payload.corporate_cellphone };
+      await providerService.lockProviderIdentity(identity, transaction);
+      await providerService.assertIdentityAvailable(identity, {}, transaction);
+      if (payload.id_type_provider) {
+        await providerService.getCurrentProviderType(payload.id_type_provider, transaction);
+        await providerService.assertProviderTypeChangeAllowed(null, payload.id_type_provider, user, transaction);
+      }
       const company = await ProviderCompany.create(this.pick(payload, COMPANY_FIELDS), { transaction });
       if (data.headquarters) await this.createSiteRecord(company, { ...data.headquarters, site_role: 'HEADQUARTERS' }, transaction, user);
       return this.details(company.id, transaction);
@@ -70,11 +77,38 @@ class ProviderCompanyService {
     this.validateCompany(payload);
     return sequelize.transaction(async (transaction) => {
       const company = await this.requireCompany(id, transaction, true);
-      await company.update(this.pick(payload, COMPANY_FIELDS), { transaction });
+      const headquartersTypeId = data.headquarters?.id_type_provider;
+      const nextTypeId = payload.id_type_provider ?? headquartersTypeId;
+      if (payload.id_type_provider && headquartersTypeId
+        && Number(payload.id_type_provider) !== Number(headquartersTypeId)) {
+        throw this.error('El tipo de proveedor de la empresa y su casa matriz debe coincidir', 400);
+      }
+      const identity = { ...payload, cellphone: payload.corporate_cellphone };
+      await providerService.lockProviderIdentity(identity, transaction);
+      await providerService.assertIdentityAvailable(identity, { companyId: company.id }, transaction);
+      if (nextTypeId && Number(nextTypeId) !== Number(company.id_type_provider)) {
+        await providerService.getCurrentProviderType(nextTypeId, transaction);
+        await this.syncCompanyProviderType(company, nextTypeId, user, transaction);
+      }
+      const companyChanges = this.pick(payload, COMPANY_FIELDS);
+      if (nextTypeId) companyChanges.id_type_provider = Number(nextTypeId);
+      await company.update(companyChanges, { transaction });
       await this.validateRequiredDocuments(company, transaction);
       if (data.headquarters) {
         await this.validateSite(data.headquarters, false, company.operational_type, transaction);
         const site = await this.requireCompanySite(company.id, data.headquarters.id, transaction, true);
+        const headquartersIdentity = {
+          full_names: data.headquarters.full_names || company.commercial_name || company.full_names,
+          number_document: data.headquarters.number_document || company.number_document,
+          cellphone: data.headquarters.cellphone ?? site.cellphone,
+        };
+        await providerService.lockProviderIdentity(headquartersIdentity, transaction);
+        await providerService.assertIdentityAvailable(headquartersIdentity, { providerId: site.id, companyId: company.id }, transaction);
+        if (Object.prototype.hasOwnProperty.call(data.headquarters, 'id_type_provider')
+          && Number(data.headquarters.id_type_provider) !== Number(site.id_type_provider)) {
+          await providerService.getCurrentProviderType(data.headquarters.id_type_provider, transaction);
+          await providerService.assertProviderTypeChangeAllowed(site.id_type_provider, data.headquarters.id_type_provider, user, transaction);
+        }
         const siteData = this.pick(data.headquarters, SITE_FIELDS);
         delete siteData.id_sucursal;
         await site.update(siteData, { transaction });
@@ -92,6 +126,13 @@ class ProviderCompanyService {
       const company = await this.requireCompany(companyId, transaction, true);
       const role = data.site_role || 'BRANCH';
       if (role === 'HEADQUARTERS') await this.ensureNoHeadquarters(company.id, null, transaction);
+      const identity = {
+        full_names: data.full_names || company.commercial_name || company.full_names,
+        number_document: data.number_document || company.number_document,
+        cellphone: data.cellphone,
+      };
+      await providerService.lockProviderIdentity(identity, transaction);
+      await providerService.assertIdentityAvailable(identity, { companyId: company.id }, transaction);
       await this.createSiteRecord(company, { ...data, site_role: role }, transaction, user);
       await company.update({ has_branches: await this.hasBranches(company.id, transaction) }, { transaction });
       return this.details(company.id, transaction);
@@ -103,6 +144,19 @@ class ProviderCompanyService {
       const company = await this.requireCompany(companyId, transaction, true);
       await this.validateSite(data, false, company.operational_type, transaction);
       const provider = await this.requireCompanySite(company.id, providerId, transaction, true);
+      const identity = {
+        full_names: data.full_names || company.commercial_name || company.full_names,
+        number_document: data.number_document || provider.number_document || company.number_document,
+        cellphone: data.cellphone ?? provider.cellphone,
+      };
+      await providerService.lockProviderIdentity(identity, transaction);
+      await providerService.assertIdentityAvailable(identity, { providerId: provider.id, companyId: company.id }, transaction);
+      if (Object.prototype.hasOwnProperty.call(data, 'id_type_provider')
+        && Number(data.id_type_provider) !== Number(provider.id_type_provider)) {
+        await providerService.getCurrentProviderType(data.id_type_provider, transaction);
+        await this.syncCompanyProviderType(company, data.id_type_provider, user, transaction);
+        await company.update({ id_type_provider: Number(data.id_type_provider) }, { transaction });
+      }
       const siteData = this.pick(data, SITE_FIELDS);
       delete siteData.id_sucursal;
       await provider.update(siteData, { transaction });
@@ -201,15 +255,47 @@ class ProviderCompanyService {
     return result;
   }
 
-  async setProviders(id, providerIds) {
+  async syncCompanyProviderType(company, nextTypeId, user, transaction) {
+    const nextType = await providerService.getCurrentProviderType(nextTypeId, transaction);
+    const sites = await Provider.findAll({
+      where: { id_provider_company: company.id },
+      attributes: ['id', 'id_type_provider'],
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    for (const site of sites) {
+      if (Number(site.id_type_provider) !== Number(nextTypeId)) {
+        await providerService.assertProviderTypeChangeAllowed(site.id_type_provider, nextTypeId, user, transaction);
+      }
+    }
+    await Provider.update(
+      { id_type_provider: Number(nextTypeId), estado_registro: nextType.code === 'F' ? 'PENDIENTE' : 'VALIDADO' },
+      { where: { id_provider_company: company.id }, transaction },
+    );
+  }
+
+  async setProviders(id, providerIds, user) {
     return sequelize.transaction(async (transaction) => {
       const company = await this.requireCompany(id, transaction, true);
       const ids = [...new Set((providerIds || []).map(Number).filter(Number.isInteger))];
-      const count = await Provider.count({ where: { id: ids }, transaction });
-      if (count !== ids.length) throw this.error('Uno o más proveedores no existen', 400);
+      const providers = ids.length ? await Provider.findAll({ where: { id: ids }, attributes: ['id', 'id_type_provider'], transaction }) : [];
+      if (providers.length !== ids.length) throw this.error('Uno o más proveedores no existen', 400);
+      const companyType = company.id_type_provider
+        ? await providerService.getCurrentProviderType(company.id_type_provider, transaction)
+        : null;
+      if (company.id_type_provider) {
+        for (const provider of providers) {
+          if (Number(provider.id_type_provider) !== Number(company.id_type_provider)) {
+            await providerService.assertProviderTypeChangeAllowed(provider.id_type_provider, company.id_type_provider, user, transaction);
+          }
+        }
+      }
       await Provider.update({ id_provider_company: null, site_role: null }, { where: { id_provider_company: company.id }, transaction });
       if (ids.length) {
-        await Provider.update({ id_provider_company: company.id, site_role: 'BRANCH' }, { where: { id: ids }, transaction });
+        await Provider.update({ id_provider_company: company.id, site_role: 'BRANCH', ...(company.id_type_provider ? {
+          id_type_provider: company.id_type_provider,
+          estado_registro: companyType?.code === 'F' ? 'PENDIENTE' : 'VALIDADO',
+        } : {}) }, { where: { id: ids }, transaction });
         await Provider.update({ site_role: 'HEADQUARTERS' }, { where: { id: ids[0] }, transaction });
       }
       await company.update({ has_branches: ids.length > 1 }, { transaction });
@@ -220,16 +306,29 @@ class ProviderCompanyService {
   async createSiteRecord(company, data, transaction, user) {
     await this.validateSite(data, true, company.operational_type, transaction);
     const registrationBranch = await providerAvailability.assertBranchAccess(data.id_sucursal, user, transaction);
+    const typeId = data.id_type_provider || company.id_type_provider;
+    if (company.id_type_provider && typeId && Number(typeId) !== Number(company.id_type_provider)) {
+      throw this.error('Todas las sedes de la empresa deben usar el mismo tipo de proveedor', 400);
+    }
+    const type = typeId ? await providerService.getCurrentProviderType(typeId, transaction) : null;
+    if (typeId) await providerService.assertProviderTypeChangeAllowed(null, typeId, user, transaction);
+    const identity = {
+      full_names: data.full_names || company.commercial_name || company.full_names,
+      number_document: data.number_document || company.number_document,
+      cellphone: data.cellphone,
+    };
+    await providerService.lockProviderIdentity(identity, transaction);
+    await providerService.assertIdentityAvailable(identity, { companyId: company.id }, transaction);
     const provider = await Provider.create({
       ...this.pick(data, SITE_FIELDS),
       id_sucursal: registrationBranch,
       full_names: data.full_names || company.commercial_name || company.full_names,
       number_document: data.number_document || company.number_document,
-      id_type_provider: data.id_type_provider || company.id_type_provider,
+      id_type_provider: typeId,
       id_provider_company: company.id,
       site_role: data.site_role,
       status: data.status !== false,
-      estado_registro: 'VALIDADO',
+      estado_registro: type?.code === 'F' ? 'PENDIENTE' : 'VALIDADO',
     }, { transaction });
     await providerAvailability.enableInitial(provider.id, registrationBranch, user, transaction);
     await this.syncSiteDetails(provider, data, transaction);

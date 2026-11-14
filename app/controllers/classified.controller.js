@@ -11,6 +11,7 @@ const { allocateByQuantity } = require('../services/weighted-average.service');
 const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
 const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
 const { exactAdd, exactCompare, inventoryQuantity } = require('../helpers/number-formatter');
+const { validatePurchaseLocation } = require('../services/purchase-location.service');
 
 const valuedKardex = new ValuedKardexService();
 
@@ -133,6 +134,7 @@ const newClassified = async (req = request, res = response ) => {
         }
         classified_data.quantity_product = sourceQuantity;
         const { id_sucursal, id_storage, number_registry, id_product, cost_product, quantity_product, type_registry } = classified_data;
+        await validatePurchaseLocation({ user: req.userAuth, branchId: id_sucursal, storageId: id_storage, transaction: t });
         const integrityLocations = [
             { productId: id_product, sucursalId: id_sucursal, storageId: id_storage },
             ...classifiedDetails.map(({ id_product: detailProductId }) => ({ productId: detailProductId, sucursalId: id_sucursal, storageId: id_storage })),
@@ -180,10 +182,13 @@ const newClassified = async (req = request, res = response ) => {
         const availability = await hasAvailableStock(stock, quantity_product, t);
         if(!availability.sufficient){
             await t.rollback();
+            const sourceLabel = stock?.product
+                ? `${stock.product.cod} - ${stock.product.name}`
+                : `El producto de origen (${id_product})`;
             return res.status(422).json({
                 ok: false,
                 errors: [
-                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`}
+                    { msg: `${sourceLabel} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`}
                 ],
             });
         }
@@ -245,10 +250,12 @@ const newClassified = async (req = request, res = response ) => {
                 difference_before: previous?.difference ?? null,
             };
         }) : undefined;
-        return res.status(error.statusCode || 500).json({
+        return res.status(error.statusCode || error.status || 500).json({
           ok: false,
           ...(error.code ? { code: error.code } : {}),
-          errors: [{ msg: error.statusCode ? error.message : 'Ocurrió un imprevisto interno | hable con soporte' }],
+          errors: [{ msg: Number(error.statusCode || error.status) < 500 && error.message
+            ? error.message
+            : 'Ocurrió un imprevisto interno | hable con soporte' }],
           ...(error.statusCode && details ? { details } : {}),
         });
     }
@@ -261,6 +268,16 @@ const destroyClassified = async (req = request, res = response) => {
         const classified_anular = await Classified.findOne({
             where: { id:id_classified, status:'ACTIVE' },
             include: [{association: 'detailsClassified'}], transaction: t
+        });
+        if (!classified_anular) {
+            await t.rollback();
+            return res.status(404).json({ ok: false, errors: [{ msg: 'El clasificado no existe o ya está anulado.' }] });
+        }
+        await validatePurchaseLocation({
+            user: req.userAuth,
+            branchId: classified_anular.id_sucursal,
+            storageId: classified_anular.id_storage,
+            transaction: t,
         });
         classified_anular.status = 'INACTIVE';
         await classified_anular.save({transaction: t});
@@ -332,9 +349,13 @@ const destroyClassified = async (req = request, res = response) => {
     } catch (error) {
         await t.rollback();
         console.log(error);
-        return res.status(500).json({
+        return res.status(error.statusCode || error.status || 500).json({
           ok: false,
-          errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
+          ...(error.code ? { code: error.code } : {}),
+          errors: [{ msg: Number(error.statusCode || error.status) < 500 && error.message
+            ? error.message
+            : 'Ocurrió un imprevisto interno | hable con soporte' }],
+          ...(Array.isArray(error.details) ? { details: error.details } : {}),
         });
     }
 }

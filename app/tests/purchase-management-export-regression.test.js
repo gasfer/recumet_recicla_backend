@@ -11,7 +11,7 @@ const { normalizePurchaseReportFilters, buildPurchaseReportWhere } = require('..
 const { queryPurchaseReportExport } = require('../services/purchase-report-query.service');
 
 const base = { filterBy: 'MONTH', date1: '10', date2: '2026', id_sucursal: '1', id_storage: '2', status: 'ACTIVE' };
-const fixture = () => ({ id: 1, cod: 'COMP-TEST', date_voucher: '2026-10-12T12:00:00Z', type_registry: 'BOLETA', registry_number: '001', type: 'CONTADO', total: 100,
+const fixture = () => ({ id: 1, cod: 'COMP-TEST', date_voucher: '2026-10-12T12:00:00Z', type_registry: 'BOLETA', registry_number: '001', type: 'CONTADO', type_payment: 'EFECTIVO', total: 100,
   provider: { full_names: 'Proveedor prueba', type: { name: 'Empresa' } }, dataValues: {},
   detailsInput: [{ quantity: 20, total: 100, cost: 5, product: { id: 3, cod: 'MAT-TEST', name: 'Material prueba', unit: { siglas: 'KGR' } } }],
 });
@@ -72,7 +72,10 @@ test('las cinco opciones del menú generan contenido con los mismos filtros y da
     assert.equal(date[Op.gte].toISOString(), '2026-10-01T04:00:00.000Z');
     assert.equal(date[Op.lt].toISOString(), '2026-11-01T04:00:00.000Z');
     assert.ok(options.where[Op.and].some(item => item.id_storage?.[Op.in]?.includes(2)));
-    return [fixture()];
+    return [fixture(), {
+      ...fixture(), id: 2, cod: 'COMP-002', total: 0.1, type: 'CREDITO', type_payment: 'TRANSFERENCIA',
+      detailsInput: [{ quantity: 0.1, total: 0.1, cost: 1, product: { id: 4, cod: 'MAT-002', name: 'Material pieza', unit: { siglas: 'PZA' } } }],
+    }];
   });
   const controller = require('../controllers/reports/input.controller');
   for (const [handler, format] of [ ['generateExcelReports', 'excel'], ['generatePdfReports', 'pdf'],
@@ -88,6 +91,20 @@ test('las cinco opciones del menú generan contenido con los mismos filtros y da
       if (format === 'pdf') {
         assert.ok(rendered.rows.length > 1);
         assert.match(JSON.stringify(rendered.rows), /MAT-TEST|COMP-TEST/);
+        if (handler === 'generatePdfReports') {
+          assert.deepEqual(rendered.columns.map(column => column.label), [
+            'N.º', 'CÓDIGO', 'FECHA DE COMPRA', 'TIPO DE DOCUMENTO', 'N.º DE DOCUMENTO', 'PROVEEDOR',
+            'DETALLE', 'CONDICIÓN DE PAGO', 'MEDIO DE PAGO', 'REFERENCIA COMERCIAL', 'TIPO PROVEEDOR', 'CANTIDAD (KG)', 'TOTAL Bs',
+          ]);
+          assert.equal(rendered.rows[0].cells[0].text, '1');
+          assert.equal(rendered.rows[1].cells[0].text, '2');
+          assert.equal(rendered.rows.at(-1).cells.at(-2).text, 'Kg. 20,00');
+          assert.equal(rendered.rows.at(-1).cells.at(-1).text, 'Bs. 100,10');
+        }
+        if (handler === 'generatePdfDetailsReports') {
+          assert.deepEqual(rendered.columns.map(column => column.label), ['N.º', 'CÓDIGO', 'PRODUCTO', 'UNIDAD', 'CANTIDAD']);
+          assert.match(rendered.rows.at(-1).cells.at(-1).text, /KGR: 20,00 · PZA: 0,10/);
+        }
       } else {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(Buffer.concat(chunks));
@@ -102,6 +119,23 @@ test('las cinco opciones del menú generan contenido con los mismos filtros y da
         assert.equal(sheet.views[0].state, 'frozen');
         assert.ok(sheet.autoFilter);
         assert.equal(sheet.getRow(sheet.views[0].ySplit).getCell(1).fill.fgColor.argb, 'FF1E5B3A');
+        if (handler === 'generateExcelReports') {
+          const headerRow = sheet.getRow(sheet.views[0].ySplit);
+          assert.deepEqual(headerRow.values.slice(1), [
+            'N.º', 'Código', 'Fecha de compra', 'Tipo de documento', 'N.º de documento', 'Proveedor', 'Detalle',
+            'Condición de pago', 'Medio de pago', 'Referencia comercial', 'Tipo de proveedor', 'Total kg', 'Total Bs',
+          ]);
+          assert.equal(sheet.getRow(headerRow.number + 1).getCell(1).value, 1);
+          assert.equal(sheet.getRow(headerRow.number + 2).getCell(1).value, 2);
+          const totalRow = sheet.getRow(headerRow.number + 3);
+          assert.equal(totalRow.getCell(12).value, 20);
+          assert.equal(totalRow.getCell(13).value, 100.1);
+        }
+        if (handler === 'generateExcelDetailsReports') {
+          const values = JSON.stringify(rows);
+          assert.match(values, /KGR: 20,00 · PZA: 0,10/);
+          assert.match(values, /TOTALES POR UNIDAD/);
+        }
       }
     });
   }

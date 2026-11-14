@@ -10,6 +10,11 @@ const { sendPermissionDenied } = require('../helpers/permission-denied');
 const { KARDEX_HISTORY_ATTRIBUTES, attachKardexEventMetadata } = require('../services/kardex-event.service');
 const { enrichKardexHistory } = require('../services/kardex-history-enrichment.service');
 const { getDailyKardexHistory } = require('../services/daily-kardex-history.service');
+const { buildPhysicalKardexOrder, applyPhysicalKardexSearch, normalizePhysicalCategoryIds } = require('../services/physical-kardex-query.service');
+const { summarizePhysicalKardex, formatUnitTotals } = require('../helpers/physical-kardex-quantity-totals');
+const { getNumberDecimal } = require('../helpers/company');
+const { exactAdd } = require('../helpers/number-formatter');
+const { unitLabel, addUnitQuantity, formatUnitTotals: formatStockUnitTotals, normalizeStockOrder } = require('../helpers/stock-unit-totals');
 
 const canAccessSucursal = (user, idSucursal) => user?.role === 'ADMINISTRADOR' || (
     Boolean(idSucursal) && (user?.assign_sucursales || []).some(({ id_sucursal, status }) => status !== false && Number(id_sucursal) === Number(idSucursal))
@@ -140,31 +145,11 @@ const getDailyKardexPaginate = async (req = request, res = response) => {
 
 const getKardexFisicoPaginate = async (req = request, res = response) => {
     try {
-        const { query, page, limit, type, id_sucursal, id_storage, id_product, filterBy, date1, date2, orderNew, category_ids, category_types } = req.query;
+        const { query, page, limit, type, id_sucursal, id_storage, id_product, filterBy, date1, date2, category_ids, category_types, field_sort, order } = req.query;
         const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
 
-        let whereProduct = {};
-        if (category_ids) {
-            const isAllProductsView = !category_types ||
-                (typeof category_types === 'string' && !category_types.trim()) ||
-                (Array.isArray(category_types) && category_types.every(categoryType => !String(categoryType).trim()));
-            let ids;
-            if (isAllProductsView) {
-                const categoryIdValues = Array.isArray(category_ids) ? category_ids : [category_ids];
-                ids = categoryIdValues.flatMap(categoryId => String(categoryId).split(','))
-                    .map(categoryId => categoryId.trim())
-                    .filter(Boolean);
-            } else {
-                ids = Array.isArray(category_ids) ? category_ids : [category_ids];
-            }
-            if (ids.length > 0) {
-                whereProduct = {
-                    id_category: {
-                        [Op.in]: ids
-                    }
-                };
-            }
-        }
+        const categoryIds = normalizePhysicalCategoryIds(category_ids);
+        const whereProduct = categoryIds.length ? { id_category: { [Op.in]: categoryIds } } : {};
 
         let whereCategory = {};
         if (category_types) {
@@ -182,10 +167,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
         }
 
         const optionsDbAll = {
-            order: [
-                ['product', 'category', 'name', 'ASC'],
-                orderNew
-            ],
+            order: buildPhysicalKardexOrder(field_sort, order),
             attributes: [
                 'id_product',
                 [sequelize.literal('COALESCE(SUM(quantity_input), 0)'), 'quantity_input'],
@@ -214,28 +196,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             group: ['id_product', 'product.id', 'product.unit.id', 'product.category.id', 'storage.id']
         };
 
-        if (type) {
-            if (type.includes('.')) {
-                let [assoc, column] = type.split('.');
-                let foundInclude = optionsDbAll.include?.find(i => i.association === assoc);
-                if (foundInclude) {
-                    if (!foundInclude.where) foundInclude.where = {};
-                    if (!isNaN(query)) {
-                        foundInclude.where[column] = { [Op.eq]: `${query}` };
-                    } else {
-                        foundInclude.where[column] = { [Op.iLike]: `%${query}%` };
-                    }
-                }
-            } else {
-                let where = {};
-                if (!isNaN(query)) {
-                    where[type] = { [Op.eq]: `${query}` };
-                } else {
-                    where[type] = { [Op.iLike]: `%${query}%` };
-                }
-                optionsDbAll.where[Op.and].push(where);
-            }
-        }
+        applyPhysicalKardexSearch(optionsDbAll, type, query);
 
         const allKardexes = await ViewKardex.findAll(optionsDbAll);
         if (allKardexes && allKardexes.length > 0) {
@@ -243,6 +204,7 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             const firstMovements = await ViewKardex.findAll({
                 attributes: [
                     'id_product',
+                    'id_storage',
                     [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
                 ],
                 where: {
@@ -253,12 +215,12 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
                         { date: whereDate }
                     ]
                 },
-                group: ['id_product'],
+                group: ['id_product', 'id_storage'],
                 raw: true
             });
             const minIds = firstMovements.map(m => m.min_id).filter(Boolean);
             const initialBalances = minIds.length > 0 ? await ViewKardex.findAll({
-                attributes: ['id_product', 'saldo_inicial'],
+                attributes: ['id_product', 'id_storage', 'saldo_inicial'],
                 where: {
                     id: { [Op.in]: minIds }
                 },
@@ -266,13 +228,13 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             }) : [];
             const balanceMap = {};
             for (const bal of initialBalances) {
-                balanceMap[bal.id_product] = bal.saldo_inicial;
+                balanceMap[`${bal.id_product}:${bal.id_storage}`] = bal.saldo_inicial;
             }
             for (const kardex of allKardexes) {
-                const quantity_inicial = Number(balanceMap[kardex.id_product] || 0);
+                const quantity_inicial = Number(balanceMap[`${kardex.id_product}:${kardex.id_storage}`] || 0);
                 kardex.dataValues.quantity_inicial = quantity_inicial;
-                kardex.dataValues.quantity_input = Number(kardex.dataValues.quantity_input) + quantity_inicial;
-                kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + quantity_inicial;
+                kardex.dataValues.quantity_input = exactAdd(kardex.dataValues.quantity_input || 0, quantity_inicial);
+                kardex.dataValues.quantity_saldo = exactAdd(kardex.dataValues.quantity_saldo || 0, quantity_inicial);
             }
         }
 
@@ -282,40 +244,15 @@ const getKardexFisicoPaginate = async (req = request, res = response) => {
             ? allKardexes
             : allKardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
-        let totalInput = 0;
-        let totalOutput = 0;
-        let totalSaldo = 0;
-        const categoryTotals = {};
-
-        for (const kardex of filteredAllKardexes) {
-            if (kardex.product && kardex.product.category) {
-                const categoryName = kardex.product.category.name;
-                const qInput = Number(kardex.dataValues.quantity_input || 0);
-                const qOutput = Number(kardex.dataValues.quantity_output || 0);
-                const qSaldo = Number(kardex.dataValues.quantity_saldo || 0);
-
-                totalInput += qInput;
-                totalOutput += qOutput;
-                totalSaldo += qSaldo;
-
-                if (!categoryTotals[categoryName]) {
-                    categoryTotals[categoryName] = {
-                        quantity_input: 0,
-                        quantity_output: 0,
-                        quantity_saldo: 0
-                    };
-                }
-                categoryTotals[categoryName].quantity_input += qInput;
-                categoryTotals[categoryName].quantity_output += qOutput;
-                categoryTotals[categoryName].quantity_saldo += qSaldo;
-            }
-        }
-
-        const totals = {
-            quantity_input: totalInput,
-            quantity_output: totalOutput,
-            quantity_saldo: totalSaldo
-        };
+        const decimal = await getNumberDecimal();
+        const { totals: unitTotals, categories: categoryUnitTotals } = summarizePhysicalKardex(filteredAllKardexes);
+        const totals = Object.fromEntries(['quantity_input', 'quantity_output', 'quantity_saldo']
+            .map(field => [field, formatUnitTotals(unitTotals, field, decimal)]));
+        const categoryTotals = Object.fromEntries([...categoryUnitTotals.entries()].map(([category, values]) => [
+            category,
+            Object.fromEntries(['quantity_input', 'quantity_output', 'quantity_saldo']
+                .map(field => [field, formatUnitTotals(values, field, decimal)])),
+        ]));
 
         // Paginación en memoria
         const limitNum = parseInt(limit, 10) || 50;
@@ -415,7 +352,7 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             }
         };
 
-        const orderNew = req.query.orderNew || ['product', 'cod', 'ASC'];
+        const orderNew = normalizeStockOrder(req.query.field_sort, req.query.order);
         const optionsDbAll = {
             order: [
                 ['product', 'category', 'name', 'ASC'],
@@ -492,31 +429,32 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             ? allKardexes
             : allKardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
-        let totalSaldo = 0;
-        let totalSaldoMp = 0;
-        let totalSaldoPt = 0;
+        const totalSaldo = {};
+        const totalSaldoMp = {};
+        const totalSaldoPt = {};
         const categoryTotals = {};
 
         for (const kardex of filteredAllKardexes) {
             const saldoVal = Number(kardex.dataValues.quantity_saldo || 0);
-            totalSaldo += saldoVal;
+            const unit = unitLabel(kardex.product);
+            addUnitQuantity(totalSaldo, unit, saldoVal);
 
             if (kardex.product && kardex.product.category) {
                 const categoryName = kardex.product.category.name;
                 const catType = kardex.product.category.type;
 
                 if (catType === 'RAW_MATERIAL') {
-                    totalSaldoMp += saldoVal;
+                    addUnitQuantity(totalSaldoMp, unit, saldoVal);
                 } else if (catType === 'FINISHED_PRODUCT') {
-                    totalSaldoPt += saldoVal;
+                    addUnitQuantity(totalSaldoPt, unit, saldoVal);
                 }
 
                 if (!categoryTotals[categoryName]) {
                     categoryTotals[categoryName] = {
-                        quantity_saldo: 0
+                        quantity_saldo: {}
                     };
                 }
-                categoryTotals[categoryName].quantity_saldo += saldoVal;
+                addUnitQuantity(categoryTotals[categoryName].quantity_saldo, unit, saldoVal);
             }
         }
 
@@ -543,10 +481,11 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             include: [
                 {
                     association: 'product',
-                    attributes: ['id_category'],
+                    attributes: ['id_category', 'id_unit'],
                     where: whereProduct,
                     include: [
-                        { association: 'category', attributes: ['name', 'type'], where: whereCategory }
+                        { association: 'category', attributes: ['name', 'type'], where: whereCategory },
+                        { association: 'unit', attributes: ['siglas'] }
                     ]
                 },
                 {
@@ -554,10 +493,17 @@ const getTotalStockRecumet = async (req = request, res = response) => {
                     attributes: ['name']
                 }
             ],
-            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'sucursal.id'],
+            group: ['id_sucursal', 'id_product', 'product.id', 'product.category.id', 'product.unit.id', 'sucursal.id'],
             raw: true,
             nest: true
         };
+
+        if (query) optionsDbSucursalProduct.where[Op.and].push({
+            [Op.or]: [
+                { '$product.name$': { [Op.iLike]: `%${query}%` } },
+                { '$product.cod$': { [Op.iLike]: `%${query}%` } }
+            ]
+        });
 
         const sucursalProductKardexes = await ViewKardex.findAll(optionsDbSucursalProduct);
         if (sucursalProductKardexes && sucursalProductKardexes.length > 0) {
@@ -594,19 +540,27 @@ const getTotalStockRecumet = async (req = request, res = response) => {
             if (!sucursalTotals[sucursalId]) {
                 sucursalTotals[sucursalId] = {
                     name: sucursalName,
-                    quantity_saldo: 0,
-                    quantity_saldo_mp: 0,
-                    quantity_saldo_pt: 0
+                    quantity_saldo: {},
+                    quantity_saldo_mp: {},
+                    quantity_saldo_pt: {}
                 };
             }
 
-            sucursalTotals[sucursalId].quantity_saldo += saldoVal;
+            const unit = sp.product?.unit?.siglas || 'SIN UNIDAD';
+            addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo, unit, saldoVal);
             if (catType === 'RAW_MATERIAL') {
-                sucursalTotals[sucursalId].quantity_saldo_mp += saldoVal;
+                addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo_mp, unit, saldoVal);
             } else if (catType === 'FINISHED_PRODUCT') {
-                sucursalTotals[sucursalId].quantity_saldo_pt += saldoVal;
+                addUnitQuantity(sucursalTotals[sucursalId].quantity_saldo_pt, unit, saldoVal);
             }
         }
+
+        for (const item of Object.values(sucursalTotals)) {
+            item.quantity_saldo_text = formatStockUnitTotals(item.quantity_saldo);
+            item.quantity_saldo_mp_text = formatStockUnitTotals(item.quantity_saldo_mp);
+            item.quantity_saldo_pt_text = formatStockUnitTotals(item.quantity_saldo_pt);
+        }
+        for (const item of Object.values(categoryTotals)) item.quantity_saldo = formatStockUnitTotals(item.quantity_saldo);
 
         const totals = {
             quantity_saldo: totalSaldo,

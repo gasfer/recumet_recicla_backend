@@ -5,4 +5,4 @@ const isKilogramUnit = value => KILOGRAM_UNITS.includes(String(value || '').trim
 // The list contains only fixed application constants, never request input.
 const kilogramUnitSql = alias => `UPPER(REPLACE(TRIM(${alias}.siglas), '.', '')) IN (${KILOGRAM_UNITS.map(unit => `'${unit}'`).join(', ')})`;
 
-module.exports = { isKilogramUnit, kilogramUnitSql };
+module.exports = { KILOGRAM_UNITS, isKilogramUnit, kilogramUnitSql };

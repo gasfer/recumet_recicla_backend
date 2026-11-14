@@ -21,6 +21,22 @@ function stockProviderCondition(query = {}) {
     }
     conditions.push(`${column} IN (${ids.map(Number).join(',')})`);
   }
-  return { [Op.and]: literal(`("ViewKardex".id_product, "ViewKardex".id_sucursal) IN (SELECT d.id_product, i.id_sucursal FROM inputs i JOIN details_inputs d ON d.id_input = i.id JOIN providers pr ON pr.id = i.id_provider WHERE i.status = 'ACTIVE' AND (d.status = 'ACTIVE' OR d.status IS NULL) AND ${conditions.join(' AND ')})`) };
+
+  // Correlate the matching purchase to the current kardex row. The former
+  // tuple-IN subquery materialized every matching product/location before
+  // either of the stock summary queries could aggregate its movements.
+  return {
+    [Op.and]: literal(`EXISTS (
+      SELECT 1
+      FROM inputs i
+      INNER JOIN details_inputs d ON d.id_input = i.id
+      INNER JOIN providers pr ON pr.id = i.id_provider
+      WHERE d.id_product = "ViewKardex".id_product
+        AND i.id_sucursal = "ViewKardex".id_sucursal
+        AND i.status = 'ACTIVE'
+        AND (d.status = 'ACTIVE' OR d.status IS NULL)
+        AND ${conditions.join(' AND ')}
+    )`)
+  };
 }
 module.exports = { stockProviderCondition };

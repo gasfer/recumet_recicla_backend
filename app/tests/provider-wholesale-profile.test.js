@@ -39,7 +39,7 @@ test('acepta frecuencias y volúmenes independientes por material y contacto', (
 });
 
 test('normaliza frecuencias de contacto antiguas y exige los datos de contacto según el tipo', () => {
-  for (const code of ['A', 'B', 'C', 'D', 'E', 'F']) {
+  for (const code of ['A', 'B', 'C', 'D', 'F']) {
     const data = { contact_frequency: 'MENSUAL', price_policy: 'LIST_PRICE', logistics_condition: 'BY_VOLUME', contacts: [{ full_name: 'Ana', is_main_contact: true }] };
     if (['A', 'B'].includes(code)) {
       assert.throws(() => validateWholesaleProfile(data, code), /datos de contacts/);

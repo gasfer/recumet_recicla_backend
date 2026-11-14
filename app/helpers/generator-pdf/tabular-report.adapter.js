@@ -30,7 +30,7 @@ const tabularReport = ({ body, widths = [], headerRows = 1 }, metadata = {}) => 
         rows: body.slice(count).map(cells => {
             const label = valueText(cells[0]);
             return {
-                kind: label.startsWith('PROVEEDOR:') ? 'group' : label.startsWith('SUBTOTAL') ? 'subtotal' : /^(TOTAL|Cantidad Total)/i.test(label) ? 'total' : 'detail',
+                kind: ['group', 'subtotal', 'total', 'alternate'].includes(cells[0]?.rowKind) ? cells[0].rowKind : (label.startsWith('PROVEEDOR:') ? 'group' : label.startsWith('SUBTOTAL') ? 'subtotal' : /^(TOTAL|Cantidad Total)/i.test(label) ? 'total' : 'detail'),
                 cells: cells.map(cell => ({ text: valueText(cell), span: cell?.colSpan, align: cell?.alignment })),
             };
         }),

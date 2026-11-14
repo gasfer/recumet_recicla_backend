@@ -8,9 +8,20 @@ const { response } = require("express");
 const { getNumberDecimal } = require("../../helpers/company");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
 const { buildOutputSearch, buildOutputWhere, outputOrder, sortOutputQuantities } = require('../../services/output-report-query.service');
-const { excelNumberMask, formatDecimalEsBo } = require('../../helpers/number-formatter');
+const { excelNumberMask, formatDecimalEsBo, exactAdd } = require('../../helpers/number-formatter');
 const { buildOutputReportExcel } = require('../../services/output-report-excel.service');
+const { isKilogramUnit } = require('../../helpers/kilogram-units');
 moment.locale('es'); 
+
+const quantitySummaryByUnit = (rows, decimal) => {
+    const totals = new Map();
+    rows.forEach(row => {
+        const unit = String(row.product?.unit?.siglas || 'SIN UNIDAD').trim().toUpperCase();
+        totals.set(unit, exactAdd(totals.get(unit) || '0', row.dataValues?.suma_quantity || 0));
+    });
+    return [...totals.entries()].sort(([left], [right]) => left.localeCompare(right, 'es'))
+        .map(([unit, quantity]) => `${unit}: ${formatDecimalEsBo(Number(quantity), decimal)}`).join(' · ');
+};
 
 async function outputReportContext(params = {}, auth = {}) {
     const company = await resolveReportCompany(params.id_sucursal);
@@ -37,7 +48,7 @@ async function outputReportContext(params = {}, auth = {}) {
     }
     if (params.type_registry) filters.push(`Tipo de documento: ${params.type_registry}`);
     if (params.type_output) filters.push(`Tipo de venta: ${params.type_output}`);
-    if (params.type_pay) filters.push(`Forma de pago: ${params.type_pay}`);
+    if (params.type_pay) filters.push(`Condición de pago: ${params.type_pay}`);
     if (params.type && params.query) filters.push(`Búsqueda (${params.type}): ${params.query}`);
     if (auth.full_names) filters.push(`Emitido por: ${auth.full_names}`);
     return { company, filters };
@@ -49,17 +60,21 @@ const generatePdfReports = async (req = request, res = response) => {
         const outputs = await returnDataOutput(req.query);
         const context = await outputReportContext(req.query, req.userAuth);
         let dataPdf = dataPdfReturn(req.userAuth); //PDF 
-        let total = 0;
-        let total_quantity = 0;
+        let total = '0';
+        let total_quantity = '0';
         outputs.forEach(output => {
-            total += Number(output.total);
-            total_quantity += Number(output.total_quantity);
+            total = exactAdd(total, output.total || 0);
+            total_quantity = exactAdd(total_quantity, output.total_quantity || 0);
             const tableData = [
+                {text:String(dataPdf[5].table.body.length), fontSize:9, alignment: 'center'},
                 {text:output?.cod, fontSize:9}, 
                 {text:moment(output?.date_output).format('DD/MM/YYYY HH:mm:ss'), fontSize:9}, 
                 {text:output?.type_registry, fontSize:9}, 
                 {text:output?.number_registry, fontSize:9}, 
                 {text:output?.client?.full_names, fontSize:8}, 
+                {text:output?.voucher, fontSize:9},
+                {text:output?.type_output, fontSize:9},
+                {text:output?.type_payment, fontSize:9},
                 {
                     text: (output.detailsOutput || [])
                         .map(detail => {
@@ -72,24 +87,16 @@ const generatePdfReports = async (req = request, res = response) => {
                     fontSize: 9,
                 }, 
                 {text:output?.comments, fontSize:9}, 
-                {text:output?.voucher, fontSize:9},
-                {text:output?.type_output, fontSize:9},
                 {text:formatDecimalEsBo(Number(output?.total_quantity), decimal), fontSize:9, alignment: 'right'},  
                 {text:formatDecimalEsBo(Number(output.total), decimal), fontSize:9, alignment: 'right'},
             ];
             dataPdf[5].table.body.push(tableData);
         });
         if (outputs.length) dataPdf[5].table.body.push([
-            {colSpan: 9, text:`TOTAL: ${NumeroALetras(total)}`,fontSize:10,},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:''},
-            {text:`Kg. ${formatDecimalEsBo(Number(total_quantity), decimal)}`, bold: true, fontSize:10, alignment: 'right'},
+            {colSpan: 11, text:`TOTAL GENERAL: ${NumeroALetras(Number(total))}`,fontSize:10,},
+            {text:''}, {text:''}, {text:''}, {text:''}, {text:''},
+            {text:''}, {text:''}, {text:''}, {text:''}, {text:''},
+            {text:`${formatDecimalEsBo(Number(total_quantity), decimal)} kg`, bold: true, fontSize:10, alignment: 'right'},
             {text: `Bs. ${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const document = tabularReport(dataPdf[5].table, {
@@ -107,26 +114,28 @@ const generatePdfReports = async (req = request, res = response) => {
 }
 
 const dataPdfReturn = (auth) => [
-    ...buildStandardReportHeader({ title: 'REPORTE DE VENTAS TOTALIZADOS', auth, details: 'Reporte generado con los parámetros establecidos' }),
+    ...buildStandardReportHeader({ title: 'REPORTE DE VENTAS', auth, details: 'Reporte generado con los parámetros establecidos' }),
     {
         style: 'tableReport',
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,40,45,55,'*','*','*',55,45,60,60],
+            widths: [26,48,70,43,48,75,55,52,52,'*','*',50,56],
             body: [
                 [
+                    {text:'N.º', fontSize:9,fillColor: '#eeeeee', bold:true},
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'FECHA', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TIPO DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'NRO. DOC.', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+        {text:'FECHA DE VENTA', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'TIPO DE DOCUMENTO', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'N.º DE DOCUMENTO', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                     {text:'CLIENTE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'COMENTARIOS', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'TIPO DE VENTA', fontSize:9,fillColor: '#eeeeee', bold:true},
-                    {text:'FORMA DE PAGO', fontSize:9,fillColor: '#eeeeee', bold:true},
-                    {text:'CANT. KG',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
-                    {text:'TOTAL',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true}, 
+                    {text:'CONDICIÓN DE PAGO', fontSize:9,fillColor: '#eeeeee', bold:true},
+                    {text:'MEDIO DE PAGO', fontSize:9,fillColor: '#eeeeee', bold:true},
+                    {text:'DETALLE', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'OBSERVACIONES', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'CANTIDAD (KG)',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true},
+                    {text:'TOTAL Bs',alignment: 'center', fontSize:9,fillColor: '#eeeeee', bold:true},
                 ]
             ]   ,
             layout: 'lightHorizontalLines'
@@ -140,7 +149,8 @@ const generateExcelReports = async (req = request, res = response) => {
     const decimal = await getNumberDecimal();
     const context = await outputReportContext(req.query, req.userAuth);
     const numberFormat = excelNumberMask(decimal);
-    const data = outputs.map(output => [
+    const data = outputs.map((output, index) => [
+      index + 1,
       String(output.cod ?? ''),
       output.date_output ? new Date(output.date_output) : null,
       String(output.type_registry ?? ''),
@@ -148,29 +158,32 @@ const generateExcelReports = async (req = request, res = response) => {
       String(output.client?.full_names ?? ''),
       String(output.voucher ?? ''),
       String(output.type_output ?? ''),
+      String(output.type_payment ?? ''),
       (output.detailsOutput || []).map(detail => `${detail.product?.name ?? ''} [${detail.quantity} ${detail.product?.unit?.siglas ?? ''}]`).join('\n'),
       String(output.comments ?? ''),
       Number(output.total_quantity ?? 0),
       Number(output.total ?? 0),
     ]);
     const totals = outputs.length ? {
-      total_quantity: outputs.reduce((sum, output) => sum + Number(output.total_quantity || 0), 0),
-      total: outputs.reduce((sum, output) => sum + Number(output.total || 0), 0),
+      total_quantity: Number(outputs.reduce((sum, output) => exactAdd(sum, output.total_quantity || 0), '0')),
+      total: Number(outputs.reduce((sum, output) => exactAdd(sum, output.total || 0), '0')),
     } : {};
     const workbook = buildOutputReportExcel({
       title: 'REPORTE DE VENTAS', sheetName: 'Ventas', filters: context.filters, company: context.company,
       rows: data, decimal, totals,
       columns: [
+        { key: 'row_number', header: 'N.º', width: 8 },
         { key: 'cod', header: 'Código', width: 16 },
         { key: 'date_output', header: 'Fecha de venta', width: 22, numberFormat: 'dd/mm/yyyy hh:mm:ss' },
         { key: 'type_registry', header: 'Tipo de documento', width: 20 },
         { key: 'number_registry', header: 'N.º de documento', width: 20 },
         { key: 'client', header: 'Cliente', width: 34 },
         { key: 'voucher', header: 'Tipo de venta', width: 22 },
-        { key: 'type_output', header: 'Forma de pago', width: 18 },
+        { key: 'type_output', header: 'Condición de pago', width: 18 },
+        { key: 'type_payment', header: 'Medio de pago', width: 18 },
         { key: 'details', header: 'Detalle', width: 56 },
         { key: 'comments', header: 'Observaciones', width: 36 },
-        { key: 'total_quantity', header: 'Cantidad total', width: 18, numberFormat },
+        { key: 'total_quantity', header: 'Cantidad (KG)', width: 18, numberFormat },
         { key: 'total', header: 'Total Bs', width: 18, numberFormat },
       ],
     });
@@ -218,7 +231,9 @@ const returnDataOutput = async (params) => {
     };
     const outputs = await Output.findAll(optionsDb);
     for (const output of outputs) {
-        output.total_quantity = (output.detailsOutput || []).reduce((acc, item) => acc + Number(item.quantity), 0);
+        output.total_quantity = (output.detailsOutput || [])
+            .filter(item => isKilogramUnit(item.product?.unit?.siglas))
+            .reduce((sum, item) => exactAdd(sum, item.quantity || 0), '0');
     }
     return sortOutputQuantities(outputs, sortByTotalQuantity);
 }
@@ -229,12 +244,14 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
         const detailsOutput = await returnDataDetailsOutput(req.query);
         const context = await outputReportContext(req.query, req.userAuth);
         let dataPdf = dataDetailsPdfReturn(req.userAuth); //PDF 
-        let total = 0;
-        detailsOutput.forEach(detail => {
-            total += Number(detail.dataValues.suma_total);
+        let total = '0';
+        detailsOutput.forEach((detail, index) => {
+            total = exactAdd(total, detail.dataValues.suma_total || 0);
             const tableData = [
+                {text:String(index + 1), fontSize:9, alignment: 'center'},
                 {text:detail?.product.cod, fontSize:9}, 
                 {text:detail?.product.name, fontSize:9}, 
+                {text:detail?.product.unit?.siglas || '', fontSize:9},
                 {text:formatDecimalEsBo(Number(detail?.price), decimal), fontSize:9, alignment: 'right'},  
                 {text:formatDecimalEsBo(Number(detail?.dataValues.suma_quantity), decimal), fontSize:9, alignment: 'right'}, 
                 {text:formatDecimalEsBo(Number(detail?.dataValues.suma_total), decimal), fontSize:9, alignment: 'right'},
@@ -242,10 +259,9 @@ const generatePdfDetailsReports = async (req = request, res = response) => {
             dataPdf[5].table.body.push(tableData);
         });
         if (detailsOutput.length) dataPdf[5].table.body.push([
-            {colSpan: 2, text:`TOTAL: ${NumeroALetras(total)}`},
-            {text:''},
-            {text:''},
-            {text:''},
+            {text:'TOTALES POR UNIDAD', colSpan: 4, bold:true},
+            {text:''}, {text:''}, {text:''}, {text:''},
+            {text:quantitySummaryByUnit(detailsOutput, decimal), bold: true, fontSize:9, alignment: 'right'},
             {text: `${formatDecimalEsBo(Number(total), decimal)}`, bold: true, fontSize:10, alignment: 'right'}
         ]);
         const document = tabularReport(dataPdf[5].table, {
@@ -276,14 +292,16 @@ const dataDetailsPdfReturn = (auth) => [
         absolutePosition: { x:20, y: 95 },
         table: {
             headerRows: 1,
-            widths: [60,'*',70,70,70],
+            widths: [30,55,'*',45,70,72,80],
             body: [
                 [
+                    {text:'N.º', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                     {text:'CÓDIGO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
                     {text:'PRODUCTO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'PRECIO', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'UNIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true},
+                    {text:'PRECIO UNITARIO Bs', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                     {text:'CANTIDAD', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
-                    {text:'IMPORTE', fontSize:9 ,fillColor: '#eeeeee', bold:true}, 
+                    {text:'IMPORTE Bs', fontSize:9 ,fillColor: '#eeeeee', bold:true},
                 ]
             ]   ,
             layout: 'lightHorizontalLines'
@@ -297,23 +315,29 @@ const generateExcelDetailsReports = async (req = request, res = response) => {
         const decimal = await getNumberDecimal();
         const context = await outputReportContext(req.query, req.userAuth);
         const numberFormat = excelNumberMask(decimal);
-        const data = detailsOutput.map(detail => [
+        const data = detailsOutput.map((detail, index) => [
+            index + 1,
             String(detail.product?.cod ?? ''),
             String(detail.product?.name ?? ''),
+            String(detail.product?.unit?.siglas ?? ''),
             Number(detail.price ?? 0),
             Number(detail.dataValues.suma_quantity ?? 0),
             Number(detail.dataValues.suma_total ?? 0),
         ]);
+        const totalAmount = detailsOutput.reduce((sum, detail) => exactAdd(sum, detail.dataValues.suma_total || 0), '0');
         const totals = detailsOutput.length ? {
-            suma_quantity: detailsOutput.reduce((sum, detail) => sum + Number(detail.dataValues.suma_quantity || 0), 0),
-            suma_total: detailsOutput.reduce((sum, detail) => sum + Number(detail.dataValues.suma_total || 0), 0),
+            label: 'TOTALES POR UNIDAD',
+            suma_quantity: quantitySummaryByUnit(detailsOutput, decimal),
+            suma_total: Number(totalAmount),
         } : {};
         const workbook = buildOutputReportExcel({
-            title: 'DETALLE DE VENTAS POR PRODUCTO', sheetName: 'Ventas detalle', filters: context.filters, company: context.company,
+            title: 'REPORTE DE VENTAS DETALLADAS', sheetName: 'Ventas detalle', filters: context.filters, company: context.company,
             rows: data, decimal, totals,
             columns: [
+                { key: 'row_number', header: 'N.º', width: 8 },
                 { key: 'cod', header: 'Código', width: 20 },
                 { key: 'product', header: 'Producto', width: 56 },
+                { key: 'unit', header: 'Unidad', width: 12 },
                 { key: 'price', header: 'Precio unitario Bs', width: 22, numberFormat },
                 { key: 'suma_quantity', header: 'Cantidad', width: 20, numberFormat },
                 { key: 'suma_total', header: 'Importe Bs', width: 22, numberFormat },
@@ -349,12 +373,17 @@ const returnDataDetailsOutput = async (params) => {
             { 
                 association: 'product', 
                 attributes: {exclude: ['id_category','id_unit','status','createdAt','updatedAt']}, 
+                include: [{ association: 'unit', attributes: ['id', 'name', 'siglas'] }],
             },
             outputInclude
         ],
-        group: [ 'id_product','product.id','price']
+        group: [ 'id_product','product.id','product->unit.id','price']
     };
-    return await DetailsOutput.findAll(optionsDb);
+    const rows = await DetailsOutput.findAll(optionsDb);
+    return rows.sort((left, right) => {
+        const codeOrder = String(left.product?.cod || '').localeCompare(String(right.product?.cod || ''), 'es', { numeric: true });
+        return codeOrder || Number(left.price || 0) - Number(right.price || 0);
+    });
 }
 
 const printOutputVoucher = async (req = request, res = response) =>{

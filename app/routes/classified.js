@@ -6,6 +6,8 @@ const { getValidateCreate, validateIdClassified } = require('../middlewares/vali
 const { printClassifiedVoucher, generatePdfReports, generatePdfDetailsReports, generateExcelReports, generateExcelDetailsReports } = require('../controllers/reports/classified.controller');
 const { PRODUCT_ACCESS_CONTEXTS } = require('../constants/product-category-access');
 const { authorizeProductCategoryAccess, classifiedProductIds } = require('../middlewares/authorize-product-category-access');
+const { validateClassifiedCommandRequest } = require('../middlewares/validate-classified-command');
+const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
 
 const router = Router();
 
@@ -29,6 +31,7 @@ const router = Router();
  */
 router.get('/', [
     validarJWT,
+    authorizeModulePermission('CONSULTAR CLASIFICADOS', 'view'),
 ], getClassifiedsPaginate);
 
 /**
@@ -49,6 +52,7 @@ router.get('/', [
  */
 router.get('/find/:id_classified', [
     validarJWT,
+    authorizeModulePermission('CONSULTAR CLASIFICADOS', 'view'),
 ], getClassifiedFindOne);
 
 /**
@@ -63,8 +67,10 @@ router.get('/find/:id_classified', [
  */
 router.post('/', [
     validarJWT,
+    authorizeModulePermission('CLASIFICADOS', 'create'),
     toUpperCaseConvert,
     getValidateCreate,
+    validateClassifiedCommandRequest,
     authorizeProductCategoryAccess({ context: PRODUCT_ACCESS_CONTEXTS.CLASSIFIEDS, action: 'create', extractProductIds: classifiedProductIds })
 ], newClassified);
 
@@ -86,6 +92,7 @@ router.post('/', [
  */
 router.delete('/destroy/:id_classified', [
     validarJWT,
+    authorizeModulePermission('CLASIFICADOS', 'delete'),
     validateIdClassified
 ], destroyClassified);
 

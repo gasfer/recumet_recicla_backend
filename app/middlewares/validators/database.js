@@ -352,6 +352,7 @@ const idExistClassified = async (id = "") => {
 const registryNumberExistClassified = async (number_registry = "",{req}) => {
   const { id_classified } = req.params;
   const { id_sucursal, type_registry } = req.body.classified_data;
+  if (type_registry === 'SIN FICHA' || !String(number_registry ?? '').trim()) return;
   const existDB = await Classified.findOne({ where: { number_registry: String(number_registry).trim(), id_sucursal, type_registry } });
   if(!existDB) return;
   if (existDB.id != id_classified) {

@@ -8,7 +8,7 @@ const { buildProviderPurchasesReport, selectedProviderPurchaseFilters } = requir
 const { generateProviderPurchasesExcel, PROVIDER_PURCHASE_HEADERS } = require('../services/provider-purchases-excel.service');
 
 test('consulta reutiliza los filtros de gestión y exporta todas las compras con proveedor', () => {
-  const q = normalizeQuery({ id_sucursales: [1], id_storages: [2], id_products: [3], id_categories: [4], id_type_provider: 5,
+  const q = normalizeQuery({ id_sucursales: [1], id_storages: [2], id_products: [3], id_categories: [4], id_type_provider: 6,
     date_mode: 'RANGE', date: '2026-09-01', date_end: '2026-09-30', min_amount: 100, has_document: 'true', type: 'full_names', query: 'ANA', status: true, page: 2, limit: 10 });
   const { sql, replacements } = buildPurchaseDetailQuery(q, [1]);
   assert.match(sql, /i\.status = 'ACTIVE'/);

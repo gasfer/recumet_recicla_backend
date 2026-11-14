@@ -41,7 +41,7 @@ function generateProviderDirectoryExcel(providers, filters = [], decimal = 2, op
       return new Date(date.toLocaleDateString('en-CA', { timeZone: 'America/La_Paz' }) + 'T00:00:00Z');
     }, 19, 'dd/mm/yyyy'],
     ['Saldo Bs', p => numeric(p.saldo_cuentas_por_pagar), 22, numberFormat],
-  ]).filter((column, index) => index === 1 || options.essentialColumns?.includes(column[0]) || (!options.columns && ['Total kg', 'Total Bs', 'Costo promedio (Bs/kg)'].includes(column[0])) || providers.some(p => hasValue(column[1](p))));
+  ]).filter((column, index) => options.keepEmptyColumns || index === 1 || options.essentialColumns?.includes(column[0]) || (!options.columns && ['Total kg', 'Total Bs', 'Costo promedio (Bs/kg)'].includes(column[0])) || providers.some(p => hasValue(column[1](p))));
   sheet.columns = definitions.map(c => ({ width: c[2] }));
   const width = definitions.length;
   function banner(text, fill, white = false) {
@@ -132,8 +132,8 @@ function generateProviderDirectoryExcel(providers, filters = [], decimal = 2, op
   });
   if (!providers.length) banner(options.emptyMessage || 'No hay proveedores para los filtros seleccionados.', colors.alternateRow);
   sheet.autoFilter = { from: { row: header.number, column: 1 }, to: { row: Math.max(header.number, header.number + providers.length), column: width } };
-  sheet.views = [{ state: 'frozen', ySplit: header.number, xSplit: definitions[0][0] === 'Código' ? 2 : 1, showGridLines: false }];
-  if (providers.length) {
+  sheet.views = [{ state: 'frozen', ySplit: header.number, xSplit: definitions[0][0] === 'N.º' ? 2 : definitions[0][0] === 'Código' ? 1 : 1, showGridLines: false }];
+  if (providers.length && options.showNote !== false) {
     banner(options.note || 'Costo promedio ponderado = importe comprado en kg / total kg del filtro. Para compras en kg: Total Bs = Total kg × Costo promedio. Las demás unidades requieren conversión para expresarse en kg.', colors.observations);
   }
   sheet.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `1:${header.number}` };

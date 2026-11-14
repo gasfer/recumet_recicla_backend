@@ -4,7 +4,7 @@ const { Op } = require('sequelize');
 const moment = require('moment');
 const { generateProviderDirectoryExcel } = require('./provider-directory-excel.service');
 const { normalizePurchaseReportFilters } = require('./purchase-report-filters.service');
-const { excelNumberMask } = require('../helpers/number-formatter');
+const { excelNumberMask, exactAdd, formatDecimalEsBo } = require('../helpers/number-formatter');
 const { REPORT_COLORS: colors, solidFill, reportThinBorder } = require('../constants/report-style.constants');
 
 async function selectedNames(model, ids, field = 'name') {
@@ -13,7 +13,7 @@ async function selectedNames(model, ids, field = 'name') {
   return rows.map(row => row[field]).filter(Boolean).join(', ');
 }
 
-async function purchaseExcelContext(query) {
+async function purchaseExcelContext(query, auth = {}) {
   const f = normalizePurchaseReportFilters(query);
   const branches = await Promise.all(f.sucursalIds.map(id => db.Sucursal.findByPk(id, {
     include: [{ association: 'company', attributes: ['nit', 'email', 'cellphone'] }],
@@ -26,7 +26,8 @@ async function purchaseExcelContext(query) {
     phone: unique(branches.flatMap(b => [b?.cellphone, b?.company?.cellphone])),
     email: unique(branches.map(b => b?.email || b?.company?.email)),
   };
-  const period = f.filterBy === 'MONTH'
+  const period = f.filterBy === 'ALL' ? 'Todos'
+    : f.filterBy === 'MONTH'
     ? moment(`${f.date2}-${f.date1}-01`, 'YYYY-MM-DD').locale('es').format('MMMM [de] YYYY')
     : f.filterBy === 'YEAR' ? f.date1
       : f.filterBy === 'RANGE' ? `${f.date1} al ${f.date2}` : f.date1;
@@ -51,17 +52,18 @@ async function purchaseExcelContext(query) {
   if (f.oldCustomer !== undefined) filters.push(`Cliente antiguo: ${f.oldCustomer ? 'Sí' : 'No'}`);
   if (f.withPickup !== undefined) filters.push(`Con recojo: ${f.withPickup ? 'Sí' : 'No'}`);
   if (f.query) filters.push(`Búsqueda (${f.searchType || 'general'}): ${f.query}`);
+  if (auth.full_names) filters.push(`Emitido por: ${auth.full_names}`);
   return { company, filters };
 }
 
-async function buildPurchaseExcel(query, rows, decimal, summary) {
-  const { company, filters } = await purchaseExcelContext(query);
+async function buildPurchaseExcel(query, rows, decimal, summary, auth = {}) {
+  const { company, filters } = await purchaseExcelContext(query, auth);
   const numberFormat = excelNumberMask(decimal);
   const columns = summary ? [
-    ['Código', r => r.CÓDIGO, 20], ['Producto', r => r.PRODUCTO, 65],
-    ['Cantidad', r => r.CANTIDAD, 24, numberFormat],
+    ['N.º', r => r.NRO_FILA, 8, '#,##0'], ['Código', r => r.CÓDIGO, 20], ['Producto', r => r.PRODUCTO, 52],
+    ['Unidad', r => r.UNIDAD, 16], ['Cantidad', r => r.CANTIDAD, 24, numberFormat],
   ] : [
-    ['Código', r => r.CÓDIGO, 18],
+    ['N.º', r => r.NRO_FILA, 8, '#,##0'], ['Código', r => r.CÓDIGO, 18],
     ['Fecha de compra', r => {
       const date = moment.utc(r.FECHA_COMPRA, 'DD/MM/YYYY HH:mm:ss', true);
       return date.isValid() ? date.toDate() : null;
@@ -69,7 +71,7 @@ async function buildPurchaseExcel(query, rows, decimal, summary) {
     ['Tipo de documento', r => r.TIPO_DOCUMENTO, 22],
     ['N.º de documento', r => r.NRO_DOCUMENTO == null ? null : String(r.NRO_DOCUMENTO), 22],
     ['Proveedor', r => r.PROVEEDOR, 44], ['Detalle', r => r.DETALLE, 65],
-    ['Forma de pago', r => r.TIPO, 18], ['Referencia', r => r.REFERENCIA, 44],
+    ['Condición de pago', r => r.TIPO, 18], ['Medio de pago', r => r.TIPO_PAGO, 18], ['Referencia comercial', r => r.REFERENCIA, 44],
     ['Tipo de proveedor', r => r.TIPO_PROVEEDOR, 26],
     ['Total kg', r => r.CANT_KG, 20, numberFormat], ['Total Bs', r => r.TOTAL, 22, numberFormat],
   ];
@@ -80,10 +82,10 @@ async function buildPurchaseExcel(query, rows, decimal, summary) {
     if (contact) filters.unshift(contact);
   }
   const workbook = generateProviderDirectoryExcel(rows, filters, decimal, {
-    title: summary ? 'RESUMEN DE COMPRAS POR PRODUCTO' : 'REPORTE DE COMPRAS',
+    title: summary ? 'REPORTE DE COMPRAS POR PRODUCTO' : 'REPORTE DE COMPRAS',
     sheetName: summary ? 'Resumen producto' : 'Reporte compras',
-    recordLabel: summary ? 'productos' : 'compras', company: headerCompany, columns,
-    note: summary ? 'Cantidades agrupadas por producto según los filtros seleccionados.' : 'Importes expresados en bolivianos. Total kg corresponde a las compras en kilogramos del filtro.',
+    recordLabel: summary ? 'productos' : 'compras', company: headerCompany, columns, keepEmptyColumns: true, showNote: false,
+    note: summary ? 'Cantidades agrupadas por producto y unidad según los filtros seleccionados.' : 'Importes expresados en bolivianos. La cantidad total corresponde a kilogramos comprados.',
   });
   const sheet = workbook.worksheets[0];
   const tableHeader = sheet.views[0].ySplit;
@@ -99,20 +101,27 @@ async function buildPurchaseExcel(query, rows, decimal, summary) {
     });
     row.height = lines * 15 + 2;
   }
-  const activeColumns = columns.filter((column, index) => index === 1 || rows.some(row => {
-    const value = column[1](row);
-    return value !== null && value !== undefined && String(value).trim() !== '' && value !== '-';
-  }));
-  if (!summary) {
-    const total = sheet.addRow(activeColumns.map((c, i) => i === 0 ? 'TOTAL GENERAL' : c[0] === 'Total kg' ? rows.reduce((s, r) => s + r.CANT_KG, 0) : c[0] === 'Total Bs' ? rows.reduce((s, r) => s + r.TOTAL, 0) : null));
-    total.height = 18;
-    total.eachCell({ includeEmpty: true }, (cell, index) => {
-      cell.fill = solidFill(colors.grandTotal); cell.border = reportThinBorder;
-      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: colors.text } };
-      cell.alignment = { vertical: 'middle', horizontal: typeof cell.value === 'number' ? 'right' : 'left' };
-      if (activeColumns[index - 1][3]) cell.numFmt = activeColumns[index - 1][3];
-    });
-  }
+  const totalKg = rows.reduce((sum, row) => exactAdd(sum, row.CANT_KG || 0), '0');
+  const totalAmount = rows.reduce((sum, row) => exactAdd(sum, row.TOTAL || 0), '0');
+  const totalQuantity = rows.reduce((sum, row) => exactAdd(sum, row.CANTIDAD || 0), '0');
+  const quantitiesByUnit = new Map();
+  if (summary) rows.forEach(row => {
+    const unit = String(row.UNIDAD || 'SIN UNIDAD').trim().toUpperCase();
+    quantitiesByUnit.set(unit, exactAdd(quantitiesByUnit.get(unit) || '0', row.CANTIDAD || 0));
+  });
+  const unitTotals = [...quantitiesByUnit.entries()].sort(([left], [right]) => left.localeCompare(right, 'es')).map(([unit, quantity]) => `${unit}: ${formatDecimalEsBo(Number(quantity), decimal)}`).join(' · ');
+  const total = sheet.addRow(columns.map(column => column[0] === 'N.º' ? (summary ? 'TOTALES POR UNIDAD' : 'TOTAL GENERAL')
+    : column[0] === 'Total kg' ? Number(totalKg)
+      : column[0] === 'Total Bs' ? Number(totalAmount)
+        : column[0] === 'Unidad' ? 'Por unidad'
+          : column[0] === 'Cantidad' ? (summary ? unitTotals : Number(totalQuantity)) : null));
+  total.height = 20;
+  total.eachCell({ includeEmpty: true }, (cell, index) => {
+    cell.fill = solidFill(colors.grandTotal); cell.border = reportThinBorder;
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: colors.text } };
+    cell.alignment = { vertical: 'middle', horizontal: typeof cell.value === 'number' ? 'right' : 'left' };
+    if (columns[index - 1]?.[3]) cell.numFmt = columns[index - 1][3];
+  });
   return workbook;
 }
 

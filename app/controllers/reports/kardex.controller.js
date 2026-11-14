@@ -11,6 +11,10 @@ const { getNumberDecimal } = require("../../helpers/company");
 const { REPORT_COLORS, solidFill, reportThinBorder } = require('../../constants/report-style.constants');
 const { enrichKardexHistory } = require("../../services/kardex-history-enrichment.service");
 const { buildStandardReportHeader } = require('../../helpers/generator-pdf/voucher-template.helper');
+const { selectedReportFilters } = require('../../services/report-selected-filters.service');
+const { buildPhysicalKardexOrder, applyPhysicalKardexSearch, normalizePhysicalCategoryIds } = require('../../services/physical-kardex-query.service');
+const { summarizePhysicalKardex, formatUnitTotals } = require('../../helpers/physical-kardex-quantity-totals');
+const { exactAdd } = require('../../helpers/number-formatter');
 moment.locale("es");
 
 const { getReportLogoPath } = require('../../helpers/report-logo');
@@ -87,21 +91,54 @@ const generatePdfReports = async (req = request, res = response) => {
         return res.status(500).json({ ok: false, msg: 'No se pudo generar el PDF. Intente nuevamente.' });
     }
 };
-const isAllProductsKardexRequest = ({ category_types } = {}) => {
-    if (!category_types) return true;
-    if (Array.isArray(category_types)) {
-        return category_types.every((categoryType) => !String(categoryType ?? '').trim());
+async function applyPhysicalOpeningBalances(kardexes, { id_sucursal, id_storage, filterBy, date1, date2 }) {
+    if (!kardexes.length) return kardexes;
+    const whereDate = whereDateForType(filterBy, date1, date2, '"ViewKardex"."date"');
+    const firstMovements = await ViewKardex.findAll({
+        attributes: ['id_product', 'id_storage', [sequelize.fn('MIN', sequelize.col('id')), 'min_id']],
+        where: { [Op.and]: [
+            id_sucursal ? { id_sucursal } : {},
+            id_storage ? { id_storage } : {},
+            { id_product: { [Op.in]: [...new Set(kardexes.map(row => row.id_product))] } },
+            { date: whereDate },
+        ] },
+        group: ['id_product', 'id_storage'],
+        raw: true,
+    });
+    const minIds = firstMovements.map(row => row.min_id).filter(Boolean);
+    const openingRows = minIds.length ? await ViewKardex.findAll({
+        attributes: ['id_product', 'id_storage', 'saldo_inicial'],
+        where: { id: { [Op.in]: minIds } },
+        raw: true,
+    }) : [];
+    const openingByProductStorage = new Map(openingRows.map(row => [`${row.id_product}:${row.id_storage}`, row.saldo_inicial || 0]));
+    for (const row of kardexes) {
+        const opening = openingByProductStorage.get(`${row.id_product}:${row.id_storage}`) || 0;
+        row.dataValues.quantity_inicial = opening;
+        row.dataValues.quantity_input = exactAdd(row.dataValues.quantity_input || 0, opening);
+        row.dataValues.quantity_saldo = exactAdd(row.dataValues.quantity_saldo || 0, opening);
     }
-    return !String(category_types).trim();
-};
+    return kardexes;
+}
 
-const shouldIncludeKardexRowNumber = ({ category_types } = {}) => {
-    if (isAllProductsKardexRequest({ category_types })) return true;
-    const categoryTypes = (Array.isArray(category_types) ? category_types : [category_types])
-        .map((categoryType) => String(categoryType ?? '').trim())
-        .filter(Boolean);
-    return categoryTypes.length === 1 && ['RAW_MATERIAL', 'FINISHED_PRODUCT'].includes(categoryTypes[0]);
-};
+async function physicalReportContext(query = {}, user = {}) {
+    const filters = await selectedReportFilters({
+        ...query,
+        query: query.type ? '' : undefined,
+        id_sucursales: query.id_sucursal || '',
+        id_storages: query.id_storage || '',
+        id_products: query.id_product || '',
+    });
+    const lines = filters.split('\n').filter(Boolean);
+    const categoryTypes = (Array.isArray(query.category_types) ? query.category_types : [query.category_types])
+        .map(value => String(value || '').trim()).filter(Boolean);
+    if (categoryTypes.length) lines.push(`Tipo de categoría: ${categoryTypes.join(', ')}`);
+    if (query.type && query.query) lines.push(`Búsqueda (${query.type}): ${query.query}`);
+    if (query.field_sort) lines.push(`Orden: ${query.field_sort} ${String(query.order || 'ASC').toUpperCase()}`);
+    lines.unshift(`Emitido por: ${user.full_names || 'Usuario'}`);
+    const company = await resolveReportCompany(query.id_sucursal);
+    return { company, filters: lines };
+}
 
 //TODO:
 const generatePdfReportsKardexFisico = async (
@@ -109,56 +146,10 @@ const generatePdfReportsKardexFisico = async (
     res = response
 ) => {
     try {
-        const { id_sucursal, id_storage, filterBy, date1, date2 } = req.query;
-        const includeRowNumber = shouldIncludeKardexRowNumber(req.query);
+        const includeRowNumber = true;
         const decimal = await getNumberDecimal();
         const kardexes = await returnDataInputKardexFisico(req.query);
-
-        // Calculate initial balances for the products
-        const whereDate = whereDateForType(
-            filterBy,
-            date1,
-            date2,
-            '"ViewKardex"."date"'
-        );
-
-        if (kardexes && kardexes.length > 0) {
-            const productIds = kardexes.map(k => k.id_product);
-            const firstMovements = await ViewKardex.findAll({
-                attributes: [
-                    'id_product',
-                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
-                ],
-                where: {
-                    [Op.and]: [
-                        id_sucursal ? { id_sucursal } : {},
-                        id_storage ? { id_storage } : {},
-                        { id_product: { [Op.in]: productIds } },
-                        { date: whereDate }
-                    ]
-                },
-                group: ['id_product'],
-                raw: true
-            });
-            const minIds = firstMovements.map(m => m.min_id).filter(Boolean);
-            const initialBalances = minIds.length > 0 ? await ViewKardex.findAll({
-                attributes: ['id_product', 'saldo_inicial'],
-                where: {
-                    id: { [Op.in]: minIds }
-                },
-                raw: true
-            }) : [];
-            const balanceMap = {};
-            for (const bal of initialBalances) {
-                balanceMap[bal.id_product] = bal.saldo_inicial;
-            }
-            for (const kardex of kardexes) {
-                const quantity_inicial = Number(balanceMap[kardex.id_product] || 0);
-                kardex.dataValues.quantity_inicial = quantity_inicial;
-                kardex.dataValues.quantity_input = Number(kardex.dataValues.quantity_input) + quantity_inicial;
-                kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + quantity_inicial;
-            }
-        }
+        await applyPhysicalOpeningBalances(kardexes, req.query);
 
         // Apply showZeroSaldo filter to match what is visible in the frontend table
         const showZeroSaldo = req.query.showZeroSaldo === 'true';
@@ -173,48 +164,44 @@ const generatePdfReportsKardexFisico = async (
             Math.max(22, String(Math.max(filteredKardexes.length, 1)).length * 5 + 10)
         ); //PDF
 
-        const columnCount = includeRowNumber ? 7 : 6;
-        const labelColumnSpan = includeRowNumber ? 4 : 3;
+        const columnCount = 8;
+        const labelColumnSpan = 5;
 
         let currentCategory = null;
-        let categoryInput = 0;
-        let categoryOutput = 0;
-        let categorySaldo = 0;
+        let categoryRows = [];
 
-        let totalInput = 0;
-        let totalOutput = 0;
-        let totalSaldo = 0;
-
-        const addCategorySubtotalRow = (categoryName) => {
+        const addCategorySubtotalRow = (categoryName, rows) => {
+            const { totals } = summarizePhysicalKardex(rows);
             const subtotalRow = [
                 {
                     text: `TOTAL ${categoryName.toUpperCase()}`,
+                    rowKind: 'subtotal',
                     fontSize: 8,
                     bold: true,
-                    fillColor: "#E2E8F0",
+                    fillColor: `#${REPORT_COLORS.total.slice(2)}`,
                     colSpan: labelColumnSpan,
                     margin: [5, 2, 5, 2]
                 },
                 ...Array(labelColumnSpan - 1).fill({}),
                 {
-                    text: formatEuro(categoryInput, decimal),
+                    text: formatUnitTotals(totals, 'quantity_input', decimal),
                     fontSize: 8,
                     bold: true,
-                    fillColor: "#E2E8F0",
+                    fillColor: `#${REPORT_COLORS.total.slice(2)}`,
                     alignment: "right"
                 },
                 {
-                    text: formatEuro(categoryOutput, decimal),
+                    text: formatUnitTotals(totals, 'quantity_output', decimal),
                     fontSize: 8,
                     bold: true,
-                    fillColor: "#E2E8F0",
+                    fillColor: `#${REPORT_COLORS.total.slice(2)}`,
                     alignment: "right"
                 },
                 {
-                    text: formatEuro(categorySaldo, decimal),
+                    text: formatUnitTotals(totals, 'quantity_saldo', decimal),
                     fontSize: 8,
                     bold: true,
-                    fillColor: "#E2E8F0",
+                    fillColor: `#${REPORT_COLORS.total.slice(2)}`,
                     alignment: "right"
                 }
             ];
@@ -225,7 +212,7 @@ const generatePdfReportsKardexFisico = async (
             const categoryName = kardex.product.category.name;
             if (categoryName !== currentCategory) {
                 if (currentCategory !== null) {
-                    addCategorySubtotalRow(currentCategory);
+                    addCategorySubtotalRow(currentCategory, categoryRows);
                     // Add spacing row in pdf
                     dataPdf[5].table.body.push([
                         { text: "", colSpan: columnCount, border: [false, false, false, false] },
@@ -234,17 +221,16 @@ const generatePdfReportsKardexFisico = async (
                 }
 
                 currentCategory = categoryName;
-                categoryInput = 0;
-                categoryOutput = 0;
-                categorySaldo = 0;
+                categoryRows = [];
 
                 const categoryRow = [
                     {
                         text: categoryName.toUpperCase(),
+                        rowKind: 'group',
                         fontSize: 9,
                         bold: true,
-                        fillColor: "#2D3748",
-                        color: "#ffffff",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
+                        color: `#${REPORT_COLORS.header.slice(2)}`,
                         colSpan: columnCount,
                         margin: [5, 2, 5, 2]
                     },
@@ -254,10 +240,11 @@ const generatePdfReportsKardexFisico = async (
             }
 
             const tableData = [
-                ...(includeRowNumber ? [{ text: index + 1, fontSize: 8, alignment: "center" }] : []),
+                ...(includeRowNumber ? [{ text: index + 1, rowKind: index % 2 ? 'alternate' : 'detail', fontSize: 8, alignment: "center" }] : []),
                 { text: kardex?.product.cod, fontSize: 8 },
                 { text: kardex?.product.name, fontSize: 8 },
                 { text: kardex?.product.unit.siglas, fontSize: 8 },
+                { text: kardex?.storage?.name || '—', fontSize: 8 },
 
                 {
                     text: formatEuro(kardex?.quantity_input, decimal),
@@ -276,70 +263,40 @@ const generatePdfReportsKardexFisico = async (
                 },
             ];
 
-            categoryInput += Number(kardex.quantity_input);
-            categoryOutput += Number(kardex.quantity_output);
-            categorySaldo += Number(kardex.dataValues.quantity_saldo);
-
-            totalInput += Number(kardex.quantity_input);
-            totalOutput += Number(kardex.quantity_output);
-            totalSaldo += Number(kardex.dataValues.quantity_saldo);
+            categoryRows.push(kardex);
 
             dataPdf[5].table.body.push(tableData);
         });
 
         // Add last category subtotal row
         if (currentCategory !== null) {
-            addCategorySubtotalRow(currentCategory);
+            addCategorySubtotalRow(currentCategory, categoryRows);
         }
 
-        // Add spacing and final totals row
-        dataPdf[5].table.body.push([
-            { text: "", colSpan: columnCount, border: [false, false, false, false] },
-            ...Array(columnCount - 1).fill({})
-        ]);
-
-        const totalsRow = [
-            {
-                text: "TOTALES",
-                fontSize: 9,
-                bold: true,
-                fillColor: "#eeeeee",
-                colSpan: labelColumnSpan,
-                margin: [5, 2, 5, 2]
-            },
-            ...Array(labelColumnSpan - 1).fill({}),
-            {
-                text: formatEuro(totalInput, decimal),
-                fontSize: 9,
-                bold: true,
-                fillColor: "#eeeeee",
-                alignment: "right"
-            },
-            {
-                text: formatEuro(totalOutput, decimal),
-                fontSize: 9,
-                bold: true,
-                fillColor: "#eeeeee",
-                alignment: "right"
-            },
-            {
-                text: formatEuro(totalSaldo, decimal),
-                fontSize: 9,
-                bold: true,
-                fillColor: "#eeeeee",
-                alignment: "right"
-            }
-        ];
-        dataPdf[5].table.body.push(totalsRow);
-        const formatDate1 =
-            filterBy == "MONTH" ? "MM" : filterBy == "YEAR" ? "YYYY" : "DD-MM-YYYY";
-        const formatDate2 = filterBy == "MONTH" ? "YYYY" : "DD-MM-YYYY";
+        if (filteredKardexes.length) {
+            const { totals } = summarizePhysicalKardex(filteredKardexes);
+            dataPdf[5].table.body.push([
+                { text: "TOTALES POR UNIDAD", rowKind: 'total', fontSize: 9, bold: true, fillColor: `#${REPORT_COLORS.grandTotal.slice(2)}`, colSpan: labelColumnSpan, margin: [5, 2, 5, 2] },
+                ...Array(labelColumnSpan - 1).fill({}),
+                ...['quantity_input', 'quantity_output', 'quantity_saldo'].map(field => ({
+                    text: formatUnitTotals(totals, field, decimal), fontSize: 8, bold: true,
+                    fillColor: `#${REPORT_COLORS.grandTotal.slice(2)}`, alignment: 'right',
+                })),
+            ]);
+        } else {
+            dataPdf[5].table.body.push([
+                { text: 'Sin movimientos para los filtros seleccionados.', colSpan: columnCount, alignment: 'center', italics: true },
+                ...Array(columnCount - 1).fill({}),
+            ]);
+        }
         const tables = dataPdf.filter(node => node?.table?.body?.length && node.table.body[0].some(cell => String(cell?.text || cell || '').trim()));
         const sections = tables.map(table => tabularReport(table.table, {}));
+        const context = await physicalReportContext(req.query, req.userAuth);
         await sendReportPdf(res, {
-            title: 'KARDEX FÍSICO', paper: 'A4', orientation: 'portrait', sections,
-            company: await resolveReportCompany(req.query.id_sucursal),
-            filters: ['Impreso por: ' + (req.userAuth?.full_names || ''), ...Object.entries(req.query).map(([key, value]) => key + ': ' + value)],
+            title: 'REPORTE DE KARDEX FÍSICO', paper: 'A4', orientation: 'landscape', sections,
+            reportTheme: 'stock',
+            company: context.company,
+            filters: context.filters,
         }, 'generatePdfReportsKardexFisico.pdf');
     } catch (error) {
         console.log(error);
@@ -593,7 +550,7 @@ const dataPdfReturnKardexExistencia = (auth, kardex) => [
                         rowSpan: 2,
                     },
                     {
-                        text: "FISICO",
+                        text: "EXISTENCIAS FÍSICAS",
                         fontSize: 8,
                         fillColor: "#eeeeee",
                         bold: true,
@@ -682,22 +639,20 @@ const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth, kardexes, includeRo
     ...buildStandardReportHeader({
         title: 'REPORTE DE KARDEX FÍSICO',
         auth,
-        details: `Detalle de los productos: ${kardexes[0]?.sucursal?.name || 'Todas las sucursales'}`,
+        details: 'Consulta física de productos por almacén',
     }),
     {
         style: "tableReport",
         absolutePosition: { x: 20, y: 95 },
         table: {
             headerRows: 2,
-            widths: includeRowNumber
-                ? [rowNumberColumnWidth, "auto", "*", "auto", "auto", "auto", "auto"]
-                : ["auto", "*", "auto", "auto", "auto", "auto"],
+            widths: [rowNumberColumnWidth, "auto", "*", "auto", "auto", "auto", "auto", "auto"],
             body: [
                 [
                     ...(includeRowNumber ? [{
                         text: "N°",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         rowSpan: 2,
                         alignment: "center",
@@ -705,63 +660,69 @@ const dataPdfReturnKardexFisicoVerticalOnlyReciclen = (auth, kardexes, includeRo
                     {
                         text: "CÓDIGO",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         rowSpan: 2,
                     },
                     {
                         text: "DETALLE",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         rowSpan: 2,
                     },
                     {
                         text: "UNIDAD",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
+                        bold: true,
+                        rowSpan: 2,
+                    },
+                    {
+                        text: "ALMACÉN",
+                        fontSize: 8,
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         rowSpan: 2,
                     },
                     {
                         text: "FISICO",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         colSpan: 3,
                         alignment: "center",
                     },
                     {},
                     {},
-                    // {text:'ALMACÉN',alignment: 'center', fontSize:7,fillColor: '#eeeeee', bold:true, rowSpan: 2},
                 ],
                 [
                     ...(includeRowNumber ? [{}] : []),
                     {},
                     {},
                     {},
+                    {},
                     {
-                        text: "COMPRA",
+                        text: "ENTRADA",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         alignment: "center",
                     },
                     {
-                        text: "VENTA",
+                        text: "SALIDA",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         alignment: "center",
                     },
                     {
                         text: "SALDO",
                         fontSize: 8,
-                        fillColor: "#eeeeee",
+                        fillColor: `#${REPORT_COLORS.subheader.slice(2)}`,
                         bold: true,
                         alignment: "center",
                     },
-                    // {},
                 ],
             ],
             layout: "lightHorizontalLines",
@@ -835,57 +796,11 @@ const generateExcelReportsKardexFisico = async (req, res) => {
     try {
         const kardexes = await returnDataInputKardexFisico(req.query);
         const decimal = await getNumberDecimal();
-        const { id_sucursal, id_storage, filterBy, date1, date2 } = req.query;
-        const includeRowNumber = shouldIncludeKardexRowNumber(req.query);
-        const labelColumnCount = includeRowNumber ? 4 : 3;
+        const includeRowNumber = true;
+        const labelColumnCount = 5;
         const firstQuantityColumn = labelColumnCount + 1;
-        const lastColumnLetter = includeRowNumber ? 'G' : 'F';
-
-        // Calculate initial balances for the products
-        const whereDate = whereDateForType(
-            filterBy,
-            date1,
-            date2,
-            '"ViewKardex"."date"'
-        );
-
-        if (kardexes && kardexes.length > 0) {
-            const productIds = kardexes.map(k => k.id_product);
-            const firstMovements = await ViewKardex.findAll({
-                attributes: [
-                    'id_product',
-                    [sequelize.fn('MIN', sequelize.col('id')), 'min_id']
-                ],
-                where: {
-                    [Op.and]: [
-                        id_sucursal ? { id_sucursal } : {},
-                        id_storage ? { id_storage } : {},
-                        { id_product: { [Op.in]: productIds } },
-                        { date: whereDate }
-                    ]
-                },
-                group: ['id_product'],
-                raw: true
-            });
-            const minIds = firstMovements.map(m => m.min_id).filter(Boolean);
-            const initialBalances = minIds.length > 0 ? await ViewKardex.findAll({
-                attributes: ['id_product', 'saldo_inicial'],
-                where: {
-                    id: { [Op.in]: minIds }
-                },
-                raw: true
-            }) : [];
-            const balanceMap = {};
-            for (const bal of initialBalances) {
-                balanceMap[bal.id_product] = bal.saldo_inicial;
-            }
-            for (const kardex of kardexes) {
-                const quantity_inicial = Number(balanceMap[kardex.id_product] || 0);
-                kardex.dataValues.quantity_inicial = quantity_inicial;
-                kardex.dataValues.quantity_input = Number(kardex.dataValues.quantity_input) + quantity_inicial;
-                kardex.dataValues.quantity_saldo = Number(kardex.dataValues.quantity_saldo) + quantity_inicial;
-            }
-        }
+        const lastColumnLetter = 'H';
+        await applyPhysicalOpeningBalances(kardexes, req.query);
 
         // Apply showZeroSaldo filter to match what is visible in the frontend table
         const showZeroSaldo = req.query.showZeroSaldo === 'true';
@@ -894,67 +809,83 @@ const generateExcelReportsKardexFisico = async (req, res) => {
             : kardexes.filter(k => Number(k.dataValues.quantity_saldo) > 0);
 
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet("Kardex Físico");
-        const headers = [
-            ...(includeRowNumber ? ["N°"] : []),
-            "Código",
-            "Detalle",
-            "Unidad",
-            "Entrada",
-            "Salida",
-            "Saldo",
-        ];
-        
-        const headerRow = worksheet.addRow(headers);
-        headerRow.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-        headerRow.eachCell((cell) => {
-            cell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FF1A3FA8' } // Deep blue brand color
-            };
+        const worksheet = workbook.addWorksheet('Kardex Físico', {
+            views: [{ state: 'frozen', ySplit: 5, topLeftCell: 'A6', showGridLines: false }],
+            pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '4:5' },
+        });
+        const context = await physicalReportContext(req.query, req.userAuth);
+        const widths = [8, 18, 40, 12, 24, 18, 18, 18];
+        widths.forEach((width, index) => { worksheet.getColumn(index + 1).width = width; });
+        worksheet.mergeCells('A1:A2');
+        worksheet.mergeCells('B1:H1');
+        worksheet.mergeCells('B2:H2');
+        worksheet.getCell('B1').value = 'REPORTE DE KARDEX FÍSICO';
+        worksheet.getCell('B1').font = { name: 'Arial', size: 14, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
+        worksheet.getCell('B1').fill = solidFill(REPORT_COLORS.header);
+        worksheet.getCell('B1').alignment = { vertical: 'middle', horizontal: 'center' };
+        worksheet.getRow(1).height = 30;
+        worksheet.mergeCells('A3:H3');
+        worksheet.getCell('B2').value = [context.company.branchName, context.company.city, context.company.nit && `NIT: ${context.company.nit}`, `Emitido: ${moment().utcOffset(-4).format('DD/MM/YYYY HH:mm')}`].filter(Boolean).join(' · ');
+        worksheet.getCell('A3').value = `FILTROS: ${context.filters.join(' · ') || 'Ninguno'}`;
+        [1, 2, 3].forEach(rowNumber => {
+            const cell = worksheet.getCell(rowNumber, 1);
+            cell.fill = solidFill(rowNumber === 1 ? REPORT_COLORS.row : REPORT_COLORS.subheader);
+            cell.border = reportThinBorder;
+        });
+        worksheet.getCell('B2').font = { name: 'Arial', size: 9, color: { argb: REPORT_COLORS.text } };
+        worksheet.getCell('B2').alignment = { vertical: 'middle', wrapText: true };
+        worksheet.getCell('A3').font = { name: 'Arial', size: 9, color: { argb: REPORT_COLORS.text } };
+        worksheet.getCell('A3').alignment = { vertical: 'middle', wrapText: true };
+        worksheet.getRow(2).height = 22;
+        worksheet.getRow(3).height = Math.max(24, 12 * Math.ceil(worksheet.getCell('A3').value.length / 130));
+        if (fs.existsSync(imagePath)) {
+            const extension = path.extname(imagePath).slice(1).toLowerCase() || 'png';
+            const logo = workbook.addImage({ filename: imagePath, extension });
+            worksheet.addImage(logo, { tl: { col: 0.08, row: 0.12 }, ext: { width: 48, height: 48 } });
+        }
+        worksheet.mergeCells('A4:E4');
+        worksheet.mergeCells('F4:H4');
+        worksheet.getCell('A4').value = 'PRODUCTO Y UBICACIÓN';
+        worksheet.getCell('F4').value = 'EXISTENCIAS FÍSICAS';
+        [worksheet.getCell('A4'), worksheet.getCell('F4')].forEach(cell => {
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.header } };
+            cell.fill = solidFill(REPORT_COLORS.subheader);
+            cell.border = reportThinBorder;
             cell.alignment = { vertical: 'middle', horizontal: 'center' };
         });
-        headerRow.height = 24;
+        worksheet.getRow(4).height = 20;
+        const headers = ['N.º', 'Código', 'Producto', 'Unidad', 'Almacén', 'Entrada', 'Salida', 'Saldo'];
+        const headerRow = worksheet.addRow(headers);
+        headerRow.height = 28;
+        headerRow.eachCell(cell => {
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
+            cell.fill = solidFill(REPORT_COLORS.header);
+            cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            cell.border = reportThinBorder;
+        });
 
         let currentCategory = null;
-        let categoryInput = 0;
-        let categoryOutput = 0;
-        let categorySaldo = 0;
+        let categoryRows = [];
 
-        let totalInput = 0;
-        let totalOutput = 0;
-        let totalSaldo = 0;
-
-        const addCategorySubtotalRow = (categoryName) => {
+        const addCategorySubtotalRow = (categoryName, rows) => {
+            const { totals } = summarizePhysicalKardex(rows);
             const subtotalRow = worksheet.addRow([
                 `TOTAL ${categoryName.toUpperCase()}`,
                 ...Array(labelColumnCount - 1).fill(""),
-                categoryInput,
-                categoryOutput,
-                categorySaldo
+                ...['quantity_input', 'quantity_output', 'quantity_saldo'].map(field => formatUnitTotals(totals, field, decimal)),
             ]);
             worksheet.mergeCells(`A${subtotalRow.number}:${String.fromCharCode(64 + labelColumnCount)}${subtotalRow.number}`);
             
             const subtotalCell = subtotalRow.getCell(1);
             subtotalCell.font = { name: 'Arial', size: 10, bold: true };
             subtotalCell.alignment = { vertical: 'middle', horizontal: 'left' };
-            subtotalCell.fill = {
-                type: 'pattern',
-                pattern: 'solid',
-                fgColor: { argb: 'FFE2E8F0' } // Light slate/gray
-            };
+            subtotalCell.fill = solidFill(REPORT_COLORS.total);
             
             [firstQuantityColumn, firstQuantityColumn + 1, firstQuantityColumn + 2].forEach((i) => {
                 const cell = subtotalRow.getCell(i);
                 cell.font = { name: 'Arial', size: 10, bold: true };
-                cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
                 cell.alignment = { horizontal: 'right' };
-                cell.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FFE2E8F0' }
-                };
+                cell.fill = solidFill(REPORT_COLORS.total);
             });
             subtotalRow.height = 20;
         };
@@ -963,24 +894,18 @@ const generateExcelReportsKardexFisico = async (req, res) => {
             const categoryName = kardex.product.category.name;
             if (categoryName !== currentCategory) {
                 if (currentCategory !== null) {
-                    addCategorySubtotalRow(currentCategory);
+                    addCategorySubtotalRow(currentCategory, categoryRows);
                     worksheet.addRow([]);
                 }
                 
                 currentCategory = categoryName;
-                categoryInput = 0;
-                categoryOutput = 0;
-                categorySaldo = 0;
+                categoryRows = [];
                 
                 const categoryRow = worksheet.addRow([categoryName.toUpperCase()]);
                 worksheet.mergeCells(`A${categoryRow.number}:${lastColumnLetter}${categoryRow.number}`);
                 const categoryCell = categoryRow.getCell(1);
-                categoryCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
-                categoryCell.fill = {
-                    type: 'pattern',
-                    pattern: 'solid',
-                    fgColor: { argb: 'FF2D3748' } // Dark gray category header
-                };
+                categoryCell.font = { name: 'Arial', size: 11, bold: true, color: { argb: REPORT_COLORS.header } };
+                categoryCell.fill = solidFill(REPORT_COLORS.subheader);
                 categoryCell.alignment = { vertical: 'middle', horizontal: 'left' };
                 categoryRow.height = 24;
             }
@@ -990,73 +915,124 @@ const generateExcelReportsKardexFisico = async (req, res) => {
                 kardex.product.cod,
                 kardex.product.name,
                 kardex.product.unit.siglas,
+                kardex.storage?.name || '—',
                 Number(kardex.quantity_input),
                 Number(kardex.quantity_output),
                 Number(kardex.dataValues.quantity_saldo),
             ]);
-            if (includeRowNumber) {
-                row.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
-            }
-            
-            categoryInput += Number(kardex.quantity_input);
-            categoryOutput += Number(kardex.quantity_output);
-            categorySaldo += Number(kardex.dataValues.quantity_saldo);
-
-            totalInput += Number(kardex.quantity_input);
-            totalOutput += Number(kardex.quantity_output);
-            totalSaldo += Number(kardex.dataValues.quantity_saldo);
-
-            [firstQuantityColumn, firstQuantityColumn + 1, firstQuantityColumn + 2].forEach((i) => {
-                const cell = row.getCell(i);
-                cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
-                cell.alignment = { horizontal: 'right' };
+            row.height = 22;
+            row.eachCell({ includeEmpty: true }, (cell, column) => {
+                cell.font = { name: 'Arial', size: 9, color: { argb: REPORT_COLORS.text } };
+                cell.fill = solidFill(index % 2 ? REPORT_COLORS.alternateRow : REPORT_COLORS.row);
+                cell.border = reportThinBorder;
+                cell.alignment = { horizontal: column === 1 ? 'center' : column >= firstQuantityColumn ? 'right' : 'left', vertical: 'middle', wrapText: true };
+                if (column >= firstQuantityColumn && column <= firstQuantityColumn + 2) cell.numFmt = decimal > 0 ? `#,##0.${'0'.repeat(decimal)}` : '#,##0';
             });
+            
+            categoryRows.push(kardex);
+
         });
 
         // Add last category subtotal row
         if (currentCategory !== null) {
-            addCategorySubtotalRow(currentCategory);
+            addCategorySubtotalRow(currentCategory, categoryRows);
         }
 
-        // Add spacing and totals row
-        worksheet.addRow([]);
-        const totalsRow = worksheet.addRow([
-            "TOTALES",
-            ...Array(labelColumnCount - 1).fill(""),
-            totalInput,
-            totalOutput,
-            totalSaldo
-        ]);
-        worksheet.mergeCells(`A${totalsRow.number}:${String.fromCharCode(64 + labelColumnCount)}${totalsRow.number}`);
-        
-        const totalsLabelCell = totalsRow.getCell(1);
-        totalsLabelCell.font = { name: 'Arial', size: 11, bold: true };
-        totalsLabelCell.alignment = { vertical: 'middle', horizontal: 'left' };
-        
-        [firstQuantityColumn, firstQuantityColumn + 1, firstQuantityColumn + 2].forEach((i) => {
-            const cell = totalsRow.getCell(i);
-            cell.font = { name: 'Arial', size: 11, bold: true };
-            cell.numFmt = `#,##0.${"0".repeat(decimal)}`;
-            cell.alignment = { horizontal: 'right' };
-        });
-        totalsRow.height = 22;
+        if (filteredKardexes.length) {
+            const { totals } = summarizePhysicalKardex(filteredKardexes);
+            const totalsRow = worksheet.addRow([
+                'TOTALES POR UNIDAD', ...Array(labelColumnCount - 1).fill(''),
+                ...['quantity_input', 'quantity_output', 'quantity_saldo'].map(field => formatUnitTotals(totals, field, decimal)),
+            ]);
+            worksheet.mergeCells(`A${totalsRow.number}:E${totalsRow.number}`);
+            totalsRow.eachCell({ includeEmpty: true }, cell => {
+                cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.text } };
+                cell.fill = solidFill(REPORT_COLORS.grandTotal);
+                cell.border = reportThinBorder;
+                cell.alignment = { vertical: 'middle', horizontal: 'right', wrapText: true };
+            });
+            totalsRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+            totalsRow.height = 30;
+        } else {
+            const emptyRow = worksheet.addRow(['Sin movimientos para los filtros seleccionados.']);
+            worksheet.mergeCells(`A${emptyRow.number}:H${emptyRow.number}`);
+            emptyRow.height = 26;
+            emptyRow.getCell(1).font = { name: 'Arial', size: 9, italic: true, color: { argb: REPORT_COLORS.text } };
+            emptyRow.getCell(1).fill = solidFill(REPORT_COLORS.alternateRow);
+            emptyRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+            emptyRow.getCell(1).border = reportThinBorder;
+        }
 
         // Auto-fit column widths
-        worksheet.columns.forEach((column, i) => {
-            let maxLength = 10;
-            column.eachCell({ includeEmpty: true }, (cell) => {
-                if (cell.value) {
-                    const str = String(cell.value);
-                    if (str.length > maxLength) {
-                        maxLength = str.length;
-                    }
-                }
-            });
-            column.width = i === 1 ? Math.min(maxLength + 2, 40) : maxLength + 2;
+        worksheet.pageSetup.printArea = `A1:H${worksheet.lastRow.number}`;
+        worksheet.pageSetup.printTitlesRow = '4:5';
+        worksheet.pageSetup.horizontalCentered = true;
+        worksheet.headerFooter.oddFooter = '&LRECUMET S.R.L. · Kardex físico&RPágina &P de &N';
+
+        const detailSheet = workbook.addWorksheet('Detalle filtrable', {
+            views: [{ state: 'frozen', ySplit: 4, topLeftCell: 'A5', showGridLines: false }],
+            pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '4:4' },
         });
-        if (includeRowNumber) {
-            worksheet.getColumn(1).width = Math.max(3, String(Math.max(filteredKardexes.length, 1)).length + 1);
+        const detailHeaders = ['N.º', 'Categoría', 'Código', 'Producto', 'Unidad', 'Almacén', 'Entrada', 'Salida', 'Saldo'];
+        const detailWidths = [8, 23, 18, 40, 12, 24, 18, 18, 18];
+        detailWidths.forEach((width, index) => { detailSheet.getColumn(index + 1).width = width; });
+        detailSheet.mergeCells('A1:I1');
+        detailSheet.getCell('A1').value = 'REPORTE DE KARDEX FÍSICO · DETALLE FILTRABLE';
+        detailSheet.getCell('A1').font = { name: 'Arial', size: 13, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
+        detailSheet.getCell('A1').fill = solidFill(REPORT_COLORS.header);
+        detailSheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+        detailSheet.getRow(1).height = 28;
+        detailSheet.mergeCells('A2:I2');
+        detailSheet.getCell('A2').value = `${context.company.branchName} · Emitido: ${moment().utcOffset(-4).format('DD/MM/YYYY HH:mm')}`;
+        detailSheet.mergeCells('A3:I3');
+        detailSheet.getCell('A3').value = `FILTROS: ${context.filters.join(' · ') || 'Ninguno'}`;
+        [2, 3].forEach(rowNumber => {
+            const cell = detailSheet.getCell(rowNumber, 1);
+            cell.font = { name: 'Arial', size: 9, color: { argb: REPORT_COLORS.text } };
+            cell.fill = solidFill(REPORT_COLORS.subheader);
+            cell.border = reportThinBorder;
+            cell.alignment = { vertical: 'middle', wrapText: true };
+        });
+        detailSheet.getRow(2).height = 21;
+        detailSheet.getRow(3).height = Math.max(24, 12 * Math.ceil(detailSheet.getCell('A3').value.length / 140));
+        const detailHeaderRow = detailSheet.addRow(detailHeaders);
+        detailHeaderRow.eachCell(cell => {
+            cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: REPORT_COLORS.textOnDark } };
+            cell.fill = solidFill(REPORT_COLORS.header);
+            cell.border = reportThinBorder;
+            cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+        });
+        detailHeaderRow.height = 24;
+        filteredKardexes.forEach((kardex, index) => {
+            const row = detailSheet.addRow([
+                index + 1,
+                kardex.product?.category?.name || 'SIN CATEGORÍA',
+                kardex.product?.cod || '',
+                kardex.product?.name || '',
+                kardex.product?.unit?.siglas || '',
+                kardex.storage?.name || '—',
+                Number(kardex.quantity_input),
+                Number(kardex.quantity_output),
+                Number(kardex.dataValues.quantity_saldo),
+            ]);
+            row.eachCell({ includeEmpty: true }, (cell, column) => {
+                cell.font = { name: 'Arial', size: 9, color: { argb: REPORT_COLORS.text } };
+                cell.fill = solidFill(index % 2 ? REPORT_COLORS.alternateRow : REPORT_COLORS.row);
+                cell.border = reportThinBorder;
+                cell.alignment = { horizontal: column === 1 ? 'center' : column >= 7 ? 'right' : 'left', vertical: 'middle', wrapText: column === 2 || column === 4 || column === 6 };
+                if (column >= 7) cell.numFmt = decimal > 0 ? `#,##0.${'0'.repeat(decimal)}` : '#,##0';
+            });
+        });
+        if (filteredKardexes.length) detailSheet.autoFilter = { from: { row: 4, column: 1 }, to: { row: 4 + filteredKardexes.length, column: detailHeaders.length } };
+        else {
+            const emptyRow = detailSheet.addRow(['Sin movimientos para los filtros seleccionados.']);
+            detailSheet.mergeCells(`A${emptyRow.number}:I${emptyRow.number}`);
+            emptyRow.getCell(1).font = { name: 'Arial', size: 9, italic: true, color: { argb: REPORT_COLORS.text } };
+            emptyRow.getCell(1).fill = solidFill(REPORT_COLORS.alternateRow);
+            emptyRow.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' };
         }
+        detailSheet.pageSetup.printArea = `A1:I${detailSheet.lastRow.number}`;
+        detailSheet.headerFooter.oddFooter = '&LRECUMET S.R.L. · Kardex físico&RPágina &P de &N';
 
         res.setHeader(
             "Content-Type",
@@ -1354,7 +1330,10 @@ const returnDataInputKardexFisico = async ({
     filterBy,
     date1,
     date2,
-    orderNew = ["id_product", "ASC"],
+    field_sort = 'product.cod',
+    order = 'ASC',
+    type,
+    query,
     include_zero = true,
     category_ids,
     category_types
@@ -1366,34 +1345,19 @@ const returnDataInputKardexFisico = async ({
         '"ViewKardex"."date"'
     );
 
-    const parseFilterValues = (value) => (Array.isArray(value) ? value : [value])
-        .flatMap((item) => String(item ?? '').split(','))
-        .map((item) => item.trim())
-        .filter(Boolean);
-    const isAllProductsModule = isAllProductsKardexRequest({ category_types });
-    const categoryIdValues = isAllProductsModule
-        ? parseFilterValues(category_ids)
-        : (Array.isArray(category_ids) ? category_ids : (category_ids ? [category_ids] : []));
-    const categoryIds = isAllProductsModule
-        ? [...new Set(categoryIdValues.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))]
-        : categoryIdValues;
+    const categoryIds = normalizePhysicalCategoryIds(category_ids);
     const categoryTypes = (Array.isArray(category_types) ? category_types : (category_types ? [category_types] : []))
         .map((categoryType) => String(categoryType ?? '').trim())
         .filter(Boolean);
 
     // Keep an invalid non-empty ID filter restrictive instead of silently exporting every category.
-    const whereProduct = categoryIdValues.length
-        ? { id_category: { [Op.in]: categoryIds } }
-        : {};
+    const whereProduct = categoryIds.length ? { id_category: { [Op.in]: categoryIds } } : {};
     const whereCategory = categoryTypes.length
         ? { type: { [Op.in]: categoryTypes } }
         : {};
 
-    return ViewKardex.findAll({
-        order: [
-            ['product', 'category', 'name', 'ASC'],
-            orderNew
-        ],
+    const optionsDb = {
+        order: buildPhysicalKardexOrder(field_sort, order),
         attributes: [
             "id_product",
             [sequelize.fn("SUM", sequelize.col("quantity_input")), "quantity_input"],
@@ -1432,7 +1396,9 @@ const returnDataInputKardexFisico = async ({
             : sequelize.literal(
                 "SUM(quantity_input) <> 0 OR SUM(quantity_output) <> 0"
             ),
-    });
+    };
+    applyPhysicalKardexSearch(optionsDb, type, query);
+    return ViewKardex.findAll(optionsDb);
 };
 
 // -------------------- EXPORT --------------------

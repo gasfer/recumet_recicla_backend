@@ -95,7 +95,16 @@ const validationSchemaReceived =  {
             options: {  max: 500},
         },
     },
+    date_received: {
+        notEmpty: { errorMessage: 'Indique la fecha y hora en que se recibió el traslado.' },
+        isISO8601: {
+            bail: true,
+            options: { strict: true },
+            errorMessage: 'La fecha de recepción no tiene un formato válido. Vuelva a seleccionarla en el calendario.',
+        },
+    },
     id_storage_received: {
+        notEmpty: { errorMessage: 'Seleccione el almacén donde ingresó el material.' },
         custom: { options: idExistStorage },
     },
 };

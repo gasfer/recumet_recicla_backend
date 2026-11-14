@@ -16,9 +16,19 @@ const PROVIDER_COMMERCIAL_CATALOGS = Object.freeze({
   operational_type: Object.freeze(['RAW_MATERIAL', 'SERVICES', 'SUPPLIES', 'EQUIPMENT_ASSETS', 'COMMERCIAL', 'OTHER']),
 });
 
+const PROVIDER_TYPE_CODES = Object.freeze(['A', 'B', 'C', 'D', 'F']);
+const COMMERCIAL_PROVIDER_TYPE_CODES = Object.freeze(['A', 'B', 'C', 'D']);
+const UNCLASSIFIED_PROVIDER_TYPE_CODE = 'F';
+
 const isProviderCatalogValue = (field, value) => (
   Object.prototype.hasOwnProperty.call(PROVIDER_COMMERCIAL_CATALOGS, field)
   && PROVIDER_COMMERCIAL_CATALOGS[field].includes(value)
 );
 
-module.exports = { PROVIDER_COMMERCIAL_CATALOGS, isProviderCatalogValue };
+module.exports = {
+  PROVIDER_COMMERCIAL_CATALOGS,
+  PROVIDER_TYPE_CODES,
+  COMMERCIAL_PROVIDER_TYPE_CODES,
+  UNCLASSIFIED_PROVIDER_TYPE_CODE,
+  isProviderCatalogValue,
+};

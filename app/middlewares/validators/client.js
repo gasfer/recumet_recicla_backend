@@ -4,6 +4,7 @@ const { numberDocumentExistClient, idExistClient, idExistSucursal } = require('.
 
 const validationSchema =  {
     full_names: {
+        trim: true,
         isEmpty: {
             negated: true, errorMessage: "El nombre es obligatorio",
         },
@@ -16,6 +17,7 @@ const validationSchema =  {
         },
     },
     number_document: {
+        trim: true,
         isEmpty: {
             negated: true, bail: true,
             errorMessage: "El carnet de identidad es obligatorio",
@@ -39,8 +41,10 @@ const validationSchema =  {
     },
     cellphone: {
         optional:{ options: {nullable: true}},
-        isNumeric: {
-            errorMessage: "EL numero de celular debe ser un valor numérico", bail: true,
+        isInt: {
+            bail: true,
+            options: { min: 60000000, max: 79999999 },
+            errorMessage: 'Ingrese un celular boliviano de 8 dígitos que comience con 6 o 7.',
         }
     },
     business_name: {
@@ -71,6 +75,10 @@ const validationSchema =  {
         isLength: {
             errorMessage: 'mínimo a 1 caracteres y máximo 174 caracteres',
             options: { min: 1, max: 174},
+        },
+        isIn: {
+            options: [['NATURAL', 'JURIDICO']],
+            errorMessage: 'Seleccione NATURAL o JURÍDICO como tipo de cliente.',
         },
     },
     id_sucursal: {

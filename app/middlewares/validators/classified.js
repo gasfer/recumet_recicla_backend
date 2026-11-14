@@ -23,9 +23,16 @@ const validationSchema =  {
         custom: { options: idExistProduct },
     },
     'classified_data.type_registry': {
+        isIn: {
+            options: [['FICHA', 'BOLETA', 'SIN FICHA']],
+            errorMessage: 'Seleccione un tipo de registro válido.',
+        },
         isEmpty: {
             negated: true, errorMessage: "El tipo de registro es obligatorio",
         },
+    },
+    'classified_data.date_classified': {
+        isISO8601: { errorMessage: 'La fecha de clasificación debe tener formato ISO 8601.' },
     },
     'classified_data.number_registry': {
         optional:{ options: {nullable: true}},
@@ -39,8 +46,23 @@ const validationSchema =  {
         },
     },
     'classified_data.status': {
+        equals: { options: 'ACTIVE', errorMessage: 'Una clasificación nueva debe registrarse activa.' },
         isEmpty: {
             negated: true, errorMessage: "El estado es obligatorio",
+        },
+    },
+    'classified_data.quantity_product': {
+        isDecimal: { errorMessage: 'La cantidad de origen debe ser numérica.' },
+        custom: {
+            options: value => Number.isFinite(Number(value)) && Number(value) > 0,
+            errorMessage: 'La cantidad de origen debe ser mayor a cero.',
+        },
+    },
+    'classified_data.cost_product': {
+        isDecimal: { errorMessage: 'El costo de origen debe ser numérico.' },
+        custom: {
+            options: value => Number.isFinite(Number(value)) && Number(value) >= 0,
+            errorMessage: 'El costo de origen no puede ser negativo.',
         },
     },
 
@@ -63,6 +85,7 @@ const validationSchema =  {
         isDecimal: {
             bail: true, errorMessage: "tiene que ser un valor numérico",
         },
+        custom: { options: value => Number.isFinite(Number(value)) && Number(value) > 0, errorMessage: 'La cantidad debe ser mayor a cero.' },
     },
     'classified_details.*.cost': {
         isEmpty: {
@@ -71,6 +94,7 @@ const validationSchema =  {
         isDecimal: {
             bail: true, errorMessage: "El costo tiene que ser un valor numérico",
         },
+        custom: { options: value => Number.isFinite(Number(value)) && Number(value) >= 0, errorMessage: 'El costo no puede ser negativo.' },
     },
     'classified_details.*.id_product': {
         custom: { options: idExistProduct },

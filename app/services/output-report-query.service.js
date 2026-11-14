@@ -2,6 +2,7 @@
 
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
+const { kilogramUnitSql } = require('../helpers/kilogram-units');
 
 const SEARCH_FIELDS = Object.freeze({
   cod: null,
@@ -51,14 +52,16 @@ function buildOutputWhere(params = {}, dateColumn = '"Output"."date_output"') {
 
 function outputOrder(params = {}) {
   const raw = params.orderNew;
-  if (!Array.isArray(raw) || raw.length < 2) return { order: [['id', 'DESC']] };
-
-  const isAssociationSort = raw.length >= 3;
-  const requestedField = isAssociationSort ? `${raw[0]}.${raw[1]}` : String(raw[0]);
-  const direction = String(raw[raw.length - 1]).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+  const requestedField = Array.isArray(raw) && raw.length >= 2
+    ? (raw.length >= 3 ? `${raw[0]}.${raw[1]}` : String(raw[0]))
+    : String(params.field_sort || 'id');
+  const rawDirection = Array.isArray(raw) && raw.length >= 2 ? raw[raw.length - 1] : params.order;
+  const direction = rawDirection === 1 || String(rawDirection).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+  const isAssociationSort = requestedField.includes('.');
   if (requestedField === 'total_quantity') return { order: [], sortByTotalQuantity: direction };
   if (isAssociationSort && ASSOCIATION_SORTS.has(requestedField)) {
-    return { order: [[raw[0], raw[1], direction]] };
+    const [association, field] = requestedField.split('.', 2);
+    return { order: [[association, field, direction]] };
   }
   if (!isAssociationSort && SORT_FIELDS.has(requestedField)) {
     return { order: [[requestedField, direction]] };
@@ -70,7 +73,7 @@ function outputListOrder(params = {}, sequelize) {
   const { order, sortByTotalQuantity } = outputOrder(params);
   if (!sortByTotalQuantity) return order;
   const quantityExpression = sequelize.literal(
-    '(SELECT COALESCE(SUM("details_outputs"."quantity"), 0) FROM "details_outputs" WHERE "details_outputs"."id_output" = "Output"."id")'
+    `(SELECT COALESCE(SUM("details_outputs"."quantity"), 0) FROM "details_outputs" JOIN "products" ON "products"."id" = "details_outputs"."id_product" JOIN "units" ON "units"."id" = "products"."id_unit" WHERE "details_outputs"."id_output" = "Output"."id" AND ${kilogramUnitSql('units')})`
   );
   return [[quantityExpression, sortByTotalQuantity], ['id', 'DESC']];
 }
@@ -79,7 +82,11 @@ function sortOutputQuantities(rows, direction) {
   if (!direction) return rows;
   return rows.sort((left, right) => {
     const difference = Number(left.total_quantity) - Number(right.total_quantity);
-    return direction === 'ASC' ? difference : -difference;
+    if (difference) return direction === 'ASC' ? difference : -difference;
+    const leftId = Number(left.id);
+    const rightId = Number(right.id);
+    if (Number.isFinite(leftId) && Number.isFinite(rightId)) return rightId - leftId;
+    return String(right.cod || '').localeCompare(String(left.cod || ''), 'es', { numeric: true });
   });
 }
 
