@@ -74,19 +74,20 @@ test('resume la boleta recibida con excedente, faltante y pesos totales', () => 
     ], 'RECEIVED');
 
     assert.deepEqual(summary.rows, [
-        { sent: 10, received: 12, normal: 10, blocked: 2, status: 'EN REVISIÓN', excess: 2, shortage: 0, differencePercentage: '20.00%', observation: 'Excedente' },
-        { sent: 8, received: 6.5, normal: 6.5, blocked: 1.5, status: 'EN REVISIÓN', excess: 0, shortage: 1.5, differencePercentage: '-18.75%', observation: 'Faltante' },
-        { sent: 4, received: 4, normal: 4, blocked: 0, status: 'ACEPTADO', excess: 0, shortage: 0, differencePercentage: '0.00%', observation: '-' },
+        { sent: 10, received: 12, difference: 2, normal: 10, blocked: 2, status: 'EN REVISIÓN', excess: 2, shortage: 0, differencePercentage: '20,00%', observation: 'Excedente' },
+        { sent: 8, received: 6.5, difference: -1.5, normal: 6.5, blocked: 1.5, status: 'EN REVISIÓN', excess: 0, shortage: 1.5, differencePercentage: '-18,75%', observation: 'Faltante' },
+        { sent: 4, received: 4, difference: 0, normal: 4, blocked: 0, status: 'ACEPTADO', excess: 0, shortage: 0, differencePercentage: '0,00%', observation: '-' },
     ]);
     assert.deepEqual(summary.totals, {
         sent: 22,
         received: 22.5,
+        difference: 0.5,
         normal: 20.5,
         blocked: 3.5,
         accountedTotal: 20.5,
         excess: 2,
         shortage: 1.5,
-        differencePercentage: '2.27%',
+        differencePercentage: '2,27%',
     });
     assert.deepEqual(summary.units, ['KGR', 'UND']);
 });
@@ -447,6 +448,7 @@ test('faltante sin producto MERMAS válido revierte la recepción sin movimiento
             id_transfer: 44,
             id_storage_received: 4,
             date_received: '2026-08-14T09:00:00.000Z',
+            id_merma_product: 22,
             details: [{ id_detail: 1, quantity_received: 6.5 }],
         },
     }, response);
@@ -457,6 +459,6 @@ test('faltante sin producto MERMAS válido revierte la recepción sin movimiento
     assert.equal(operations.stockCreates, 0);
     assert.equal(operations.kardex, 0);
     assert.equal(transfer.saveCalls, 0);
-    assert.deepEqual(mermaLookup.where, { id: undefined, status: true });
-    assert.deepEqual(mermaLookup.include[0].where, { id: 22, status: true });
+    assert.deepEqual(mermaLookup.where, { id: 22, status: true });
+    assert.deepEqual(mermaLookup.include[0].where, { name: 'MERMAS', type: 'RAW_MATERIAL', status: true });
 });

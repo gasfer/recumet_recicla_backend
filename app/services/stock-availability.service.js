@@ -1,103 +1,63 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
-const { sequelize, Stock } = require('../database/config');
+const { sequelize } = require('../database/config');
 const { exactAdd, exactSubtract, exactCompare, exactAbs } = require('../helpers/number-formatter');
 
-const availabilityKey = (productId, sucursalId, storageId) => `${productId}:${sucursalId}:${storageId}`;
-
-const activeHoldFilter = "h.disposition <> 'LIBERADO_POR_AJUSTE'";
-
-const getReviewQuantities = async ({ productIds = [], idSucursal, idStorage, transaction } = {}) => {
-  const normalizedProductIds = [...new Set(productIds.map(Number).filter(Boolean))];
-  if (normalizedProductIds.length === 0) return new Map();
-  const sucursalIds = String(idSucursal || '').split(',').map(Number).filter(Boolean);
-  const storageIds = String(idStorage || '').split(',').map(Number).filter(Boolean);
-
-  const rows = await sequelize.query(`
-    SELECT
-      h.id_product,
-      h.id_sucursal,
-      h.id_storage,
-      COALESCE(SUM(h.quantity), 0) AS quantity_in_review
-    FROM transfer_review_inventory_holds h
-    WHERE ${activeHoldFilter}
-      AND h.id_product IN (:productIds)
-      ${sucursalIds.length > 0 ? 'AND h.id_sucursal IN (:sucursalIds)' : ''}
-      ${storageIds.length > 0 ? 'AND h.id_storage IN (:storageIds)' : ''}
-    GROUP BY h.id_product, h.id_sucursal, h.id_storage
-  `, {
-    replacements: {
-      productIds: normalizedProductIds,
-      sucursalIds,
-      storageIds,
-    },
-    type: QueryTypes.SELECT,
-    transaction,
-  });
-
-  return new Map(rows.map((row) => [
-    availabilityKey(row.id_product, row.id_sucursal, row.id_storage),
-    exactAdd(row.quantity_in_review, 0),
-  ]));
-};
-
-const getReviewQuantitiesByProduct = async ({ productIds = [], idSucursal, idStorage, transaction } = {}) => {
-  const byLocation = await getReviewQuantities({ productIds, idSucursal, idStorage, transaction });
-  const totals = new Map();
-  for (const [key, quantity] of byLocation.entries()) {
-    const productId = Number(key.split(':')[0]);
-    totals.set(productId, exactAdd(totals.get(productId) || '0.0000', quantity));
-  }
-  return totals;
-};
+const availabilityKey = (productId, sucursalId, storageId) => (
+  `${productId ?? ''}:${sucursalId ?? ''}:${storageId ?? ''}`
+);
 
 const attachAvailabilityToKardexRows = async (rows = [], context = {}) => {
-  const quantities = await getReviewQuantitiesByProduct({
-    productIds: rows.map(({ id_product }) => id_product),
-    idSucursal: context.idSucursal,
-    idStorage: context.idStorage,
-    transaction: context.transaction,
-  });
-  for (const row of rows) {
-    const physicalStock = exactAdd(row.dataValues.quantity_saldo || 0, 0);
-    const stockInReview = quantities.get(Number(row.id_product)) || '0.0000';
-    row.dataValues.physical_stock = physicalStock;
-    row.dataValues.stock_in_review = stockInReview;
-    row.dataValues.available_stock = exactCompare(physicalStock, stockInReview) < 0 ? '0.0000' : exactSubtract(physicalStock, stockInReview);
-  }
+  await Promise.all(rows.map(async (row) => {
+    const values = row.dataValues || row;
+    const availability = await getStockAvailability({
+      id_product: values.id_product,
+      id_sucursal: values.id_sucursal ?? context.idSucursal,
+      id_storage: values.id_storage ?? context.idStorage,
+      stock: values.quantity_saldo || 0,
+    }, context.transaction);
+    values.physical_stock = availability.physical_stock;
+    values.stock_in_review = availability.stock_in_review;
+    values.available_stock = availability.available_stock;
+  }));
   return rows;
 };
 
 const getStockAvailability = async (stock, transaction) => {
   if (!stock) return { physical_stock: 0, stock_in_review: 0, available_stock: 0 };
-  const quantities = await getReviewQuantities({
-    productIds: [stock.id_product],
-    idSucursal: stock.id_sucursal,
-    idStorage: stock.id_storage,
+  const physicalStock = exactAdd(stock.stock ?? stock.physical_stock ?? 0, 0);
+  const [hold = {}] = await sequelize.query(`
+    SELECT COALESCE(SUM(quantity), 0) AS quantity_in_review
+    FROM transfer_review_inventory_holds
+    WHERE id_product = :productId
+      AND id_sucursal = :sucursalId
+      AND id_storage = :storageId
+      AND disposition <> 'LIBERADO_POR_AJUSTE'
+  `, {
+    replacements: {
+      productId: stock.id_product ?? stock.idProduct,
+      sucursalId: stock.id_sucursal ?? stock.idSucursal,
+      storageId: stock.id_storage ?? stock.idStorage,
+    },
+    type: QueryTypes.SELECT,
     transaction,
   });
-  const physicalStock = exactAdd(stock.stock, 0);
-  const stockInReview = quantities.get(availabilityKey(stock.id_product, stock.id_sucursal, stock.id_storage)) || '0.0000';
+  const held = exactAdd(hold.quantity_in_review ?? 0, 0);
   return {
     physical_stock: physicalStock,
-    stock_in_review: stockInReview,
-    available_stock: exactCompare(physicalStock, stockInReview) < 0 ? '0.0000' : exactSubtract(physicalStock, stockInReview),
+    stock_in_review: held,
+    available_stock: exactCompare(physicalStock, held) < 0 ? '0.0000' : exactSubtract(physicalStock, held),
   };
 };
 
 const attachAvailabilityToStocks = async (stocks = [], transaction) => {
-  const quantities = await getReviewQuantities({
-    productIds: stocks.map(({ id_product }) => id_product),
-    transaction,
-  });
-  for (const stock of stocks) {
-    const physicalStock = exactAdd(stock.stock, 0);
-    const stockInReview = quantities.get(availabilityKey(stock.id_product, stock.id_sucursal, stock.id_storage)) || '0.0000';
-    stock.dataValues.physical_stock = physicalStock;
-    stock.dataValues.stock_in_review = stockInReview;
-    stock.dataValues.available_stock = exactCompare(physicalStock, stockInReview) < 0 ? '0.0000' : exactSubtract(physicalStock, stockInReview);
-  }
+  await Promise.all(stocks.map(async (stock) => {
+    const availability = await getStockAvailability(stock, transaction);
+    stock.dataValues.physical_stock = availability.physical_stock;
+    stock.dataValues.stock_in_review = availability.stock_in_review;
+    stock.dataValues.available_stock = availability.available_stock;
+  }));
   return stocks;
 };
 
@@ -106,7 +66,7 @@ const hasAvailableStock = async (stock, requestedQuantity, transaction) => {
   return { ...availability, sufficient: exactCompare(availability.available_stock, requestedQuantity) >= 0 };
 };
 
-const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) => {
+const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500, onlyDifferences = false } = {}) => {
   // 1. Diagnóstico de desfase stock vs Kardex
   const rows = await sequelize.query(`
     WITH kardex_current AS (
@@ -135,45 +95,33 @@ const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500 } = {}) =
         ${idSucursal ? 'AND id_sucursal = :idSucursal' : ''}
         ${idStorage ? 'AND id_storage = :idStorage' : ''}
       GROUP BY id_product, id_sucursal, id_storage
-    ), held AS (
-      SELECT h.id_product, h.id_sucursal, h.id_storage,
-        SUM(h.quantity) AS quantity_in_review,
-        SUM(h.quantity) FILTER (WHERE h.disposition = 'RETENIDO_SIN_AJUSTE') AS retained_without_adjustment
-      FROM transfer_review_inventory_holds h
-      WHERE ${activeHoldFilter}
-        ${idSucursal ? 'AND h.id_sucursal = :idSucursal' : ''}
-        ${idStorage ? 'AND h.id_storage = :idStorage' : ''}
-      GROUP BY h.id_product, h.id_sucursal, h.id_storage
-    ), legacy_held AS (
-      SELECT n.id_product, n.id_sucursal, n.id_storage,
-        SUM(GREATEST(d.quantity_difference - d.quantity_resolved, 0)) AS quantity_in_review
-      FROM transfer_review_notes n
-      INNER JOIN transfer_review_note_details d ON d.id_transfer_review_note = n.id
-      WHERE n.reconciliation_status <> 'COMPLETADO'
-        AND d.reconciliation_status <> 'COMPLETADO'
-        ${idSucursal ? 'AND n.id_sucursal = :idSucursal' : ''}
-        ${idStorage ? 'AND n.id_storage = :idStorage' : ''}
-      GROUP BY n.id_product, n.id_sucursal, n.id_storage
     )
     SELECT p.cod, p.name, s.id_product, s.id_sucursal, s.id_storage,
       s.physical_stock,
       s.stock_updated_at,
       s.active_stock_rows,
-      COALESCE(h.quantity_in_review, 0) AS stock_in_review,
-      COALESCE(h.retained_without_adjustment, 0) AS retained_without_adjustment,
-      COALESCE(lh.quantity_in_review, 0) AS legacy_stock_in_review,
-      COALESCE(h.quantity_in_review, 0) - COALESCE(lh.quantity_in_review, 0) AS hold_source_difference,
-      GREATEST(s.physical_stock - COALESCE(h.quantity_in_review, 0), 0) AS available_stock,
+      COALESCE(holds.quantity_in_review, 0) AS stock_in_review,
+      0::numeric AS retained_without_adjustment,
+      0::numeric AS legacy_stock_in_review,
+      0::numeric AS hold_source_difference,
+      GREATEST(0, s.physical_stock - COALESCE(holds.quantity_in_review, 0)) AS available_stock,
       COALESCE(k.kardex_balance, 0) AS kardex_balance,
       k.kardex_last_id,
       k.kardex_last_date,
       s.physical_stock - COALESCE(k.kardex_balance, 0) AS physical_kardex_difference
     FROM stock_current s
     INNER JOIN products p ON p.id = s.id_product
-    LEFT JOIN held h ON h.id_product = s.id_product AND h.id_sucursal = s.id_sucursal AND h.id_storage = s.id_storage
-    LEFT JOIN legacy_held lh ON lh.id_product = s.id_product AND lh.id_sucursal = s.id_sucursal AND lh.id_storage = s.id_storage
     LEFT JOIN kardex_current k ON k.id_product = s.id_product AND k.id_sucursal = s.id_sucursal AND k.id_storage = s.id_storage
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(SUM(h.quantity), 0) AS quantity_in_review
+      FROM transfer_review_inventory_holds h
+      WHERE h.id_product = s.id_product
+        AND h.id_sucursal = s.id_sucursal
+        AND h.id_storage = s.id_storage
+        AND h.disposition <> 'LIBERADO_POR_AJUSTE'
+    ) holds ON TRUE
     WHERE true
+      ${onlyDifferences ? 'AND s.physical_stock <> COALESCE(k.kardex_balance, 0)' : ''}
     ORDER BY ABS(s.physical_stock - COALESCE(k.kardex_balance, 0)) DESC, p.cod ASC
     LIMIT :limit
   `, {
@@ -287,7 +235,7 @@ const normalizeStockKardexIrregularity = (row) => {
 };
 
 const getStockKardexIrregularities = async (filters = {}) => {
-  const diagnostic = await getStockDiagnostic(filters);
+  const diagnostic = await getStockDiagnostic({ ...filters, onlyDifferences: true });
   return diagnostic
     .filter((row) => exactCompare(row.physical_kardex_difference, 0) !== 0)
     .map(normalizeStockKardexIrregularity);
@@ -374,8 +322,6 @@ const assertStockKardexIntegrity = (options) => require('./stock-kardex-integrit
 
 module.exports = {
   availabilityKey,
-  getReviewQuantities,
-  getReviewQuantitiesByProduct,
   getStockAvailability,
   attachAvailabilityToStocks,
   attachAvailabilityToKardexRows,

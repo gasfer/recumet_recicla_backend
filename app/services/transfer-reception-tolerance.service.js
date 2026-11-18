@@ -19,7 +19,9 @@ const evaluateReceiptTolerance = (sentQuantity, receivedQuantity) => {
 
   const delta = exactSubtract(received, sent);
   const differencePercentage = Number(exactDivide(exactMultiply(delta, 100), sent, 4));
-  const accepted = exactCompare(exactMultiply(exactAbs(delta), 100), exactAbs(sent)) <= 0;
+  // Any non-zero difference requires an auditable review, even when it falls
+  // inside the former percentage tolerance.
+  const accepted = exactCompare(delta, 0) === 0;
   return {
     decision: accepted ? TOLERANCE_DECISIONS.ACCEPTED : TOLERANCE_DECISIONS.REQUIRES_REVIEW,
     accountingStatus: ACCOUNTING_STATUSES.ACCOUNTED,

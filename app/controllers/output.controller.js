@@ -284,7 +284,7 @@ const newOutput = async (req = request, res = response) => {
             if (!availability.sufficient) {
 
                 listProductNotStock.push({
-                    msg: `${stock.product.cod} - ${stock.product.name}: solicita ${detail.quantity}, pero hay ${availability.available_stock} disponibles (${availability.physical_stock} en stock físico y ${availability.stock_in_review} en revisión).`,
+                    msg: `${stock.product.cod} - ${stock.product.name}: solicita ${detail.quantity}, pero hay ${availability.available_stock} disponibles en Stock.`,
                 });
                 continue;
             }
@@ -651,7 +651,7 @@ const updateOutput = async (req = request, res = response) => {
 
                 listProductNotStock.push({
                     msg:
-                    `${stock.product.cod} - ${stock.product.name}: solicita ${detail.quantity}, pero hay ${availability.available_stock} disponibles (${availability.physical_stock} en stock físico y ${availability.stock_in_review} en revisión).`
+                    `${stock.product.cod} - ${stock.product.name}: solicita ${detail.quantity}, pero hay ${availability.available_stock} disponibles en Stock.`
                 });
 
                 continue;

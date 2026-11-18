@@ -2,7 +2,7 @@ const { buildTransferDocument } = require('../../helpers/generator-pdf/transfer-
 const { sendReportPdf } = require('../../services/pdf/report-pdf.service');
 const { tabularReport } = require('../../helpers/generator-pdf/tabular-report.adapter');
 const { Op } = require("sequelize");
-const { Transfers, TransferReviewNote, Sucursal } = require('../../database/config');
+const { Transfers, Sucursal } = require('../../database/config');
 const path = require('path');
 const fs = require('fs');
 const moment = require('moment');
@@ -202,6 +202,11 @@ const transferVoucherIncludes = [
     { association: 'detailsTransfers', include: [
         { association: 'product', attributes: ['cod', 'name'], include: [{ association: 'unit', attributes: ['name', 'siglas'] }] },
     ] },
+    { association: 'reviewNotes', required: false, attributes: ['id', 'type', 'reconciliation_status', 'management_status'], include: [
+        { association: 'details', attributes: ['id', 'id_detail_transfer', 'quantity_difference', 'quantity_resolved'], include: [
+            { association: 'inventoryHolds', attributes: ['quantity', 'disposition'] },
+        ] },
+    ] },
 ];
 
 const printTransferVoucher = async (req = request, res = response) =>{
@@ -225,20 +230,9 @@ const printTransferReceptionVoucher = async (req = request, res = response) => {
         if (!transfer) return res.status(404).json({ ok: false, errors: [{ msg: 'El traslado no existe.' }] });
         if (transfer.status !== 'RECEIVED') return res.status(409).json({ ok: false, errors: [{ msg: 'La Guía de recepción sólo está disponible para traslados recibidos.' }] });
 
-        const reviewNotes = await TransferReviewNote.findAll({
-            where: { id_transfer: transfer.id },
-            include: [
-                { association: 'registeredProduct', attributes: ['cod', 'name'] },
-                { association: 'assignedUser', attributes: ['full_names'] },
-                { association: 'details', include: [
-                    { association: 'product', attributes: ['cod', 'name'] },
-                    { association: 'resolutionActions', include: [{ association: 'movementLinks' }] },
-                ] },
-            ],
-        });
-        const voucherSummary = buildTransferVoucherSummary(transfer.detailsTransfers, transfer.status, reviewNotes);
+        const voucherSummary = buildTransferVoucherSummary(transfer.detailsTransfers, transfer.status, transfer.reviewNotes || []);
         const decimal = await getNumberDecimal();
-        await sendReportPdf(res, buildTransferDocument(transfer, voucherSummary, reviewNotes, decimal), `guia-recepcion-${transfer.cod}.pdf`);
+        await sendReportPdf(res, buildTransferDocument(transfer, voucherSummary, [], decimal), `guia-recepcion-${transfer.cod}.pdf`);
     } catch (error) {
         console.log(error);
         return res.status(500).json({ ok: false, errors: [{ msg: 'No se pudo generar la Guía de recepción.' }] });

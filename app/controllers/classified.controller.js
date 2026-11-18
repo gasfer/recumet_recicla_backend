@@ -188,7 +188,7 @@ const newClassified = async (req = request, res = response ) => {
             return res.status(422).json({
                 ok: false,
                 errors: [
-                    { msg: `${sourceLabel} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`}
+                    { msg: `${sourceLabel} no tiene suficiente stock disponible. Stock actual: ${availability.physical_stock}, disponible: ${availability.available_stock}.`}
                 ],
             });
         }

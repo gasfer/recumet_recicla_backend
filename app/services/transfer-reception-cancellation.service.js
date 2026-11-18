@@ -5,6 +5,8 @@ const {
   TransferReviewResolutionAction,
   TransferReviewActionMovement,
   TransferReviewNote,
+  TransferReviewNoteDetail,
+  TransferReviewInventoryHold,
   kardexMovements,
 } = require('../database/config');
 const { applyExplicitEffect, registerKardexOnlyEffect } = require('./inventory-posting.service');
@@ -13,6 +15,10 @@ const { ValuedKardexService } = require('./valued-kardex.service');
 const { exactAdd, exactMin, exactCompare } = require('../helpers/number-formatter');
 
 const valuedKardex = new ValuedKardexService();
+const receptionSourceId = (transfer) => transfer.reception_attempt_key && !String(transfer.reception_attempt_key).startsWith('legacy-')
+  ? `${transfer.id}:R:${transfer.reception_attempt_key}`
+  : transfer.id;
+const cancellationSourceId = (transfer) => `TRANSFER_RECEPTION_CANCELLATION:${receptionSourceId(transfer)}`;
 
 const oppositeDirection = (type) => (type === 'INPUT' ? 'OUTPUT' : 'INPUT');
 const movementLocation = (movement) => ({
@@ -33,20 +39,22 @@ const compensateMovement = async ({ movement, transfer, actorUserId, actionId, e
     details: `ANULACIÓN RECEPCIÓN #${transfer.cod} · REVERSIÓN ${movement.details || 'MOVIMIENTO'}`,
     registryNumber: transfer.registry_number,
     sourceType: 'TRANSFER_RECEPTION_CANCELLATION',
-    sourceId: transfer.id,
+    sourceId: receptionSourceId(transfer),
     sourceDetailId: actionId || movement.id,
     effectType,
-    idempotencyKey: `TRANSFER_RECEPTION_CANCELLATION:${transfer.id}:${actionId || 'RECEIPT'}:${movement.id}`,
+    idempotencyKey: `${cancellationSourceId(transfer)}:${actionId || 'RECEIPT'}:${movement.id}`,
     transaction,
   });
-  await valuedKardex.reverseOriginal({
-    originalSourceType: 'TRANSFER_RECEIVED', originalSourceId: transfer.id,
-    originalSourceDetailId: movement.source_detail_id, originalEffectType: movement.effect_type,
-    sourceType: 'REVERSAL', sourceId: `TRANSFER_RECEPTION_CANCELLATION:${transfer.id}`,
-    sourceDetailId: movement.id, effectType, id_user: actorUserId, movementDate: new Date(),
-    id_product: movement.id_product, id_sucursal: movement.id_sucursal, id_storage: movement.id_storage,
-    transaction,
-  });
+  if (movement.source_type === 'TRANSFER_RECEPTION') {
+    await valuedKardex.reverseOriginal({
+      originalSourceType: 'TRANSFER_RECEIVED', originalSourceId: receptionSourceId(transfer),
+      originalSourceDetailId: movement.source_detail_id, originalEffectType: movement.effect_type,
+      sourceType: 'REVERSAL', sourceId: cancellationSourceId(transfer),
+      sourceDetailId: movement.id, effectType, id_user: actorUserId, movementDate: new Date(),
+      id_product: movement.id_product, id_sucursal: movement.id_sucursal, id_storage: movement.id_storage,
+      transaction,
+    });
+  }
   return { movement: result.movement, location: movementLocation(movement) };
 };
 
@@ -54,7 +62,7 @@ const reverseReconciliationActions = async ({ transfer, actorUserId, reason, tra
   const actions = await TransferReviewResolutionAction.findAll({
     where: {
       management_status: 'ACTIVA',
-      operation_status: 'ACTIVE',
+      operation_status: { [Op.in]: ['ACTIVE', 'PENDING_RECEPTION', 'REVERSAL_PENDING'] },
     },
     include: [
       { association: 'reviewNote', where: { id_transfer: transfer.id }, required: true },
@@ -122,7 +130,7 @@ const reverseReconciliationActions = async ({ transfer, actorUserId, reason, tra
 const preserveAndReverseReceipt = async ({ transfer, actorUserId, transaction }) => {
   const locations = [];
   const explicitMovements = await kardexMovements.findAll({
-    where: { source_type: 'TRANSFER_RECEPTION', source_id: transfer.id, status: true },
+    where: { source_type: 'TRANSFER_RECEPTION', source_id: String(receptionSourceId(transfer)), status: true },
     transaction,
     lock: transaction.LOCK?.UPDATE || true,
   });
@@ -151,7 +159,7 @@ const preserveAndReverseReceipt = async ({ transfer, actorUserId, transaction })
         cost: Number(detail.cost || 0),
         registryNumber: transfer.registry_number,
         sourceType: 'TRANSFER_RECEPTION_CANCELLATION',
-        sourceId: transfer.id,
+        sourceId: receptionSourceId(transfer),
         sourceDetailId: detail.id,
         transaction,
       };
@@ -160,19 +168,19 @@ const preserveAndReverseReceipt = async ({ transfer, actorUserId, transaction })
         direction: 'INPUT',
         details: `RECEPCIÓN ORIGINAL TRASLADO #${transfer.cod} · CONSERVADA POR ANULACIÓN`,
         effectType: 'PRESERVE_ORIGINAL_RECEIPT',
-        idempotencyKey: `TRANSFER_RECEPTION_CANCELLATION:${transfer.id}:${detail.id}:PRESERVE_ORIGINAL_RECEIPT`,
+        idempotencyKey: `${cancellationSourceId(transfer)}:${detail.id}:PRESERVE_ORIGINAL_RECEIPT`,
       });
       await applyExplicitEffect({
         ...common,
         direction: 'OUTPUT',
         details: `ANULACIÓN RECEPCIÓN TRASLADO #${transfer.cod} · SALIDA COMPENSATORIA`,
         effectType: 'REVERSE_BASE_RECEIPT',
-        idempotencyKey: `TRANSFER_RECEPTION_CANCELLATION:${transfer.id}:${detail.id}:REVERSE_BASE_RECEIPT`,
+        idempotencyKey: `${cancellationSourceId(transfer)}:${detail.id}:REVERSE_BASE_RECEIPT`,
       });
       await valuedKardex.reverseOriginal({
-        originalSourceType: 'TRANSFER_RECEIVED', originalSourceId: transfer.id,
+        originalSourceType: 'TRANSFER_RECEIVED', originalSourceId: receptionSourceId(transfer),
         originalSourceDetailId: detail.id, originalEffectType: 'BASE_RECEIPT',
-        sourceType: 'REVERSAL', sourceId: `TRANSFER_RECEPTION_CANCELLATION:${transfer.id}`,
+        sourceType: 'REVERSAL', sourceId: cancellationSourceId(transfer),
         sourceDetailId: detail.id, effectType: 'REVERSE_BASE_RECEIPT', id_user: actorUserId,
         movementDate: new Date(), id_product: detail.id_product,
         id_sucursal: transfer.id_sucursal_received, id_storage: transfer.id_storage_received, transaction,
@@ -191,6 +199,37 @@ const preserveAndReverseReceipt = async ({ transfer, actorUserId, transaction })
 };
 
 const closeReconciliationTrace = async ({ transferId, actorUserId, reason, transaction }) => {
+  const notes = await TransferReviewNote.findAll({
+    where: { id_transfer: transferId, management_status: { [Op.ne]: 'ELIMINADA' } },
+    include: [{ association: 'details', attributes: ['id'] }],
+    transaction,
+    lock: transaction.LOCK?.UPDATE || true,
+  });
+  const detailIds = notes.flatMap((note) => (note.details || []).map(({ id }) => id));
+  if (detailIds.length) {
+    const activeHolds = await TransferReviewInventoryHold.findAll({
+      where: { id_transfer_review_note_detail: { [Op.in]: detailIds }, disposition: { [Op.ne]: 'LIBERADO_POR_AJUSTE' } },
+      transaction, lock: transaction.LOCK?.UPDATE || true,
+    });
+    for (const hold of activeHolds) {
+      const released = await TransferReviewInventoryHold.findOne({
+        where: { id_transfer_review_note_detail: hold.id_transfer_review_note_detail, disposition: 'LIBERADO_POR_AJUSTE' },
+        transaction, lock: transaction.LOCK?.UPDATE || true,
+      });
+      if (released) {
+        released.quantity = exactAdd(released.quantity, hold.quantity);
+        await released.save({ transaction });
+        await hold.destroy({ transaction });
+      } else {
+        hold.disposition = 'LIBERADO_POR_AJUSTE';
+        hold.id_created_user = actorUserId;
+        await hold.save({ transaction });
+      }
+    }
+    await TransferReviewNoteDetail.update({ reconciliation_status: 'COMPLETADO', quantity_resolved: 0 }, {
+      where: { id: { [Op.in]: detailIds } }, transaction,
+    });
+  }
   await TransferReviewNote.update({
     management_status: 'REVERTIDA',
     management_reason: reason,

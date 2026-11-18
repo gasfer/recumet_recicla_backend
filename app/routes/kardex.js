@@ -1,13 +1,15 @@
 const { Router } = require('express');
 const { validarJWT } = require('../middlewares/validators/validar-jwt');
-const { getKardexPaginate, getDailyKardexPaginate, getKardexFisicoPaginate, getTotalStockRecumet, getStockDiagnosticHandler, syncStocksHandler } = require("../controllers/kardex.controller");
+const { getKardexPaginate, getDailyKardexPaginate, getKardexFisicoPaginate, getTotalStockRecumet, getStockDiagnosticHandler } = require("../controllers/kardex.controller");
 const { generatePdfReports, generateExcelReports, generatePdfReportsKardexFisico, generateExcelReportsKardexFisico, generatePdfReportsExistencia, generateExcelReportsExistencia } = require('../controllers/reports/kardex.controller');
 const { generatePdfReportsTotalStock, generateExcelReportsTotalStock, generateExcelConsolidatedReportsTotalStock } = require('../controllers/reports/total-stock-recumet.controller');
-const stockReconciliation = require('../controllers/stock_reconciliation.controller');
 const { authorizeStockReconciliation } = require('../middlewares/authorize-stock-reconciliation');
 const { authorizeModulePermission } = require('../middlewares/authorize-module-permission');
+const { authorizeAdmin } = require('../middlewares/authorize-admin');
+const { createManualKardexMovement } = require('../controllers/manual-kardex-movement.controller');
 
 const router = Router();
+router.post('/manual-movement', [validarJWT, authorizeAdmin], createManualKardexMovement);
 const { getStockProviderOptions } = require('../controllers/stock-provider-options.controller');
 router.get('/total-stock-recumet/providers', [validarJWT], getStockProviderOptions);
 const { exportPurchasesByBranch } = require('../controllers/reports/purchases-by-branch.controller');
@@ -27,20 +29,6 @@ router.get('/diagnostic', [
     authorizeStockReconciliation('read'),
 ], getStockDiagnosticHandler);
 
-router.put('/sync-stocks', [
-    validarJWT,
-    authorizeStockReconciliation('investigate'),
-], syncStocksHandler);
-
-router.post('/reconciliation-cases/detect', [validarJWT, authorizeStockReconciliation('investigate')], stockReconciliation.detect);
-router.get('/reconciliation-cases', [validarJWT, authorizeStockReconciliation('read')], stockReconciliation.list);
-router.get('/reconciliation-authorizers', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.authorizers);
-router.get('/reconciliation-count-responsibles', [validarJWT, authorizeStockReconciliation('investigate')], stockReconciliation.countResponsibles);
-router.get('/reconciliation-cases/:id', [validarJWT, authorizeStockReconciliation('read')], stockReconciliation.getOne);
-router.put('/reconciliation-cases/:id/investigation', [validarJWT, authorizeStockReconciliation('investigate')], stockReconciliation.investigate);
-router.post('/reconciliation-cases/:id/preview', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.preview);
-router.post('/reconciliation-cases/:id/resolve', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.resolve);
-router.post('/reconciliation-cases-batch/resolve', [validarJWT, authorizeStockReconciliation('regularize')], stockReconciliation.batchResolve);
 
 /**
  * @swagger

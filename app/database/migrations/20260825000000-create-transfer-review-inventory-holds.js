@@ -86,33 +86,8 @@ module.exports = {
       });
     }
 
-    await queryInterface.sequelize.query(`
-      INSERT INTO transfer_review_inventory_holds (
-        quantity,
-        disposition,
-        id_transfer_review_note_detail,
-        id_product,
-        id_sucursal,
-        id_storage,
-        id_created_user,
-        "createdAt",
-        "updatedAt"
-      )
-      SELECT
-        d.quantity_difference - COALESCE(d.quantity_resolved, 0),
-        'EN_REVISION',
-        d.id,
-        n.id_product,
-        n.id_sucursal,
-        n.id_storage,
-        n.id_user,
-        NOW(),
-        NOW()
-      FROM transfer_review_note_details d
-      INNER JOIN transfer_review_notes n ON n.id = d.id_transfer_review_note
-      WHERE d.quantity_difference - COALESCE(d.quantity_resolved, 0) > 0
-      ON CONFLICT (id_transfer_review_note_detail, disposition) DO NOTHING
-    `);
+    // No reconstruir reservas desde diferencias históricas al instalar el flujo nuevo.
+    // La limpieza de datos existentes se realiza con stock-kardex-baseline-reset-apply.sql.
   },
 
   async down(queryInterface) {

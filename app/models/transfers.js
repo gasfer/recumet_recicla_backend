@@ -22,6 +22,7 @@ module.exports = (sequelize, DataTypes) => {
     cod: DataTypes.STRING,
     date_send: DataTypes.DATE,
     date_received: DataTypes.DATE,
+    reception_attempt_key: DataTypes.STRING,
     observations_send: DataTypes.TEXT,
     observations_received: DataTypes.TEXT,
     total: {

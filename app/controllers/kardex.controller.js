@@ -5,7 +5,6 @@ const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const { whereDateForType } = require('../helpers/where_range');
 const { attachAvailabilityToKardexRows, getStockDiagnostic } = require('../services/stock-availability.service');
-const { detectCases } = require('../services/stock-reconciliation.service');
 const { sendPermissionDenied } = require('../helpers/permission-denied');
 const { KARDEX_HISTORY_ATTRIBUTES, attachKardexEventMetadata } = require('../services/kardex-event.service');
 const { enrichKardexHistory } = require('../services/kardex-history-enrichment.service');
@@ -96,7 +95,7 @@ const getKardexPaginate = async (req = request, res = response) => {
                     item.dataValues.effect_type = movement.effect_type;
                     if (['TRANSFER_RECEPTION', 'TRANSFER_RECEPTION_CANCELLATION', 'TRANSFER_CANCELLATION'].includes(movement.source_type)
                         && /^\d+$/.test(String(movement.source_id || ''))) {
-                        item.dataValues.source_transfer_id = Number(movement.source_id);
+                        item.dataValues.source_transfer_id = Number(String(movement.source_id).split(':R:')[0]);
                     }
                 }
                 const transferCode = `${item.detail || ''} ${item.sub_detail || ''}`.match(/\bTRAS\d+\b/i)?.[0];
@@ -628,37 +627,11 @@ const getStockDiagnosticHandler = async (req = request, res = response) => {
     }
 };
 
-const syncStocksHandler = async (req = request, res = response) => {
-    try {
-        const { id_sucursal, id_storage } = req.body;
-        if (!canAccessSucursal(req.userAuth, id_sucursal)) return sendPermissionDenied(res, 'detectar diferencias fuera de una sucursal autorizada');
-        const result = await detectCases({
-            idSucursal: id_sucursal,
-            idStorage: id_storage,
-            actorUserId: req.userAuth.id,
-        });
-        return res.status(200).json({
-            ok: true,
-            synced: 0,
-            inventory_modified: false,
-            message: 'La sincronización masiva fue retirada. Las diferencias se registraron como casos para revisión individual.',
-            ...result,
-        });
-    } catch (error) {
-        console.log(error);
-        return res.status(500).json({
-            ok: false,
-            errors: [{ msg: `Error al detectar diferencias: ${error.message || 'Ocurrió un imprevisto interno'}` }]
-        });
-    }
-};
-
 module.exports = {
     getKardexPaginate,
     getDailyKardexPaginate,
     normalizeKardexHistoryOrder,
     getKardexFisicoPaginate,
     getTotalStockRecumet,
-    getStockDiagnosticHandler,
-    syncStocksHandler
+    getStockDiagnosticHandler
 }

@@ -26,7 +26,7 @@ test('distingue traslado pendiente de una recepción anulable', async (t) => {
   assert.equal((await getCancellationEligibility({ transferId: 1, transaction: tx })).mode, 'CANCEL_RECEPTION');
 });
 
-test('bloquea por nota o detalle de conciliación abierto', async (t) => {
+test('permite anular una recepción con nota o detalle de conciliación abierto', async (t) => {
   const state = {
     transfer: { id: 1, status: 'RECEIVED' },
     notes: [{ id: 9, reconciliation_status: 'PARCIAL', resolved_at: null }],
@@ -34,11 +34,12 @@ test('bloquea por nota o detalle de conciliación abierto', async (t) => {
   };
   installFixture(t, state);
   const result = await getCancellationEligibility({ transferId: 1, transaction: tx });
-  assert.equal(result.mode, 'RECEPTION_BLOCKED');
+  assert.equal(result.mode, 'CANCEL_RECEPTION');
+  assert.equal(result.eligible, true);
   assert.deepEqual(result.blockers.map(({ type }) => type), ['OPEN_REVIEW_NOTES', 'OPEN_REVIEW_DETAILS']);
 });
 
-test('bloquea por retención activa o acción correctiva pendiente', async (t) => {
+test('permite anular una recepción con retención activa o acción correctiva pendiente', async (t) => {
   const state = {
     transfer: { id: 1, status: 'RECEIVED' },
     notes: [{ id: 9, reconciliation_status: 'COMPLETADO', resolved_at: new Date() }],
@@ -48,11 +49,12 @@ test('bloquea por retención activa o acción correctiva pendiente', async (t) =
   };
   installFixture(t, state);
   const result = await getCancellationEligibility({ transferId: 1, transaction: tx });
-  assert.equal(result.mode, 'RECEPTION_BLOCKED');
+  assert.equal(result.mode, 'CANCEL_RECEPTION');
+  assert.equal(result.eligible, true);
   assert.deepEqual(result.blockers.map(({ type }) => type), ['ACTIVE_INVENTORY_HOLDS', 'PENDING_CORRECTIVE_ACTIONS']);
 });
 
-test('expone a la interfaz una decisión basada en pendientes del backend', () => {
+test('expone a la interfaz que la anulación revertirá las retenciones pendientes', () => {
   const blocked = getReceptionCancellationAvailability([{
     management_status: 'ACTIVA',
     reconciliation_status: 'COMPLETADO',
@@ -65,7 +67,7 @@ test('expone a la interfaz una decisión basada en pendientes del backend', () =
     }],
     resolutionActions: [],
   }]);
-  assert.equal(blocked.enabled, false);
+  assert.equal(blocked.enabled, true);
   assert.equal(blocked.blockers[0].type, 'ACTIVE_INVENTORY_HOLDS');
 
   const enabled = getReceptionCancellationAvailability([]);

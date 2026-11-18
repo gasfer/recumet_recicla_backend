@@ -1,4 +1,5 @@
 const { response, request } = require('express');
+const { randomUUID } = require('crypto');
 const { Transfers, sequelize , DetailsTransfers, Stock, History, Product, Category, kardexMovements } = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
@@ -7,8 +8,12 @@ const get_num_request = require('../helpers/generate-cod');
 const notificationService = require('../services/notification.service');
 const { verifyLocationsIntegrity, getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
 const { buildReceivedDetails } = require('../helpers/transfer-reception');
+const {
+    applyPhysicallyReceivedReceipt,
+    applyBlockedShortageReceipt,
+    applyBlockedExcessReceipt,
+} = require('../services/transfer-reception-inventory.service');
 const { createTransferReviewNote } = require('../services/transfer-review-note.service');
-const { applyAcceptedReceipt, applyBlockedShortageReceipt, applyBlockedExcessReceipt } = require('../services/transfer-reception-inventory.service');
 const { evaluateReceiptTolerance, TOLERANCE_DECISIONS } = require('../services/transfer-reception-tolerance.service');
 const { ACCOUNTING_STATUSES, isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
 const { deriveReceptionStatus } = require('../services/transfer-review-workflow.service');
@@ -20,7 +25,7 @@ const { getReceptionCancellationAvailability } = require('../services/transfer-c
 const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
 const { recordInventoryRejection } = require('../services/inventory-rejection-audit.service');
-const { exactAdd, exactSubtract, exactCompare, formatDecimalEsBo } = require('../helpers/number-formatter');
+const { exactAdd, exactSubtract, exactCompare } = require('../helpers/number-formatter');
 const {
     buildOpenReviewWhere,
     isInconclusiveMode,
@@ -28,7 +33,6 @@ const {
     shouldApplyTransferDateFilter,
 } = require('../services/open-reception-review-query.service');
 
-const DIFFERENCE_CATEGORY_ID = 22;
 const valuedKardex = new ValuedKardexService();
 
 const getTransferFindOne = async (req = request, res = response) => {
@@ -228,7 +232,7 @@ const newTransfer = async (req = request, res = response ) => {
             const availability = await hasAvailableStock(stock, detail.quantity, t);
             if(!availability.sufficient){
                 listProductNotStock.push(
-                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Físico: ${availability.physical_stock}, en revisión: ${availability.stock_in_review}, disponible: ${availability.available_stock}.`}
+                    { msg: `${stock.product.cod} - ${stock.product.name} no tiene suficiente stock disponible. Stock actual: ${availability.physical_stock}, disponible: ${availability.available_stock}.`}
                 );
                 continue;
             }
@@ -320,22 +324,28 @@ const receivedTransfer = async (req = request, res = response ) => {
             ...item,
             tolerance: evaluateReceiptTolerance(item.detail.quantity, item.quantityReceived),
         }));
-        const hasShortage = evaluatedDetails.some(({ detail, quantityReceived }) => exactCompare(quantityReceived, detail.quantity) < 0);
-        const mermaProduct = hasShortage
-            ? await Product.findOne({
-                where: { id: id_merma_product, status: true },
-                include: [{ association: 'category', required: true, where: { id: DIFFERENCE_CATEGORY_ID, status: true } }],
+        const shortageDetails = evaluatedDetails
+            .filter(({ detail, quantityReceived }) => exactCompare(detail.quantity, quantityReceived) > 0)
+            .map(({ detail, quantityReceived }) => ({ detail, quantityReceived }));
+        let mermaProduct = null;
+        if (shortageDetails.length) {
+            if (!Number(id_merma_product)) {
+                await t.rollback();
+                return res.status(422).json({ ok: false, errors: [{ msg: 'Seleccione un producto activo de la categoría MERMAS para registrar el faltante.' }] });
+            }
+            mermaProduct = await Product.findOne({
+                where: { id: Number(id_merma_product), status: true },
+                include: [{ association: 'category', required: true, where: { name: 'MERMAS', type: 'RAW_MATERIAL', status: true } }],
                 transaction: t,
-            })
-            : null;
-        if (hasShortage && !mermaProduct) {
-            await t.rollback();
-            return res.status(422).json({
-                ok: false,
-                errors: [{ msg: 'Debe seleccionar un producto activo de la categoría de diferencias.' }],
+                lock: t.LOCK?.UPDATE || true,
             });
+            if (!mermaProduct) {
+                await t.rollback();
+                return res.status(422).json({ ok: false, errors: [{ msg: 'El producto seleccionado no está activo en la categoría MERMAS.' }] });
+            }
         }
         transfer_received.status = 'RECEIVED';   
+        transfer_received.reception_attempt_key = randomUUID();
         transfer_received.id_user_received = req.userAuth.id;
         if( new Date(transfer_received.date_send)  > new Date(date_received)) {
             await t.rollback();
@@ -352,75 +362,61 @@ const receivedTransfer = async (req = request, res = response ) => {
             const { detail, quantityReceived: qtyReceived, observation: obs, tolerance } = receiptDetail;
             detail.quantity_received = qtyReceived;
             detail.observation = obs;
-            detail.tolerance_decision = tolerance.decision;
+            detail.tolerance_decision = exactCompare(detail.quantity, qtyReceived) === 0
+                ? TOLERANCE_DECISIONS.ACCEPTED
+                : TOLERANCE_DECISIONS.REQUIRES_REVIEW;
             detail.receipt_difference_percentage = tolerance.differencePercentage;
             detail.accounting_status = ACCOUNTING_STATUSES.ACCOUNTED;
             detail.accounting_applied_at = new Date();
             await detail.save({ transaction: t });
+            const sent = exactAdd(detail.quantity, 0);
+            const difference = exactCompare(qtyReceived, sent) === 0
+                ? '0.0000'
+                : exactCompare(qtyReceived, sent) > 0
+                    ? exactSubtract(qtyReceived, sent)
+                    : exactSubtract(sent, qtyReceived);
+            const noteDetail = {
+                id_detail_transfer: detail.id,
+                id_product: detail.id_product,
+                quantity_sent: sent,
+                quantity_received: qtyReceived,
+                quantity_difference: difference,
+            };
 
-            if (tolerance.decision === TOLERANCE_DECISIONS.ACCEPTED) {
-                await applyAcceptedReceipt({ transfer: transfer_received, detail, quantityReceived: qtyReceived, mermaProduct, userId: req.userAuth.id, transaction: t });
+            if (exactCompare(qtyReceived, sent) > 0) {
+                const { excessMovement, excess } = await applyBlockedExcessReceipt({
+                    transfer: transfer_received, detail, quantityReceived: qtyReceived,
+                    userId: req.userAuth.id, transaction: t,
+                });
+                await createTransferReviewNote({
+                    type: 'EXCEDENTE_PARA_REVISION', date: transfer_received.date_received,
+                    observations: obs, transfer: transfer_received, kardexMovement: excessMovement,
+                    productId: detail.id_product, userId: req.userAuth.id, storageId: id_storage_received,
+                    details: [{ ...noteDetail, quantity_difference: excess }],
+                }, t);
+            } else if (exactCompare(qtyReceived, sent) === 0) {
+                await applyPhysicallyReceivedReceipt({
+                    transfer: transfer_received, detail, quantityReceived: qtyReceived,
+                    userId: req.userAuth.id, transaction: t,
+                });
             }
         }
 
-        const reviewDetails = evaluatedDetails.filter(({ tolerance }) => tolerance.decision !== TOLERANCE_DECISIONS.ACCEPTED);
-        const shortageReviewDetails = reviewDetails.filter(({ detail, quantityReceived }) => exactCompare(quantityReceived, detail.quantity) < 0);
-        const otherReviewDetails = reviewDetails.filter(({ detail, quantityReceived }) => exactCompare(quantityReceived, detail.quantity) >= 0);
-
-        if (shortageReviewDetails.length > 0) {
+        if (shortageDetails.length) {
             const { shortageMovement } = await applyBlockedShortageReceipt({
-                transfer: transfer_received,
-                shortageDetails: shortageReviewDetails,
-                mermaProduct,
-                userId: req.userAuth.id,
-                transaction: t,
+                transfer: transfer_received, shortageDetails, mermaProduct,
+                userId: req.userAuth.id, transaction: t,
             });
-
             await createTransferReviewNote({
-                type: 'FALTANTE_PARA_REVISION',
-                date: transfer_received.date_received,
-                observations: observations_received,
-                transfer: transfer_received,
-                kardexMovement: shortageMovement,
-                productId: mermaProduct.id,
-                userId: req.userAuth.id,
-                storageId: id_storage_received,
-                details: shortageReviewDetails.map(({ detail, quantityReceived }) => ({
-                    id_detail_transfer: detail.id,
-                    id_product: detail.id_product,
-                    quantity_sent: exactAdd(detail.quantity, 0),
-                    quantity_received: quantityReceived,
+                type: 'FALTANTE_PARA_REVISION', date: transfer_received.date_received,
+                observations: observations_received, transfer: transfer_received,
+                kardexMovement: shortageMovement, productId: mermaProduct.id,
+                userId: req.userAuth.id, storageId: id_storage_received,
+                details: shortageDetails.map(({ detail, quantityReceived }) => ({
+                    id_detail_transfer: detail.id, id_product: detail.id_product,
+                    quantity_sent: exactAdd(detail.quantity, 0), quantity_received: exactAdd(quantityReceived, 0),
                     quantity_difference: exactSubtract(detail.quantity, quantityReceived),
                 })),
-            }, t);
-        }
-
-        for (const { detail, quantityReceived: qtyReceived } of otherReviewDetails) {
-            const qtySent = exactAdd(detail.quantity, 0);
-            const { excessMovement } = await applyBlockedExcessReceipt({
-                transfer: transfer_received,
-                detail,
-                quantityReceived: qtyReceived,
-                userId: req.userAuth.id,
-                transaction: t,
-            });
-
-            await createTransferReviewNote({
-                type: 'EXCEDENTE_PARA_REVISION',
-                date: transfer_received.date_received,
-                observations: observations_received,
-                transfer: transfer_received,
-                kardexMovement: excessMovement,
-                productId: detail.id_product,
-                userId: req.userAuth.id,
-                storageId: id_storage_received,
-                details: [{
-                    id_detail_transfer: detail.id,
-                    id_product: detail.id_product,
-                    quantity_sent: qtySent,
-                    quantity_received: qtyReceived,
-                    quantity_difference: exactSubtract(qtyReceived, qtySent),
-                }],
             }, t);
         }
          /* Ingreso histórico */
@@ -435,42 +431,17 @@ const receivedTransfer = async (req = request, res = response ) => {
             status: true
         }, { transaction: t }); 
 
-        /* Notificación de Alerta Roja a Administradores si existe discrepancia > +-1% */
-        const discrepantDetails = evaluatedDetails
-            .filter(({ tolerance }) => tolerance.decision !== TOLERANCE_DECISIONS.ACCEPTED)
-            .map(({ detail, quantityReceived, tolerance }) => ({
-                qtySent: exactAdd(detail.quantity, 0),
-                qtyReceived: quantityReceived,
-                diffPct: tolerance.differencePercentage === null
-                    ? 'no evaluable (enviado 0)'
-                    : `${tolerance.differencePercentage > 0 ? '+' : ''}${formatDecimalEsBo(tolerance.differencePercentage)}%`,
-            }));
-
-        if (discrepantDetails.length > 0) {
-            const receiverName = req.userAuth ? req.userAuth.full_names : 'Un usuario';
-            const detailMsgs = discrepantDetails.map(d => `Enviado: ${d.qtySent}, Recibido: ${d.qtyReceived} (${d.diffPct})`).join(' | ');
-            await notificationService.notifyAdmins({
-                title: `🚨 ALERTA ROJA: Discrepancia Recepción #${transfer_received.cod}`,
-                message: `El usuario ${receiverName} recepcionó el traslado #${transfer_received.cod} con diferencia superior al ±1%: ${detailMsgs}`,
-                type: 'TRANSFER_RECEPTION_DIFF',
-                level: 'DANGER',
-                id_reference: transfer_received.id
-            }, t, req.userAuth.id);
-        }
-
         await automatedResolutionService.completePendingTransfer({ transferId: transfer_received.id, actorUserId: req.userAuth.id, transaction: t });
         const affectedLocations = evaluatedDetails.map(({ detail }) => ({
             productId: detail.id_product,
             sucursalId: transfer_received.id_sucursal_received,
             storageId: transfer_received.id_storage_received,
         }));
-        if (hasShortage) {
-            affectedLocations.push({
-                productId: mermaProduct.id,
-                sucursalId: transfer_received.id_sucursal_received,
-                storageId: transfer_received.id_storage_received,
-            });
-        }
+        if (shortageDetails.length) affectedLocations.push({
+            productId: mermaProduct.id,
+            sucursalId: transfer_received.id_sucursal_received,
+            storageId: transfer_received.id_storage_received,
+        });
         await verifyLocationsIntegrity({ locations: affectedLocations, transaction: t });
         await t.commit();
         return res.status(201).json({

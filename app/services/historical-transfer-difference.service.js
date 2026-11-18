@@ -8,20 +8,11 @@ const {
   Stock,
   Product,
   kardexMovements,
-  TransferReviewNote,
-  TransferReviewNoteDetail,
-  TransferReviewInventoryHold,
-  TransferReviewEvent,
-  TransferHistoricalDifferenceCompletion,
-  History,
 } = require('../database/config');
-const { createTransferReviewNote } = require('./transfer-review-note.service');
-const { increaseStock } = require('./inventory-operation.service');
 const {
   buildHistoricalVerification,
   inventoryProjection,
 } = require('./transfer-reconciliation-registration-verification.service');
-const { REVIEW_HOLD_DISPOSITIONS } = require('../constants/transfer-review');
 const {
   HISTORICAL_DIFFERENCE_TYPES: TYPES,
   HISTORICAL_RECONCILIATION_STATUSES: STATUSES,
@@ -532,179 +523,9 @@ const previewCompletion = async (params) => {
   };
 };
 
-const addMissingNoteDetails = async ({ note, allocations, actorUserId, productId, transaction }) => {
-  const existing = await TransferReviewNoteDetail.findAll({ where: { id_transfer_review_note: note.id }, transaction, lock: transaction.LOCK.UPDATE });
-  const existingIds = new Set(existing.map(({ id_detail_transfer: detailId }) => Number(detailId)));
-  for (const allocation of allocations) {
-    if (existingIds.has(Number(allocation.id_detail_transfer))) continue;
-    const detail = await TransferReviewNoteDetail.create({
-      id_transfer_review_note: note.id,
-      id_detail_transfer: allocation.id_detail_transfer,
-      id_product: allocation.product.id,
-      quantity_sent: allocation.sent,
-      quantity_received: allocation.received,
-      quantity_difference: allocation.expected,
-      reconciliation_status: 'EN_REVISION',
-      quantity_resolved: 0,
-    }, { transaction });
-    await TransferReviewInventoryHold.create({
-      quantity: allocation.expected,
-      disposition: REVIEW_HOLD_DISPOSITIONS.IN_REVIEW,
-      id_transfer_review_note_detail: detail.id,
-      id_product: productId,
-      id_sucursal: note.id_sucursal,
-      id_storage: note.id_storage,
-      id_created_user: actorUserId,
-    }, { transaction });
-  }
-};
-
-const findOrCreateReviewNote = async ({ transfer, type, productId, movement, allocations, reason, actorUserId, transaction }) => {
-  let note = (transfer.reviewNotes || []).find((candidate) => candidate.management_status !== 'ELIMINADA'
-    && candidate.type === type
-    && Number(candidate.id_product) === Number(productId)
-    && (type === 'FALTANTE_PARA_REVISION' || (candidate.details || []).some(({ id_detail_transfer: detailId }) => Number(detailId) === Number(allocations[0].id_detail_transfer))));
-  if (!note) {
-    note = await createTransferReviewNote({
-      type,
-      date: transfer.date_received || new Date(),
-      observations: reason,
-      transfer,
-      kardexMovement: movement,
-      productId,
-      userId: actorUserId,
-      storageId: transfer.id_storage_received,
-      details: allocations.map((allocation) => ({
-        id_detail_transfer: allocation.id_detail_transfer,
-        id_product: allocation.product.id,
-        quantity_sent: allocation.sent,
-        quantity_received: allocation.received,
-        quantity_difference: allocation.expected,
-      })),
-    }, transaction);
-  } else {
-    await addMissingNoteDetails({ note, allocations, actorUserId, productId, transaction });
-  }
-  return note;
-};
-
-const completeDifference = async ({ transferId, detailId, mermaProductId, previewFingerprint, reason, idempotencyKey, actorUserId }) => {
-  if (!idempotencyKey) throw operationError('La clave de idempotencia es obligatoria.');
-  const normalizedReason = String(reason || '').trim();
-  if (normalizedReason.length < 5 || normalizedReason.length > 500) throw operationError('El motivo debe tener entre 5 y 500 caracteres.');
-  const existing = await TransferHistoricalDifferenceCompletion.findOne({ where: { idempotency_key: idempotencyKey } });
-  if (existing) return { idempotent: true, completion: existing, projection: await getProjection(transferId) };
-  return sequelize.transaction(async (transaction) => {
-    await loadTransfer(transferId, { transaction, lock: true });
-    const idempotentCompletion = await TransferHistoricalDifferenceCompletion.findOne({
-      where: { idempotency_key: idempotencyKey },
-      transaction,
-      lock: transaction.LOCK.UPDATE,
-    });
-    if (idempotentCompletion) {
-      return { idempotent: true, completion: idempotentCompletion, projection: await getProjection(transferId, { transaction }) };
-    }
-    const resolved = await resolvePreviewAction({ transferId, detailId, mermaProductId, transaction });
-    if (!resolved.preview) throw operationError('Debe seleccionar el producto MERMAS antes de confirmar.');
-    if (!previewFingerprint || previewFingerprint !== resolved.preview.fingerprint) {
-      throw operationError('Los registros cambiaron desde la previsualización. Revise nuevamente la boleta.', 409);
-    }
-    const { transfer, item, preview } = resolved;
-    const action = preview.action;
-    let movement;
-    if (action.code === ACTIONS.REGISTER_SURPLUS) {
-      movement = await kardexMovements.create({
-        type: 'INPUT', date: transfer.date_received || new Date(),
-        details: `REGULARIZACION EXCEDENTE TRASPASO #${transfer.cod}`,
-        quantity: action.quantity, cost: 0, price: 0, total: 0,
-        id_product: preview.product.id, id_user: actorUserId,
-        id_sucursal: transfer.id_sucursal_received, id_storage: transfer.id_storage_received,
-        status: true, registry_number: transfer.registry_number,
-      }, { transaction });
-    } else {
-      movement = await increaseStock({
-        productId: preview.product.id,
-        sucursalId: transfer.id_sucursal_received,
-        storageId: transfer.id_storage_received,
-        quantity: action.quantity,
-        actorUserId,
-        date: transfer.date_received || new Date(),
-        details: `REGULARIZACION FALTANTE TRASPASO #${transfer.cod}`,
-        registryNumber: transfer.registry_number,
-        transaction,
-      });
-    }
-    const allocationDetails = preview.allocations.map((allocation) => {
-      const projected = resolved.projection.items.find(({ id }) => id === allocation.id_detail_transfer);
-      return {
-        id_detail_transfer: allocation.id_detail_transfer,
-        product: allocation.product,
-        sent: projected.sent,
-        received: projected.received,
-        expected: projected.difference_expected,
-        quantity: allocation.quantity,
-      };
-    });
-    const note = await findOrCreateReviewNote({
-      transfer,
-      type: action.code === ACTIONS.REGISTER_SURPLUS ? 'EXCEDENTE_PARA_REVISION' : 'FALTANTE_PARA_REVISION',
-      productId: preview.product.id,
-      movement,
-      allocations: allocationDetails,
-      reason: normalizedReason,
-      actorUserId,
-      transaction,
-    });
-    const completion = await TransferHistoricalDifferenceCompletion.create({
-      idempotency_key: idempotencyKey,
-      completion_type: action.code,
-      quantity: action.quantity,
-      allocations: allocationDetails.map(({ id_detail_transfer: allocationId, quantity }) => ({ id_detail_transfer: allocationId, quantity })),
-      projection_fingerprint: preview.fingerprint,
-      reason: normalizedReason,
-      status: 'ACTIVE',
-      id_transfer: transfer.id,
-      id_detail_transfer: action.scope === 'ITEM' ? item.id : null,
-      id_transfer_review_note: note.id,
-      id_kardex_movement: movement.id,
-      id_product: preview.product.id,
-      id_user: actorUserId,
-    }, { transaction });
-    await TransferReviewEvent.create({
-      event_type: 'REGISTRO_HISTORICO_COMPLETADO',
-      description: action.code === ACTIONS.REGISTER_SURPLUS
-        ? `Se completó el excedente histórico omitido de ${action.quantity} kg en Kardex.`
-        : `Se completó el faltante histórico omitido de ${action.quantity} kg en el producto MERMAS.`,
-      metadata: {
-        completion_id: completion.id,
-        completion_type: action.code,
-        quantity: action.quantity,
-        kardex_movement_id: movement.id,
-        product_id: preview.product.id,
-        inventory_effect: action.code === ACTIONS.REGISTER_SURPLUS ? 'KARDEX_ONLY' : 'STOCK_AND_KARDEX',
-        reason: normalizedReason,
-      },
-      id_transfer_review_note: note.id,
-      id_user: actorUserId,
-    }, { transaction });
-    await History.create({
-      id_user: actorUserId,
-      id_sucursal: transfer.id_sucursal_received,
-      description: `${action.code} EN TRASLADO #${transfer.cod}: ${action.quantity} KG`,
-      type: 'REGULARIZACION HISTORICA DE TRASLADO',
-      module: 'TRANSFER_REVIEW',
-      action: 'CREATE',
-      id_reference: transfer.id,
-      status: true,
-    }, { transaction });
-    return { idempotent: false, completion, projection: await buildProjection(await loadTransfer(transfer.id, { transaction }), { transaction }) };
-  });
-};
-
 module.exports = {
   expectedDifference,
   allocateCoveredQuantity,
   getProjection,
   previewCompletion,
-  completeDifference,
 };

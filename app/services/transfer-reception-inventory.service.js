@@ -8,11 +8,14 @@ const { ValuedKardexService } = require('./valued-kardex.service');
 const { exactAdd, exactSubtract, exactCompare } = require('../helpers/number-formatter');
 
 const valuedKardex = new ValuedKardexService();
+const receptionSourceId = (transfer) => transfer.reception_attempt_key && !String(transfer.reception_attempt_key).startsWith('legacy-')
+  ? `${transfer.id}:R:${transfer.reception_attempt_key}`
+  : transfer.id;
 
 const incrementStock = async ({ productId, sucursalId, storageId, quantity, transaction, valuation = null }) => {
   const result = await applyDerivedStockEffect({ productId, sucursalId, storageId, quantity, transaction });
   if (valuation) await valuedKardex.recordMovement({
-    sourceType: 'TRANSFER_RECEIVED', id_product: productId, id_sucursal: sucursalId, id_storage: storageId,
+    sourceType: 'TRANSFER_RECEIVED', sourceId: valuation?.sourceId, id_product: productId, id_sucursal: sucursalId, id_storage: storageId,
     direction: 'INPUT', quantity, unitCost: valuation.unitCost, transaction, ...valuation,
   });
   return result.stock;
@@ -39,18 +42,37 @@ const applyAcceptedReceipt = async ({ transfer, detail, quantityReceived, mermaP
   const sent = detail.quantity;
   const baseReceived = exactCompare(sent, quantityReceived) <= 0 ? sent : quantityReceived;
   if (exactCompare(baseReceived, 0) > 0) await incrementStock({ productId: detail.id_product, ...location, quantity: baseReceived, transaction,
-    valuation: { sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
+    valuation: { sourceId: receptionSourceId(transfer), sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
   });
   const movements = [];
   if (exactCompare(quantityReceived, sent) > 0) {
-    movements.push(await createMovement({ type: 'INPUT', date: transfer.date_received, details: `EXCEDENTE TRASPASO #${transfer.cod}`, quantity: exactSubtract(quantityReceived, sent), cost: detail.cost, productId: detail.id_product, userId, ...location, registryNumber: transfer.registry_number, sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'SURPLUS', transaction }));
+    movements.push(await createMovement({ type: 'INPUT', date: transfer.date_received, details: `EXCEDENTE TRASPASO #${transfer.cod}`, quantity: exactSubtract(quantityReceived, sent), cost: detail.cost, productId: detail.id_product, userId, ...location, registryNumber: transfer.registry_number, sourceId: receptionSourceId(transfer), sourceDetailId: detail.id, effectType: 'SURPLUS', transaction }));
   }
   if (exactCompare(quantityReceived, sent) < 0) {
     if (!mermaProduct) throw Object.assign(new Error('Debe seleccionar un producto activo de la categoría de diferencias.'), { statusCode: 422 });
     const shortage = exactSubtract(sent, quantityReceived);
-    movements.push(await createMovement({ type: 'INPUT', date: transfer.date_received, details: `MERMA TRASPASO #${transfer.cod}`, quantity: shortage, cost: null, productId: mermaProduct.id, userId, ...location, registryNumber: transfer.registry_number, sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'SHORTAGE', transaction }));
+    movements.push(await createMovement({ type: 'INPUT', date: transfer.date_received, details: `MERMA TRASPASO #${transfer.cod}`, quantity: shortage, cost: null, productId: mermaProduct.id, userId, ...location, registryNumber: transfer.registry_number, sourceId: receptionSourceId(transfer), sourceDetailId: detail.id, effectType: 'SHORTAGE', transaction }));
   }
   return movements;
+};
+
+const applyPhysicallyReceivedReceipt = async ({ transfer, detail, quantityReceived, userId, transaction }) => {
+  if (exactCompare(quantityReceived, 0) <= 0) return null;
+  const location = { sucursalId: transfer.id_sucursal_received, storageId: transfer.id_storage_received };
+  return incrementStock({
+    productId: detail.id_product,
+    ...location,
+    quantity: quantityReceived,
+    transaction,
+    valuation: {
+      sourceId: receptionSourceId(transfer),
+      sourceDetailId: detail.id,
+      effectType: 'BASE_RECEIPT',
+      id_user: userId,
+      unitCost: detail.cost,
+      movementDate: transfer.date_received,
+    },
+  });
 };
 
 const applyBlockedShortageReceipt = async ({ transfer, shortageDetails, mermaProduct, userId, transaction }) => {
@@ -62,7 +84,7 @@ const applyBlockedShortageReceipt = async ({ transfer, shortageDetails, mermaPro
   for (const { detail, quantityReceived } of shortageDetails) {
     if (exactCompare(quantityReceived, 0) > 0) {
       await incrementStock({ productId: detail.id_product, ...location, quantity: quantityReceived, transaction,
-        valuation: { sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
+        valuation: { sourceId: receptionSourceId(transfer), sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
       });
     }
   }
@@ -81,7 +103,7 @@ const applyBlockedShortageReceipt = async ({ transfer, shortageDetails, mermaPro
     userId,
     ...location,
     registryNumber: transfer.registry_number,
-    sourceId: transfer.id,
+    sourceId: receptionSourceId(transfer),
     sourceDetailId: shortageDetails.map(({ detail }) => detail.id).sort((a, b) => a - b).join(','),
     effectType: 'SHORTAGE',
     transaction,
@@ -96,7 +118,7 @@ const applyBlockedExcessReceipt = async ({ transfer, detail, quantityReceived, u
   const excess = exactSubtract(quantityReceived, sent);
 
   if (exactCompare(sent, 0) > 0) await incrementStock({ productId: detail.id_product, ...location, quantity: sent, transaction,
-    valuation: { sourceId: transfer.id, sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
+    valuation: { sourceId: receptionSourceId(transfer), sourceDetailId: detail.id, effectType: 'BASE_RECEIPT', id_user: userId, unitCost: detail.cost, movementDate: transfer.date_received },
   });
 
   let excessMovement = null;
@@ -111,7 +133,7 @@ const applyBlockedExcessReceipt = async ({ transfer, detail, quantityReceived, u
       userId,
       ...location,
       registryNumber: transfer.registry_number,
-      sourceId: transfer.id,
+      sourceId: receptionSourceId(transfer),
       sourceDetailId: detail.id,
       effectType: 'SURPLUS',
       transaction,
@@ -123,6 +145,7 @@ const applyBlockedExcessReceipt = async ({ transfer, detail, quantityReceived, u
 
 module.exports = {
   applyAcceptedReceipt,
+  applyPhysicallyReceivedReceipt,
   applyBlockedShortageReceipt,
   applyBlockedExcessReceipt,
   incrementStock,

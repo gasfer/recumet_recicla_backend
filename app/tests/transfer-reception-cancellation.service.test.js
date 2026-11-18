@@ -142,6 +142,7 @@ test('conserva la entrada original y registra salidas compensatorias sin duplica
     quantity: 2,
     cost: 0,
     details: 'EXCEDENTE TRASPASO #TRAS00012',
+    source_type: 'TRANSFER_RECEPTION',
     id_product: 7,
     id_sucursal: 2,
     id_storage: 5,
@@ -153,6 +154,7 @@ test('conserva la entrada original y registra salidas compensatorias sin duplica
     registry_number: 'P-12',
     id_sucursal_received: 2,
     id_storage_received: 5,
+    reception_attempt_key: 'receipt-attempt-1',
     date_received: new Date('2026-09-10'),
     detailsTransfers: [detail],
   };

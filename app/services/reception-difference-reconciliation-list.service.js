@@ -76,6 +76,13 @@ const list = async ({ idSucursal, idStorage, page, limit, status, type, query, d
   const normalizedLimit = normalizeLimit(limit);
   const where = {
     status: 'RECEIVED',
+    [Op.and]: [sequelize.literal(`NOT EXISTS (
+      SELECT 1
+      FROM inventory_discrepancy_baselines baseline
+      WHERE baseline.id_sucursal = "Transfers".id_sucursal_received
+        AND (baseline.id_storage IS NULL OR baseline.id_storage = "Transfers".id_storage_received)
+        AND COALESCE("Transfers".date_received, "Transfers".date_send) <= baseline.baseline_at
+    )`)],
     ...(idSucursal ? { id_sucursal_received: Number(idSucursal) } : {}),
     ...(idStorage ? { id_storage_received: Number(idStorage) } : {}),
     ...(dateFrom || dateTo ? {

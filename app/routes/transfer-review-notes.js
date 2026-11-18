@@ -23,8 +23,6 @@ const {
   deleteReconciliation,
   previewAutomaticResolution,
   confirmAutomaticResolution,
-  previewHistoricalDifferenceCompletion,
-  completeHistoricalDifference,
   previewBulkReconciliation,
   confirmBulkReconciliation,
 } = require('../controllers/transfer_review_notes.controller');
@@ -39,8 +37,6 @@ router.get('/report', [validarJWT, authorizeTransferReview('read')], getReviewRe
 router.get('/stock-diagnostic', [validarJWT, authorizeTransferReview('read')], getReviewStockDiagnostic);
 router.get('/retained-without-adjustment', [validarJWT, authorizeTransferReview('read')], getRetainedWithoutAdjustment);
 router.get('/transfer/:id_transfer/traceability', [validarJWT, authorizeTransferReview('read')], getTraceability);
-router.get('/transfer/:id_transfer/details/:detail_id/historical-completion-preview', [validarJWT, authorizeTransferReview('read')], previewHistoricalDifferenceCompletion);
-router.post('/transfer/:id_transfer/details/:detail_id/historical-completion', [validarJWT, authorizeTransferReview('resolve')], completeHistoricalDifference);
 router.put('/:id/assign', [validarJWT, authorizeTransferReview('assign')], assignReview);
 router.post('/:id/comments', [validarJWT, authorizeTransferReview('read')], addComment);
 router.post('/:id/actions', [validarJWT, authorizeTransferReview('resolve')], addManualAction);

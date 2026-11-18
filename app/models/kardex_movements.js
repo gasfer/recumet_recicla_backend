@@ -49,7 +49,9 @@ module.exports = (sequelize, DataTypes) => {
     source_id: DataTypes.STRING,
     source_detail_id: DataTypes.STRING,
     effect_type: DataTypes.STRING,
-    idempotency_key: DataTypes.STRING
+    idempotency_key: DataTypes.STRING,
+    replaced_document_type: DataTypes.STRING,
+    replaced_document_id: DataTypes.INTEGER
   }, {
     sequelize,
     modelName: 'kardexMovements',

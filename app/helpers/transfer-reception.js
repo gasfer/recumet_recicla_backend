@@ -1,7 +1,7 @@
-const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
-const { exactAdd, exactSubtract, exactCompare, exactMin, exactAbs, exactCeil, formatDecimalEsBo } = require('./number-formatter');
+const { exactAdd, exactSubtract, exactCompare, exactCeil, formatDecimalEsBo } = require('./number-formatter');
 const { getDecimalPlaces } = require('./decimals-value');
 const { evaluateReceiptTolerance } = require('../services/transfer-reception-tolerance.service');
+const { isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
 
 const isValidReceivedQuantity = (value) => {
     if (value === null || value === undefined || value === '') return false;
@@ -105,40 +105,34 @@ const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) 
         const shortage = received ? reconciliation.shortage : 0;
 
         const tolerance = evaluateReceiptTolerance(sentQuantity, receivedQuantity);
-        const isAccepted = isAcceptedToleranceDecision(detail?.tolerance_decision)
-            || (detail?.tolerance_decision === undefined && exactCompare(sentQuantity, 0) > 0 && tolerance.decision === 'ACEPTADO');
-
-        const normal = received ? (isAccepted ? receivedQuantity : exactMin(sentQuantity, receivedQuantity)) : '0.0000';
-        const blocked = received ? (isAccepted ? '0.0000' : exactAbs(exactSubtract(receivedQuantity, sentQuantity))) : '0.0000';
-
-        let isReleased = false;
-        if (Array.isArray(reviewNotes) && reviewNotes.length > 0) {
-            for (const note of reviewNotes) {
-                const matchingDetail = (note.details || []).find((d) => Number(d.id_detail_transfer) === Number(detail.id));
-                if (matchingDetail && (matchingDetail.reconciliation_status === 'COMPLETADO' || note.reconciliation_status === 'COMPLETADO')) {
-                    isReleased = true;
-                    break;
-                }
-            }
-        }
-
-        let status = 'PENDIENTE';
-        if (received) {
-            if (isAccepted) {
-                status = 'ACEPTADO';
-            } else if (isReleased) {
-                status = 'LIBERADO';
-            } else {
-                status = 'EN REVISIÓN';
-            }
-        }
-
-        const accountedQuantity = exactAdd(normal, isReleased ? blocked : 0);
+        const normal = received ? reconciliation.base : '0.0000';
+        const linkedDetails = reviewNotes.flatMap((note) => note.details || [])
+          .filter((noteDetail) => Number(noteDetail.id_detail_transfer) === Number(detail.id));
+        const unresolved = linkedDetails.reduce((sum, noteDetail) => {
+          const activeHolds = (noteDetail.inventoryHolds || [])
+            .filter(({ disposition }) => disposition !== 'LIBERADO_POR_AJUSTE')
+            .reduce((holdTotal, hold) => exactAdd(holdTotal, hold.quantity || 0), '0.0000');
+          const notePending = exactCompare(activeHolds, 0) > 0
+            ? activeHolds
+            : exactSubtract(noteDetail.quantity_difference || 0, noteDetail.quantity_resolved || 0);
+          return exactAdd(sum, exactCompare(notePending, 0) > 0 ? notePending : 0);
+        }, '0.0000');
+        const differenceAmount = exactAdd(excess || 0, shortage || 0);
+        const blocked = received
+          ? exactCompare(unresolved, 0) > 0
+            ? unresolved
+            : isAcceptedToleranceDecision(tolerance.decision) ? '0.0000' : differenceAmount
+          : '0.0000';
+        const status = !received ? 'PENDIENTE'
+          : exactCompare(blocked, 0) > 0 ? 'EN REVISIÓN'
+            : isAcceptedToleranceDecision(tolerance.decision) ? 'ACEPTADO' : 'CONCILIADO';
+        const difference = received ? exactSubtract(receivedQuantity, sentQuantity) : '-';
+        const accountedQuantity = normal;
 
         totals.sent = exactAdd(totals.sent, reconciliation.sent);
         totals.received = exactAdd(totals.received, reconciliation.received);
         totals.normal = exactAdd(totals.normal, normal);
-        totals.blocked = exactAdd(totals.blocked, isReleased ? 0 : blocked);
+        totals.blocked = exactAdd(totals.blocked, blocked);
         totals.accountedTotal = exactAdd(totals.accountedTotal, accountedQuantity);
         totals.excess = exactAdd(totals.excess, excess);
         totals.shortage = exactAdd(totals.shortage, shortage);
@@ -148,6 +142,7 @@ const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) 
         return {
             sent: Number(reconciliation.sent),
             received: received ? Number(reconciliation.received) : '-',
+            difference: received ? Number(difference) : '-',
             normal: received ? Number(normal) : '-',
             blocked: received ? Number(blocked) : 0,
             status: received ? status : 'PENDIENTE',
@@ -166,6 +161,7 @@ const buildTransferVoucherSummary = (details, transferStatus, reviewNotes = []) 
         totals: {
             sent: Number(totals.sent),
             received: received ? Number(totals.received) : '-',
+            difference: received ? Number(exactSubtract(totals.received, totals.sent)) : '-',
             normal: received ? Number(totals.normal) : '-',
             blocked: received ? Number(totals.blocked) : '-',
             accountedTotal: received ? Number(totals.accountedTotal) : '-',

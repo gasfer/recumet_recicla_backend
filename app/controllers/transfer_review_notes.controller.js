@@ -16,7 +16,6 @@ const {
 const reconciliationManagementService = require('../services/transfer-reconciliation-management.service');
 const automatedResolutionService = require('../services/automated-transfer-review-resolution.service');
 const bulkReconciliationService = require('../services/bulk-transfer-review-reconciliation.service');
-const historicalDifferenceService = require('../services/historical-transfer-difference.service');
 const receptionDifferenceListService = require('../services/reception-difference-reconciliation-list.service');
 const { permissionDeniedError, sendPermissionDenied } = require('../helpers/permission-denied');
 const { recordInventoryRejection } = require('../services/inventory-rejection-audit.service');
@@ -165,16 +164,25 @@ const getOpenReviews = async (req = request, res = response) => {
     const idStorage = req.query.id_storage ? Number(req.query.id_storage) : null;
     if (!idSucursal) return res.status(422).json({ ok: false, errors: [{ msg: 'Debe indicar una sucursal.' }] });
     if (!canAccessSucursal(req.userAuth, idSucursal)) return sendPermissionDenied(res, 'consultar esta sucursal');
-    const [reviews, stockKardexIrregularities] = await Promise.all([
+    const [reviewsResult, irregularitiesResult] = await Promise.allSettled([
       workflowService.listOpenReviews({ idSucursal, idStorage, limit: req.query.limit }),
       getStockKardexIrregularities({ idSucursal, idStorage, limit: 2000 }),
     ]);
+    const reviews = reviewsResult.status === 'fulfilled' ? reviewsResult.value : [];
+    const stockKardexIrregularities = irregularitiesResult.status === 'fulfilled' ? irregularitiesResult.value : [];
+    if (reviewsResult.status === 'rejected') {
+      console.error('[transfer-review] No se pudieron cargar las notas abiertas:', reviewsResult.reason);
+    }
+    if (irregularitiesResult.status === 'rejected') {
+      console.error('[transfer-review] No se pudo cargar el diagn\u00f3stico Stock-Kardex:', irregularitiesResult.reason);
+    }
     return res.status(200).json({
       ok: true,
       reviews,
       total: reviews.length,
       stock_kardex_irregularities: stockKardexIrregularities,
       irregularities_total: stockKardexIrregularities.length,
+      partial: reviewsResult.status === 'rejected' || irregularitiesResult.status === 'rejected',
     });
   } catch (error) {
     return sendWorkflowError(res, error, req);
@@ -205,62 +213,28 @@ const getTraceability = async (req = request, res = response) => {
   }
 };
 
-const previewHistoricalDifferenceCompletion = async (req = request, res = response) => {
-  try {
-    await findAuthorizedTransfer(req);
-    const preview = await historicalDifferenceService.previewCompletion({
-      transferId: Number(req.params.id_transfer),
-      detailId: Number(req.params.detail_id),
-      mermaProductId: req.query.id_merma_product ? Number(req.query.id_merma_product) : null,
-    });
-    return res.status(200).json({ ok: true, preview });
-  } catch (error) {
-    return sendWorkflowError(res, error, req);
-  }
-};
-
-const completeHistoricalDifference = async (req = request, res = response) => {
-  try {
-    await findAuthorizedTransfer(req);
-    const result = await historicalDifferenceService.completeDifference({
-      transferId: Number(req.params.id_transfer),
-      detailId: Number(req.params.detail_id),
-      mermaProductId: req.body.id_merma_product ? Number(req.body.id_merma_product) : null,
-      previewFingerprint: String(req.body.preview_fingerprint || ''),
-      reason: String(req.body.reason || '').trim(),
-      idempotencyKey: req.header('Idempotency-Key') || req.body.idempotency_key || randomUUID(),
-      actorUserId: req.userAuth.id,
-    });
-    return res.status(result.idempotent ? 200 : 201).json({
-      ok: true,
-      msg: result.idempotent ? 'El registro histórico ya había sido completado.' : 'Registro histórico completado correctamente.',
-      ...result,
-    });
-  } catch (error) {
-    return sendWorkflowError(res, error, req);
-  }
-};
-
 const getReviewReport = async (req = request, res = response) => {
   try {
     const requestedSucursal = req.query.id_sucursal ? Number(req.query.id_sucursal) : null;
-    const allowed = allowedSucursalIds(req.userAuth);
     if (requestedSucursal && !canAccessSucursal(req.userAuth, requestedSucursal)) {
-      return sendPermissionDenied(res, 'consultar esta sucursal');
+      return sendPermissionDenied(res, 'consultar este reporte');
     }
+    const allowed = allowedSucursalIds(req.userAuth);
     const idSucursal = requestedSucursal || (allowed?.length === 1 ? allowed[0] : null);
-    if (allowed && !idSucursal) return res.status(422).json({ ok: false, errors: [{ msg: 'Debe seleccionar una sucursal autorizada.' }] });
-    const report = await workflowService.getReviewReport({
+    if (allowed && !idSucursal) {
+      return res.status(422).json({ ok: false, errors: [{ msg: 'Debe seleccionar una sucursal autorizada.' }] });
+    }
+    const reviews = await workflowService.getReviewReport({
       page: req.query.page,
       limit: req.query.limit,
       status: req.query.status,
       idSucursal,
-      productId: req.query.id_product ? Number(req.query.id_product) : null,
-      assignedUserId: req.query.id_assigned_user ? Number(req.query.id_assigned_user) : null,
+      productId: req.query.id_product,
+      assignedUserId: req.query.id_assigned_user,
       ageFromDays: req.query.age_from_days,
       ageToDays: req.query.age_to_days,
     });
-    return res.status(200).json({ ok: true, report });
+    return res.status(200).json({ ok: true, reviews });
   } catch (error) {
     return sendWorkflowError(res, error, req);
   }
@@ -271,10 +245,14 @@ const getReviewStockDiagnostic = async (req = request, res = response) => {
     const idSucursal = req.query.id_sucursal ? Number(req.query.id_sucursal) : null;
     const idStorage = req.query.id_storage ? Number(req.query.id_storage) : null;
     if (idSucursal && !canAccessSucursal(req.userAuth, idSucursal)) {
-      return sendPermissionDenied(res, 'consultar esta sucursal');
+      return sendPermissionDenied(res, 'consultar el diagnóstico de esta sucursal');
     }
-    const rows = await getStockDiagnostic({ idSucursal, idStorage, limit: req.query.limit });
-    return res.status(200).json({ ok: true, diagnostic: rows });
+    const diagnostic = await getStockDiagnostic({
+      idSucursal,
+      idStorage,
+      limit: req.query.limit,
+    });
+    return res.status(200).json({ ok: true, diagnostic });
   } catch (error) {
     return sendWorkflowError(res, error, req);
   }
@@ -285,10 +263,14 @@ const getRetainedWithoutAdjustment = async (req = request, res = response) => {
     const idSucursal = req.query.id_sucursal ? Number(req.query.id_sucursal) : null;
     const idStorage = req.query.id_storage ? Number(req.query.id_storage) : null;
     if (idSucursal && !canAccessSucursal(req.userAuth, idSucursal)) {
-      return sendPermissionDenied(res, 'consultar esta sucursal');
+      return sendPermissionDenied(res, 'consultar las retenciones de esta sucursal');
     }
-    const retained = await getRetainedWithoutAdjustmentReport({ idSucursal, idStorage, limit: req.query.limit });
-    return res.status(200).json({ ok: true, retained, total: retained.length });
+    const retained = await getRetainedWithoutAdjustmentReport({
+      idSucursal,
+      idStorage,
+      limit: req.query.limit,
+    });
+    return res.status(200).json({ ok: true, retained });
   } catch (error) {
     return sendWorkflowError(res, error, req);
   }
@@ -546,8 +528,6 @@ module.exports = {
   getOpenReviews,
   getAssignableUsers,
   getTraceability,
-  previewHistoricalDifferenceCompletion,
-  completeHistoricalDifference,
   getReviewReport,
   getReviewStockDiagnostic,
   getRetainedWithoutAdjustment,

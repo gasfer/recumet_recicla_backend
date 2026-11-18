@@ -130,7 +130,10 @@ const affectedLocations = ({ note, detail, strategy, targetProductId }) => {
   }
   const locations = [{ productId: note.id_product, ...destination }];
   if (strategy !== 'PERDIDA_CONFIRMADA') {
-    locations.push({ productId: strategy === 'RECLASIFICACION' ? targetProductId : detail.id_product, ...destination });
+    const incomingProductId = strategy === 'RECLASIFICACION' ? targetProductId : detail.id_product;
+    if (incomingProductId && Number(incomingProductId) !== Number(note.id_product)) {
+      locations.push({ productId: incomingProductId, ...destination });
+    }
   }
   return locations;
 };

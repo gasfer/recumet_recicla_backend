@@ -30,14 +30,10 @@ const getReceptionCancellationAvailability = (notes = []) => {
       management_status === ACTIVE_NOTE && PENDING_ACTION_STATUSES.includes(operation_status)
     ));
   const blockers = buildBlockers({ openNotes, openDetails, holds, pendingActions });
-  return blockers.length ? {
-    enabled: false,
-    reason: 'Complete las conciliaciones, retenciones o acciones pendientes antes de anular la recepción.',
-    blockers,
-  } : {
+  return {
     enabled: true,
-    reason: null,
-    blockers: [],
+    reason: blockers.length ? 'La anulación revertirá las conciliaciones, acciones y retenciones pendientes.' : null,
+    blockers,
   };
 };
 
@@ -82,14 +78,7 @@ const getCancellationEligibility = async ({ transferId, transaction }) => {
     lock: transaction?.LOCK?.UPDATE || true,
   }) : [];
   const blockers = buildBlockers({ openNotes, openDetails, holds, pendingActions });
-  if (blockers.length) return {
-    eligible: false,
-    mode: 'RECEPTION_BLOCKED',
-    transfer,
-    reason: 'La recepción tiene conciliaciones, retenciones o acciones pendientes. Complete todos los pendientes antes de anular.',
-    blockers,
-  };
-  return { eligible: true, mode: 'CANCEL_RECEPTION', transfer, notes };
+  return { eligible: true, mode: 'CANCEL_RECEPTION', transfer, notes, blockers };
 };
 
 module.exports = { PENDING_ACTION_STATUSES, buildBlockers, getReceptionCancellationAvailability, getCancellationEligibility };

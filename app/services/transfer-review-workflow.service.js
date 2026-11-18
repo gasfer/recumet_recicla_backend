@@ -152,7 +152,7 @@ const listOpenReviews = async ({ idSucursal, idStorage, assignedUserId, limit = 
     limit: Math.min(Number(limit) || 100, 200),
   });
   const today = new Date().toISOString().slice(0, 10);
-  await Promise.all(notes.filter((note) => (Date.now() - new Date(note.date).getTime()) >= 3 * 86400000).map((note) => (
+  await Promise.allSettled(notes.filter((note) => (Date.now() - new Date(note.date).getTime()) >= 3 * 86400000).map((note) => (
     notificationService.notifyTransferReviewStakeholders({
       note,
       title: `Revisión vencida ${note.registry_number}`,
