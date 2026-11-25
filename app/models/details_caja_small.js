@@ -8,6 +8,9 @@ module.exports = (sequelize, DataTypes) => {
     static associate(models) {
       DetailsCajaSmall.belongsTo(models.CajaSmall,{as: 'cajaSmall', foreignKey:'id_caja_small'});
       DetailsCajaSmall.belongsTo(models.Bank,{as: 'bank', foreignKey:'id_bank'});
+      DetailsCajaSmall.belongsTo(models.CjAccount, { as: 'account', foreignKey: 'id_cuenta' });
+      DetailsCajaSmall.hasMany(models.CjLedger, { as: 'ledgerEntries', foreignKey: 'id_detail_caja_small' });
+      DetailsCajaSmall.hasOne(models.CjExpense, { as: 'expense', foreignKey: 'id_detail_caja_small' });
     }
   }
   DetailsCajaSmall.init({
@@ -24,7 +27,12 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     description: DataTypes.TEXT,
-    status: DataTypes.BOOLEAN
+    status: DataTypes.BOOLEAN,
+    id_cuenta: DataTypes.INTEGER,
+    id_user: DataTypes.INTEGER,
+    source_type: DataTypes.STRING,
+    source_id: DataTypes.STRING,
+    idempotency_key: DataTypes.STRING
   }, {
     sequelize,
     modelName: 'DetailsCajaSmall',

@@ -14,6 +14,7 @@ module.exports = (sequelize, DataTypes) => {
       Bank.hasMany(models.AbonosAccountsPayableMultiple,{as: 'abonosMultipleDestination', foreignKey:'id_bank'});
       Bank.hasMany(models.AbonosAccountsPayableMultiple,{as: 'abonosMultipleOrigin', foreignKey:'id_bank_origin'});
       Bank.hasMany(models.ProviderBankAccount, { as: 'providerBankAccounts', foreignKey: 'id_bank' });
+      Bank.hasMany(models.CjAccount, { as: 'cajaAccounts', foreignKey: 'id_bank' });
     }
   }
   Bank.init({

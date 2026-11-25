@@ -12,5 +12,27 @@ test('venta conserva cliente, forma de pago y detalle de despacho exterior', () 
 });
 test('arqueo conserva movimientos, saldos y caja abierta', () => {
  const html = renderReportHtml(buildCashVoucher({ id: 12, date_apertura: '2026-10-12', monto_apertura: 100, user: { full_names: 'Cajero Principal' }, sucursal: { name: 'Sucursal El Alto' } }, { ingresos: [{ description: 'Ingreso prueba', monto: 50 }], gastos: [{ description: 'Gasto prueba', monto: 25 }], total_ingresos: 50, total_gastos: 25, saldo: 25, monto_apertura_mas_saldo: 125 }, 2));
- for (const text of ['Cajero Principal','Ingreso prueba','Gasto prueba','125,00','Caja abierta','SUPERVISOR']) assert.ok(html.includes(text), text);
+ for (const text of ['Cajero Principal','Ingreso prueba','Gasto prueba','125,00','Caja abierta','SUPERVISOR','RESUMEN DE CAJA']) assert.ok(html.includes(text), text);
+});
+
+test('cierre diario presenta cuadre de efectivo y banco y desglosa cada movimiento', () => {
+ const document = buildCashVoucher({
+  id: 52, cashbox_type: 'CHICA', date_apertura: '2026-11-19T08:00:00Z', date_cierre: '2026-11-19T17:00:00Z',
+  monto_apertura: 100, monto_cierre: 138, user: { full_names: 'Cajera QA' }, sucursal: { name: 'Casa Matriz' },
+ }, {
+  accountSummary: [
+   { id_cuenta: 1, name: 'Efectivo', type: 'CASH', currency: 'BOB', opening_amount: 100, inflows: 50, outflows: 12, expected_amount: 138 },
+   { id_cuenta: 2, name: 'Banco Económico', type: 'BANK', currency: 'BOB', opening_amount: 20, inflows: 30, outflows: 10, expected_amount: 40 },
+  ],
+  closeDetails: [
+   { id_cuenta: 1, counted_amount: 138, difference: 0 },
+   { id_cuenta: 2, counted_amount: 38, difference: -2 },
+  ],
+  ingresos: [{ id_cuenta: 1, date: '2026-11-19T10:00:00Z', description: 'Venta mostrador', type_payment: 'EFECTIVO', monto: 50 }],
+  gastos: [{ id_cuenta: 2, date: '2026-11-19T11:00:00Z', description: 'Compra insumos', account_payment: 'Banco Económico', type_payment: 'TRANSFERENCIA', monto: 10 }],
+  closeObservations: 'Diferencia bancaria verificada',
+ }, 2);
+ const html = renderReportHtml(document);
+ for (const text of ['CIERRE DIARIO DE CAJA CHICA','CUADRE GENERAL POR CUENTA','EFECTIVO (BOB)','Banco Económico (BOB)','SALDO CONTADO','FALTANTE','Venta mostrador','Compra insumos','Diferencia bancaria verificada']) assert.ok(html.includes(text), text);
+ assert.equal(document.orientation, 'landscape');
 });

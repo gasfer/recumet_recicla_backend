@@ -18,7 +18,7 @@ const { evaluateReceiptTolerance, TOLERANCE_DECISIONS } = require('../services/t
 const { ACCOUNTING_STATUSES, isAcceptedToleranceDecision } = require('../constants/transfer-reception-accounting');
 const { deriveReceptionStatus } = require('../services/transfer-review-workflow.service');
 const { REVIEW_STATUSES } = require('../constants/transfer-review');
-const { hasAvailableStock } = require('../services/stock-availability.service');
+const { hasAvailableStock, validateOutgoingDetails } = require('../services/stock-availability.service');
 const automatedResolutionService = require('../services/automated-transfer-review-resolution.service');
 const transferCancellationService = require('../services/transfer-cancellation.service');
 const { getReceptionCancellationAvailability } = require('../services/transfer-cancellation-eligibility.service');
@@ -202,8 +202,15 @@ const newTransfer = async (req = request, res = response ) => {
     try {
         const { transfer_data, transfer_details } = req.body;
         const { id_sucursal_send, id_storage_send,id_sucursal_received, type_registry } = transfer_data;
+        // La fecha debe reflejar el momento real del registro y no una fecha enviada por el cliente.
+        transfer_data.date_send = new Date();
         const integrityLocations = transfer_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal_send, storageId: id_storage_send }));
         const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
+        const stockValidationErrors = await validateOutgoingDetails({ details: transfer_details, idSucursal: id_sucursal_send, idStorage: id_storage_send, transaction: t });
+        if (stockValidationErrors.length) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: stockValidationErrors });
+        }
         //number default, not ficha
         if(type_registry === 'SIN FICHA') {
             const count_transfers = await Transfers.count({ where: {type_registry:'SIN FICHA'}, transaction: t });
@@ -289,7 +296,15 @@ const newTransfer = async (req = request, res = response ) => {
     } catch (error) {
         await t.rollback();
         console.log('ERROR TRASLADO: ' + error);
-        return res.status(500).json({
+        const status = error.statusCode || error.status || 500;
+        if (status < 500) {
+            return res.status(status).json({
+                ok: false,
+                ...(error.code ? { code: error.code } : {}),
+                errors: [{ msg: error.message || 'No se pudo registrar el traslado.' }],
+            });
+        }
+        return res.status(status).json({
           ok: false,
           errors: [{ msg: `Ocurrió un imprevisto interno | hable con soporte`}],
         });

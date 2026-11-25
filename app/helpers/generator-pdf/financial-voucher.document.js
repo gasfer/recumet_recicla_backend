@@ -7,6 +7,10 @@ const buildFinancialVoucher = (account, { payable, payment, decimal }) => {
     const operation = account[payable ? 'input' : 'output'];
     if (!operation) throw new Error('Operación de cuenta no encontrada');
     const document = buildOperationVoucher({ ...operation.get?.({ plain: true }) || operation, sucursal: account.sucursal || operation.sucursal }, { kind: payable ? 'purchase' : 'sale', decimal });
+    if (payment) {
+        const voucherDetails = operation[payable ? 'detailsInput' : 'detailsOutput'] || [];
+        document.paper = voucherDetails.length > 5 ? 'LETTER' : 'HALF_LETTER';
+    }
     const entity = account[payable ? 'provider' : 'client'] || operation[payable ? 'provider' : 'client'] || {};
     document.title = payment ? 'COMPROBANTE ABONO' : payable ? 'CUENTA POR PAGAR' : 'CUENTA POR COBRAR';
     document.reference = account.cod;
@@ -68,6 +72,6 @@ const buildMultiplePaymentVoucher = (payment, accounts, { payable, decimal }) =>
         }
     });
     sections.push({ title: 'RESUMEN', columns: [{ label: 'CONCEPTO' }, { label: 'BS', align: 'right' }], rows: [['A CUENTA', money(totalPaid, decimal)], ['SALDO TOTAL', money(totalBalance, decimal)]] });
-    return { variant: 'voucher', paper: 'A4', title: 'COMPROBANTE ABONO MÚLTIPLE', reference: accounts[0]?.cod || '', date: moment(payment.date_abono).format('DD/MM/YYYY HH:mm:ss'), company: companyData(accounts[0]?.sucursal || payment.sucursal), panels: [{ title: payable ? 'ENTREGUE A (PROVEEDOR)' : 'RECIBÍ DE (CLIENTE)', fields: [field('Nombre', entity.full_names), field('NIT/CI', entity.number_document), field('Monto abono', `Bs. ${money(payment.monto_abono, decimal)} (${NumeroALetras(decimalToNumber(payment.monto_abono, decimal))})`), field('Concepto', payment.comments)] }, paymentPanel(payment)], sections, signatures: [{ role: 'Recibí conforme', name: entity.full_names || '' }, { role: 'Entregue conforme', name: payment.sucursal?.name || '' }] };
+    return { variant: 'voucher', paper: accounts.length > 5 ? 'LETTER' : 'HALF_LETTER', title: 'COMPROBANTE ABONO MÚLTIPLE', reference: accounts[0]?.cod || '', date: moment(payment.date_abono).format('DD/MM/YYYY HH:mm:ss'), company: companyData(accounts[0]?.sucursal || payment.sucursal), panels: [{ title: payable ? 'ENTREGUE A (PROVEEDOR)' : 'RECIBÍ DE (CLIENTE)', fields: [field('Nombre', entity.full_names), field('NIT/CI', entity.number_document), field('Monto abono', `Bs. ${money(payment.monto_abono, decimal)} (${NumeroALetras(decimalToNumber(payment.monto_abono, decimal))})`), field('Concepto', payment.comments)] }, paymentPanel(payment)], sections, signatures: [{ role: 'Recibí conforme', name: entity.full_names || '' }, { role: 'Entregue conforme', name: payment.sucursal?.name || '' }] };
 };
 module.exports = { buildFinancialVoucher, buildMultiplePaymentVoucher };

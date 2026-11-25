@@ -1,12 +1,13 @@
 const { request, response } = require("express")
-const { Output, sequelize, History ,Stock,Product,OutputBig,DetailsOutput,AccountsReceivable,AbonosAccountsReceivable,Sequelize,DetailsCajaSmall,CajaSmall} = require('../database/config');
+const { Output, sequelize, History ,Stock,Product,OutputBig,DetailsOutput,AccountsReceivable,AbonosAccountsReceivable,Sequelize,DetailsCajaSmall,CajaSmall,CjLedger} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { Op } = require('sequelize');
 const get_num_request = require('../helpers/generate-cod');
 const { whereDateForType } = require('../helpers/where_range');
 const { outputListOrder } = require('../services/output-report-query.service');
 const { validaOpenCajaSmall } = require("../middlewares/validators/caja_small");
-const { hasAvailableStock } = require('../services/stock-availability.service');
+const { postOperationalMovement } = require('../services/caja-ledger.service');
+const { hasAvailableStock, validateOutgoingDetails } = require('../services/stock-availability.service');
 const { ValuedKardexService } = require('../services/valued-kardex.service');
 const { applyDerivedStockEffect } = require('../services/inventory-posting.service');
 const { getStockKardexIntegrity, verifyLocationsIntegrityPreserved } = require('../services/stock-kardex-integrity.service');
@@ -153,6 +154,15 @@ const newOutput = async (req = request, res = response) => {
     try {
 
         const { output_data, output_details, output_big } = req.body;
+        const requestKey = req.get('Idempotency-Key');
+        if (requestKey) {
+            const priorPosting = await CjLedger.findOne({ where: { idempotency_key: `OUTPUT-REQUEST-${requestKey}` }, transaction: t });
+            if (priorPosting) {
+                const priorOutput = await Output.findByPk(priorPosting.source_id, { transaction: t });
+                await t.rollback();
+                return res.status(200).json({ ok: true, msg: 'La venta ya fue registrada.', id_output: priorOutput?.id, cod: priorOutput?.cod, repeated: true });
+            }
+        }
 
         output_data.id_user = req.userAuth.id;
 
@@ -167,6 +177,11 @@ const newOutput = async (req = request, res = response) => {
         } = output_data;
         const integrityLocations = output_details.map(({ id_product }) => ({ productId: id_product, sucursalId: id_sucursal, storageId: id_storage }));
         const beforeIntegrity = await Promise.all(integrityLocations.map((location) => getStockKardexIntegrity({ ...location, transaction: t })));
+        const stockValidationErrors = await validateOutgoingDetails({ details: output_details, idSucursal: id_sucursal, idStorage: id_storage, transaction: t });
+        if (stockValidationErrors.length) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: stockValidationErrors });
+        }
 
         // GENERAR NUMERO AUTOMATICO SI ES "SIN FICHA"
             if (
@@ -382,56 +397,10 @@ const newOutput = async (req = request, res = response) => {
             }
         }
 
-        // INGRESO CAJA - ABRIR AUTO
-        const caja_small =
-            await validaOpenCajaSmall(
-                id_sucursal,
-                output_data.id_user
-            );
-
-        const data_detail_caja = {
-            date: new Date(),
-            type: 'INGRESO',
-            type_payment: output_data?.type_payment,
-            id_bank: output_data?.id_bank,
-            account_payment: output_data?.account_output,
-            monto: output_data.pay_to_credit
-                ? output_data.on_account
-                : output_data.total,
-            description: description_caja,
-            status: true
-        };
-
-        if (caja_small) {
-
-            data_detail_caja.id_caja_small =
-                caja_small.id;
-
-            await DetailsCajaSmall.create(
-                data_detail_caja,
-                { transaction: t }
-            );
-
-        } else {
-
-            const new_open_caja =
-                await CajaSmall.create({
-                    date_apertura: new Date(),
-                    monto_apertura: 0,
-                    id_user: output_data.id_user,
-                    id_sucursal,
-                    status: 'ABIERTO'
-                }, { transaction: t });
-
-            data_detail_caja.id_caja_small =
-                new_open_caja.id;
-
-            await DetailsCajaSmall.create(
-                data_detail_caja,
-                { transaction: t }
-            );
-        }
-
+        const amountReceived = Number(output_data.pay_to_credit ? output_data.on_account : output_data.total) || 0;
+        await postOperationalMovement({ branchId: id_sucursal, userId: req.userAuth.id, userRole: req.userAuth.role, cashboxType: output_data.cashbox_type, direction: 'IN', amount: amountReceived,
+            paymentType: output_data.type_payment, bankId: output_data.id_bank, description: description_caja,
+            sourceType: 'OUTPUT', sourceId: output.id, transaction: t, idempotencyKey: requestKey ? `OUTPUT-REQUEST-${requestKey}` : undefined });
         /* Ingreso histórico */
         await History.create({
             id_user: req.userAuth.id,
@@ -599,6 +568,12 @@ const updateOutput = async (req = request, res = response) => {
                     storageId: output_old.id_storage, quantity: detail_old.quantity, transaction: t,
                 });
             }
+        }
+
+        const stockValidationErrors = await validateOutgoingDetails({ details: output_details, idSucursal: id_sucursal, idStorage: id_storage, transaction: t });
+        if (stockValidationErrors.length) {
+            await t.rollback();
+            return res.status(422).json({ ok: false, errors: stockValidationErrors });
         }
 
         // NUEVOS DETALLES
@@ -849,15 +824,11 @@ const updateOutput = async (req = request, res = response) => {
                     });
                 }
             } else {
-                let caja = await validaOpenCajaSmall(id_sucursal, req.userAuth.id);
+                const caja = await validaOpenCajaSmall(id_sucursal, req.userAuth.id, 'CHICA');
                 if (!caja) {
-                    caja = await CajaSmall.create({
-                        date_apertura: new Date(),
-                        monto_apertura: 0,
-                        id_user: req.userAuth.id,
-                        id_sucursal,
-                        status: 'ABIERTO',
-                    }, { transaction: t });
+                    const error = new Error('No se puede registrar el cobro: primero debe abrir Caja Chica.');
+                    error.statusCode = 422;
+                    throw error;
                 }
                 await DetailsCajaSmall.create({ ...cashDetailData, id_caja_small: caja.id }, { transaction: t });
             }

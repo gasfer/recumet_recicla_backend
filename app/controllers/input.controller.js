@@ -20,6 +20,7 @@ const { resolveAuthorizer } = require('../services/purchase-authorization.servic
 const { classifyPurchaseEdit } = require('../services/purchase-pricing-authorization-policy.service');
 const { validatePurchaseLocation } = require('../services/purchase-location.service');
 const providerAvailability = require('../services/provider-sucursal-availability.service');
+const { postOperationalMovement } = require('../services/caja-ledger.service');
 
 const valuedKardex = new ValuedKardexService();
 const parseIds = (value) => String(value ?? '')
@@ -388,6 +389,10 @@ const newInput = async (req = request, res = response) => {
                 eventType: purchaseAudit.EVENT_TYPES.PAYMENT_CREATED,
                 afterData: purchaseAudit.pick(initialPayment, purchaseAudit.AUDITABLE_PAYMENT_FIELDS) });
         }
+        const amountPaidNow = Number(input_data.pay_to_credit ? input_data.on_account : input_data.total) || 0;
+        await postOperationalMovement({ branchId: id_sucursal, userId: req.userAuth.id, userRole: req.userAuth.role, cashboxType: input_data.cashbox_type, direction: 'OUT', amount: amountPaidNow,
+            paymentType: input_data.type_payment, bankId: input_data.id_bank, description: `COMPRA #${cod}`,
+            sourceType: 'INPUT', sourceId: input.id, transaction: t });
          /* Ingreso historico */
         await History.create({
             id_user: req.userAuth.id,

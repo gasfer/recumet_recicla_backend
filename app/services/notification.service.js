@@ -1,6 +1,5 @@
 const { Notification, User } = require('../database/config');
 const { Op } = require('sequelize');
-const paginate = require('../helpers/paginate');
 
 class NotificationService {
   async notifyTransferReviewStakeholders({ note, title, message, type, level = 'WARNING', eventKey, assignedUserId = null, reviewChanged = true }, transaction = null, excludeUserId = null) {
@@ -129,7 +128,6 @@ class NotificationService {
         id_user,
         status: true,
         is_read: false,
-        level: { [Op.in]: ['DANGER', 'WARNING'] }
       },
       order: [['createdAt', 'DESC']],
       limit
@@ -158,24 +156,57 @@ class NotificationService {
   /**
    * Obtiene notificaciones paginadas para el historial
    */
-  async getNotificationsPaginate(id_user, page = 1, limit = 10, type = '', query = '', level = '') {
-    const whereConditions = [
-      { id_user },
-      { status: true }
-    ];
+  async getNotificationsPaginate(id_user, page = 1, limit = 10, query = '', level = '', readStatus = '', type = '') {
+    const safePage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 10));
+    const where = { id_user, status: true };
+    const conditions = [];
 
+    if (type) conditions.push({ type });
     if (level) {
-      whereConditions.push({ level });
+      const levelsByPriority = {
+        CRITICAL: ['CRITICAL', 'DANGER'],
+        HIGH: ['HIGH', 'WARNING'],
+        MEDIUM: ['MEDIUM'],
+        LOW: ['LOW', 'INFO'],
+      };
+      const levels = levelsByPriority[level] || [level];
+      conditions.push({ level: { [Op.in]: levels } });
     }
+    if (readStatus === 'read') conditions.push({ is_read: true });
+    if (readStatus === 'unread') conditions.push({ is_read: false });
+    if (query && String(query).trim()) {
+      const term = `%${String(query).trim()}%`;
+      conditions.push({ [Op.or]: [
+        { title: { [Op.iLike]: term } },
+        { message: { [Op.iLike]: term } },
+      ] });
+    }
+    if (conditions.length) where[Op.and] = conditions;
 
-    const optionsDb = {
-      order: [['createdAt', 'DESC']],
-      where: {
-        [Op.and]: whereConditions
-      }
+    const { count, rows } = await Notification.findAndCountAll({
+      where,
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+      offset: (safePage - 1) * safeLimit,
+      limit: safeLimit,
+    });
+    return {
+      previousPage: safePage > 1 ? safePage - 1 : null,
+      currentPage: safePage,
+      nextPage: safePage * safeLimit < count ? safePage + 1 : null,
+      total: count,
+      per_page: safeLimit,
+      data: rows,
     };
+  }
 
-    return await paginate(Notification, page, limit, type, query, optionsDb);
+  async getNotificationTypes(id_user) {
+    const rows = await Notification.findAll({
+      where: { id_user, status: true },
+      attributes: [[Notification.sequelize.fn('DISTINCT', Notification.sequelize.col('type')), 'type']],
+      raw: true,
+    });
+    return rows.map(({ type }) => type).filter(Boolean).sort();
   }
 }
 

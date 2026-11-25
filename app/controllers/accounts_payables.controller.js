@@ -1,4 +1,5 @@
 const { response, request } = require('express');
+const { postOperationalMovement } = require('../services/caja-ledger.service');
 const { AccountsPayable , AbonosAccountsPayable ,sequelize, History, AbonosAccountsPayableMultiple, ViewAbonosAccountPayableAll, Input} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { whereDateForType } = require('../helpers/where_range');
@@ -158,7 +159,7 @@ const newAbonoAccountPayable = async (req = request, res = response ) => {
         }
         const accountsPayable = await AccountsPayable.findByPk(id_account_payable,{ transaction: t });
         const correlationId = purchaseAudit.createCorrelationId();
-        const abonosAccountsPayable = await payAbonoAccount(accountsPayable,body,req.userAuth.id,false,t,correlationId,idempotencyKey);
+        const abonosAccountsPayable = await payAbonoAccount(accountsPayable,body,req.userAuth.id,false,t,correlationId,idempotencyKey,req.userAuth.role);
         if(abonosAccountsPayable.ok){
             await t.commit();
             return res.status(201).json({
@@ -504,7 +505,7 @@ const payAccountMultiple = async (req = request, res = response) => {
             }
             const body = req.body; //{monto_abono, date_abono, type_payment, comments, account_output, id_bank} = body;
             body.monto_abono =  newAbono;
-            const abonosAccountsPayable = await payAbonoAccount(account,body,req.userAuth.id,true,t,correlationId,idempotencyBase ? `${idempotencyBase}:account:${account.id}` : null);
+            const abonosAccountsPayable = await payAbonoAccount(account,body,req.userAuth.id,true,t,correlationId,idempotencyBase ? `${idempotencyBase}:account:${account.id}` : null,req.userAuth.role);
             if(!abonosAccountsPayable.ok) {
                 await t.rollback();
                 return res.status(422).json({
@@ -542,7 +543,7 @@ const payAccountMultiple = async (req = request, res = response) => {
 }
 
 
-const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t,correlationId = purchaseAudit.createCorrelationId(),idempotencyKey = null) => {
+const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t,correlationId = purchaseAudit.createCorrelationId(),idempotencyKey = null,userRole = null) => {
     try {
         const  {monto_abono, date_abono, type_payment, comments, account_output, id_bank, id_bank_origin, account_origin, number_transaction} = body;
         const decimal = await getNumberDecimal();
@@ -564,6 +565,9 @@ const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t,corre
             restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_output,id_bank,from_pay_multiple,
             id_bank_origin, account_origin, number_transaction
         },{ transaction: t });
+        await postOperationalMovement({ branchId: account.id_sucursal, userId: userAuthId, userRole, cashboxType: body.cashbox_type, direction: 'OUT', amount: monto_abono,
+            paymentType: type_payment, bankId: id_bank_origin || id_bank, description: `PAGO ${account.description}`,
+            sourceType: 'SUPPLIER_PAYMENT', sourceId: abonosAccountsPayable.id, transaction: t });
         const input = await Input.findByPk(account.id_input, { transaction: t });
         await purchaseAudit.createEvent({ transaction: t, correlationId, idempotencyKey,
             input, actorUserId: userAuthId, entityType: purchaseAudit.ENTITY_TYPES.PAYMENT,

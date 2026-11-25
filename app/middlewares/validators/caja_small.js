@@ -106,12 +106,12 @@ const getValidateDetail = [
 ];
 
 
-const validaOpenCajaSmall = async (id_sucursal, id_user) => {
-    const whereDate = whereDateForType('DAY',new Date());
+const validaOpenCajaSmall = async (id_sucursal, id_user, cashbox_type = 'CHICA') => {
     const open_caja_small = await CajaSmall.findOne({
         where:{
-            id_user, id_sucursal,
-            date_apertura: whereDate, status: 'ABIERTO'
+            id_sucursal,
+            cashbox_type,
+            session_state: 'OPEN'
         }
     });
     return open_caja_small;

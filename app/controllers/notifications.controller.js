@@ -39,11 +39,15 @@ const markAsRead = async (req = request, res = response) => {
 const getNotificationsHistory = async (req = request, res = response) => {
     try {
         const id_user = req.userAuth.id;
-        const { page = 1, limit = 10, type = '', query = '', level = '' } = req.query;
-        const notifications = await notificationService.getNotificationsPaginate(id_user, page, limit, type, query, level);
+        const { page = 1, limit = 10, query = '', level = '', status = '', type = '' } = req.query;
+        const [notifications, types] = await Promise.all([
+            notificationService.getNotificationsPaginate(id_user, page, limit, query, level, status, type),
+            notificationService.getNotificationTypes(id_user)
+        ]);
         return res.status(200).json({
             ok: true,
-            notifications
+            notifications,
+            types
         });
     } catch (error) {
         console.log(error);

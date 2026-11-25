@@ -1,7 +1,7 @@
 'use strict';
 
 const { QueryTypes } = require('sequelize');
-const { sequelize } = require('../database/config');
+const { sequelize, Stock, Product } = require('../database/config');
 const { exactAdd, exactSubtract, exactCompare, exactAbs } = require('../helpers/number-formatter');
 
 const availabilityKey = (productId, sucursalId, storageId) => (
@@ -64,6 +64,55 @@ const attachAvailabilityToStocks = async (stocks = [], transaction) => {
 const hasAvailableStock = async (stock, requestedQuantity, transaction) => {
   const availability = await getStockAvailability(stock, transaction);
   return { ...availability, sufficient: exactCompare(availability.available_stock, requestedQuantity) >= 0 };
+};
+
+const validateOutgoingDetails = async ({ details = [], idSucursal, idStorage, transaction } = {}) => {
+  const requestedByProduct = new Map();
+  for (const detail of details) {
+    const productId = Number(detail.id_product);
+    requestedByProduct.set(productId, exactAdd(requestedByProduct.get(productId) || 0, detail.quantity || 0));
+  }
+
+  const productIds = [...requestedByProduct.keys()].sort((a, b) => a - b);
+  if (!productIds.length) return [];
+
+  // Lock active rows in a stable order and validate the whole document,
+  // including repeated lines for the same product and legacy duplicate rows.
+  const stockRows = await Stock.findAll({
+    where: { id_product: productIds, id_sucursal: idSucursal, id_storage: idStorage, status: true },
+    order: [['id_product', 'ASC'], ['id', 'ASC']],
+    transaction,
+    lock: transaction?.LOCK?.UPDATE || true,
+  });
+  const stockByProduct = new Map();
+  for (const stock of stockRows) {
+    const productId = Number(stock.id_product);
+    const total = exactAdd(stockByProduct.get(productId)?.stock || 0, stock.stock || 0);
+    stockByProduct.set(productId, { stock: total, id_product: productId, id_sucursal: idSucursal, id_storage: idStorage });
+  }
+
+  const products = await Product.findAll({ where: { id: productIds }, attributes: ['id', 'cod', 'name'], transaction });
+  const productById = new Map(products.map((product) => [Number(product.id), product]));
+  const errors = [];
+  for (const productId of productIds) {
+    const product = productById.get(productId);
+    const stock = stockByProduct.get(productId);
+    const label = product ? `${product.cod} - ${product.name}` : `Producto ${productId}`;
+    const requested = requestedByProduct.get(productId);
+    if (exactCompare(requested, 0) <= 0) {
+      errors.push({ msg: `${label}: la cantidad total solicitada debe ser mayor a cero.` });
+      continue;
+    }
+    if (!stock) {
+      errors.push({ msg: `${label}: no tiene stock activo en la sucursal ${idSucursal} y almacén ${idStorage}.` });
+      continue;
+    }
+    const availability = await hasAvailableStock(stock, requested, transaction);
+    if (!availability.sufficient) {
+      errors.push({ msg: `${label}: solicita ${requested} en total, pero hay ${availability.available_stock} disponibles.` });
+    }
+  }
+  return errors;
 };
 
 const getStockDiagnostic = async ({ idSucursal, idStorage, limit = 500, onlyDifferences = false } = {}) => {
@@ -326,6 +375,7 @@ module.exports = {
   attachAvailabilityToStocks,
   attachAvailabilityToKardexRows,
   hasAvailableStock,
+  validateOutgoingDetails,
   getStockDiagnostic,
   getStockKardexIrregularities,
   normalizeStockKardexIrregularity,

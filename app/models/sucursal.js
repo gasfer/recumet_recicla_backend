@@ -20,6 +20,7 @@ module.exports = (sequelize, DataTypes) => {
       Sucursal.hasMany(models.AccountsPayable,{as: 'accountsPayable', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.AccountsReceivable,{as: 'accountsReceivable', foreignKey:'id_sucursal'});
       Sucursal.hasMany(models.CajaSmall,{as: 'cajaSmall', foreignKey:'id_sucursal'});
+      Sucursal.hasOne(models.CjCaja, { as: 'cajaRegister', foreignKey: 'id_sucursal' });
       Sucursal.hasMany(models.Transfers,{as: 'transfers_send', foreignKey:'id_sucursal_send'});
       Sucursal.hasMany(models.Transfers,{as: 'transfers_received', foreignKey:'id_sucursal_received'});
       Sucursal.hasMany(models.TransferReviewNote,{as: 'transferReviewNotes', foreignKey:'id_sucursal'});

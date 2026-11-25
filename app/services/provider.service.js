@@ -335,6 +335,22 @@ class ProviderService {
       const provider = await this.requireProvider(providerId, transaction);
       await this.lockProviderIdentity(data, transaction);
       await this.assertIdentityAvailable(data, { providerId: provider.id, companyId: provider.id_provider_company }, transaction);
+      const nextFullName = normalizeProviderName(data.full_names);
+      const currentFullName = normalizeProviderName(provider.full_names);
+      if (nextFullName && nextFullName !== currentFullName) {
+        const nameMatches = await this.findIdentityDuplicates({
+          full_names: data.full_names,
+          commercial_name: data.commercial_name,
+          exclude_provider_id: provider.id,
+          exclude_company_id: provider.id_provider_company,
+        }, transaction);
+        if (nameMatches.full_names && nameMatches.full_names.match_quality !== 'APPROXIMATE') {
+          const existingName = nameMatches.full_names.full_names || nameMatches.full_names.commercial_name || 'otro proveedor';
+          const error = this.validationError(`Ya existe otro proveedor con el nombre "${existingName}"`);
+          error.statusCode = 409;
+          throw error;
+        }
+      }
       if (Object.prototype.hasOwnProperty.call(data, 'id_type_provider')) {
         await this.assertProviderTypeChangeAllowed(provider.id_type_provider, data.id_type_provider, user, transaction);
       }

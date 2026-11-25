@@ -1,5 +1,6 @@
 const { response, request } = require('express');
-const { AccountsReceivable , AbonosAccountsReceivable, viewAbonosAccountReceivablesAll, AbonosAccountsReceivableMultiple,sequelize, History,DetailsCajaSmall,CajaSmall} = require('../database/config');
+const { postOperationalMovement } = require('../services/caja-ledger.service');
+const { AccountsReceivable , AbonosAccountsReceivable, viewAbonosAccountReceivablesAll, AbonosAccountsReceivableMultiple,sequelize, History,DetailsCajaSmall,CajaSmall,CjLedger} = require('../database/config');
 const paginate = require('../helpers/paginate');
 const { whereDateForType } = require('../helpers/where_range');
 const { Op } = require('sequelize');
@@ -137,6 +138,11 @@ const newAbonoAccountReceivable = async (req = request, res = response ) => {
     const t = await sequelize.transaction();
     try {
         const body = req.body;
+        const requestKey = req.get('Idempotency-Key');
+        if (requestKey) {
+            const priorPosting = await CjLedger.findOne({ where: { idempotency_key: `RECEIVABLE-REQUEST-${requestKey}` }, transaction: t });
+            if (priorPosting) { await t.rollback(); return res.status(200).json({ ok: true, msg: 'El cobro ya fue registrado.', repeated: true, id_abono: priorPosting.source_id }); }
+        }
         body.status = true;
         const { id_account_receivable } = body;
         const accountsReceivable = await AccountsReceivable.findByPk(id_account_receivable,{ transaction: t,
@@ -144,7 +150,7 @@ const newAbonoAccountReceivable = async (req = request, res = response ) => {
                 {association:'output', attributes:['id','cod']}
             ]
          });
-        const abonosAccountsReceivable = await payAbonoAccount(accountsReceivable,body,req.userAuth.id,false,t);
+        const abonosAccountsReceivable = await payAbonoAccount(accountsReceivable,body,req.userAuth.id,false,t, requestKey ? `RECEIVABLE-REQUEST-${requestKey}` : null,req.userAuth.role);
         if(abonosAccountsReceivable.ok){
             await t.commit();
             return res.status(201).json({
@@ -395,7 +401,7 @@ const payAccountMultiple = async (req = request, res = response) => {
             }
             const body = req.body; //{monto_abono, date_abono, type_payment, comments, account_input, id_bank} = body;
             body.monto_abono =  newAbono;
-            const abonosAccountsReceivable = await payAbonoAccount(account,body,req.userAuth.id,true,t);
+            const abonosAccountsReceivable = await payAbonoAccount(account,body,req.userAuth.id,true,t,null,null,req.userAuth.role);
             if(!abonosAccountsReceivable.ok) {
                 await t.rollback();
                 return res.status(422).json({
@@ -431,7 +437,7 @@ const payAccountMultiple = async (req = request, res = response) => {
     }
 }
 
-const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
+const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t,idempotencyKey = null,userRole = null) => {
     try {
         const  {monto_abono, date_abono, type_payment, comments, account_input, id_bank} = body;
         let total_account_monto = Number(account.monto_abonado) + Number(monto_abono);
@@ -451,27 +457,9 @@ const payAbonoAccount = async (account,body,userAuthId,from_pay_multiple,t) => {
             id_account_receivable:account.id, date_abono, monto_abono, total_abonado: total_account_monto,
             restante_credito: new_total_restante, id_user: userAuthId,status: true,type_payment,comments,account_input,id_bank,from_pay_multiple
         },{ transaction: t });
-        //**Ingreso CAJA abono */
-        const caja_small = await validaOpenCajaSmall(account.id_sucursal,userAuthId);
-        const data_detail_caja = {
-            date: new Date(),
-            type: 'INGRESO',
-            monto: monto_abono,  //TODO? PONER ID COMPRA
-            description: `POR ABONO CREDITO #${account.output.cod} ABONO #${abonosAccountsReceivable.id}`,
-            status: true
-        }
-        if(caja_small) { //caja abierta
-            data_detail_caja.id_caja_small = caja_small.id;
-            await DetailsCajaSmall.create(data_detail_caja, { transaction: t });
-        } else { //abrir caja
-            const new_open_caja = await CajaSmall.create({
-                date_apertura: new Date(),
-                monto_apertura: 0, userAuthId, id_sucursal:account.id_sucursal,
-                status: 'ABIERTO'
-            }, { transaction: t });
-            data_detail_caja.id_caja_small = new_open_caja.id;
-            await DetailsCajaSmall.create(data_detail_caja, { transaction: t });
-        } 
+        await postOperationalMovement({ branchId: account.id_sucursal, userId: userAuthId, userRole, cashboxType: body.cashbox_type, direction: 'IN', amount: monto_abono,
+            paymentType: type_payment, bankId: id_bank, description: `ABONO CREDITO #${account.output.cod} ABONO #${abonosAccountsReceivable.id}`,
+            sourceType: 'RECEIVABLE_PAYMENT', sourceId: abonosAccountsReceivable.id, transaction: t, idempotencyKey });
         /* Ingreso historico */
         await History.create({
             id_user: userAuthId,
